@@ -332,8 +332,8 @@ export class UsersService {
     }
 
     async executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo') {
-        if (betAmount < 10 || betAmount > 10000) {
-            return { error: 'Bet amount must be between 10 and 10000 ELIXIR' };
+        if (betAmount < 10 || betAmount > 1000000) {
+            return { error: 'Bet amount must be between 10 and 1000000 ELIXIR' };
         }
         if (multiplier < 1.01 || multiplier > 100) {
             return { error: 'Invalid multiplier constraint' };
