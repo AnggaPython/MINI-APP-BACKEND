@@ -18,6 +18,7 @@ let User = class User {
     username;
     photoUrl;
     isPremium;
+    isBanned;
     cryptoBalances;
     elixirBalance;
     miningStartDate;
@@ -54,6 +55,10 @@ __decorate([
     (0, mongoose_1.Prop)({ default: false }),
     __metadata("design:type", Boolean)
 ], User.prototype, "isPremium", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], User.prototype, "isBanned", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
     __metadata("design:type", Object)

@@ -1,12 +1,14 @@
 import { Model } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { ReferralLog, ReferralLogDocument } from './schemas/referral-log.schema';
+import { HiLoBet, HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
 export declare class UsersService {
     private userModel;
     private referralLogModel;
+    private hiloBetModel;
     private achievementsService;
-    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, achievementsService: AchievementsService);
+    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService);
     syncTelegramUser(userData: any, referredBy?: string): Promise<User>;
     startMining(telegramId: string): Promise<User | null>;
     claimMining(telegramId: string): Promise<{
@@ -153,4 +155,29 @@ export declare class UsersService {
         spread: number;
         error?: undefined;
     }>;
+    executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo'): Promise<{
+        error: string;
+        success?: undefined;
+        rolledNumber?: undefined;
+        isWin?: undefined;
+        profit?: undefined;
+        newBalance?: undefined;
+    } | {
+        success: boolean;
+        rolledNumber: number;
+        isWin: boolean;
+        profit: number;
+        newBalance: number;
+        error?: undefined;
+    }>;
+    getHiLoHistory(telegramId: string): Promise<(import("mongoose").Document<unknown, {}, HiLoBetDocument, {}, import("mongoose").DefaultSchemaOptions> & HiLoBet & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+        _id: import("mongoose").Types.ObjectId;
+    }> & {
+        __v: number;
+    } & {
+        id: string;
+    })[]>;
+    searchUserForAdmin(query: string): Promise<User | null>;
+    updateUserBalanceAdmin(telegramId: string, elixirBalance?: number, cryptoBalances?: Record<string, number>): Promise<User | null>;
+    setUserBanStatus(telegramId: string, isBanned: boolean): Promise<User | null>;
 }

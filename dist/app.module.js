@@ -18,6 +18,8 @@ const campaigns_module_1 = require("./campaigns/campaigns.module");
 const bank_module_1 = require("./bank/bank.module");
 const achievements_module_1 = require("./achievements/achievements.module");
 const payment_module_1 = require("./payment/payment.module");
+const history_module_1 = require("./history/history.module");
+const admin_module_1 = require("./admin/admin.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -40,6 +42,8 @@ exports.AppModule = AppModule = __decorate([
             bank_module_1.BankModule,
             achievements_module_1.AchievementsModule,
             payment_module_1.PaymentModule,
+            history_module_1.HistoryModule,
+            admin_module_1.AdminModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

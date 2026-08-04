@@ -87,4 +87,27 @@ export class UsersController {
         }
         return await this.usersService.swapTokens(body.telegramId, body.amount, body.targetCoin);
     }
+
+    @Post('hilo-bet')
+    async executeHiLoBet(@Body() body: { telegramId: string, betAmount: any, multiplier: any, type: 'hi' | 'lo' }) {
+        if (!body.telegramId || !body.betAmount || !body.multiplier || !body.type) {
+            return { error: 'Missing required betting parameters' };
+        }
+
+        const strictBet = Number(body.betAmount);
+        const strictMultiplier = Number(body.multiplier);
+
+        if (isNaN(strictBet) || isNaN(strictMultiplier) || strictBet <= 0) {
+            return { error: 'Malicious payload detected: Numeric type coercion failed' };
+        }
+
+        return await this.usersService.executeHiLoBet(body.telegramId, strictBet, strictMultiplier, body.type);
+    }
+
+    @Post('hilo-history')
+    async getHiLoHistory(@Body('telegramId') telegramId: string) {
+        if (!telegramId) return { error: 'Missing telegramId' };
+        const history = await this.usersService.getHiLoHistory(telegramId);
+        return { success: true, history };
+    }
 }

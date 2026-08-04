@@ -4,13 +4,15 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { User, UserSchema } from './schemas/user.schema';
 import { ReferralLog, ReferralLogSchema } from './schemas/referral-log.schema';
+import { HiLoBet, HiLoBetSchema } from './schemas/hilo-bet.schema';
 import { AchievementsModule } from '../achievements/achievements.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
-      { name: ReferralLog.name, schema: ReferralLogSchema }
+      { name: ReferralLog.name, schema: ReferralLogSchema },
+      { name: HiLoBet.name, schema: HiLoBetSchema }
     ]),
     forwardRef(() => AchievementsModule)
   ],

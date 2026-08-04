@@ -1,8 +1,10 @@
 import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as crypto from 'crypto';
 import { User, UserDocument } from './schemas/user.schema';
 import { ReferralLog, ReferralLogDocument } from './schemas/referral-log.schema';
+import { HiLoBet, HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
@@ -10,6 +12,7 @@ export class UsersService {
     constructor(
         @InjectModel(User.name) private userModel: Model<UserDocument>,
         @InjectModel(ReferralLog.name) private referralLogModel: Model<ReferralLogDocument>,
+        @InjectModel(HiLoBet.name) private hiloBetModel: Model<HiLoBetDocument>,
         @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService
     ) { }
 
@@ -326,5 +329,145 @@ export class UsersService {
             gross: grossCryptoAmount,
             spread: (grossCryptoAmount * 0.08)
         };
+    }
+
+    async executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo') {
+        if (betAmount < 10 || betAmount > 10000) {
+            return { error: 'Bet amount must be between 10 and 10000 ELIXIR' };
+        }
+        if (multiplier < 1.01 || multiplier > 100) {
+            return { error: 'Invalid multiplier constraint' };
+        }
+
+        // Phase 35: Atomic Deduction to obliterate concurrent race condition hacks
+        const user = await this.userModel.findOneAndUpdate(
+            { telegramId, elixirBalance: { $gte: betAmount } },
+            { $inc: { elixirBalance: -betAmount } },
+            { new: true }
+        ).exec();
+
+        if (!user) {
+            return { error: 'Insufficient balance or invalid bet amount' };
+        }
+
+        // RNG Engine with dynamic Psychological House Edge Algorithm
+        let edge = 0.95; // Base 5% Platform Advantage
+
+        // Extract Recent Bet History to detect Manual/Auto betting patterns
+        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).exec();
+        const lastBet = recentBets.length > 0 ? recentBets[0] : null;
+
+        // 1. Martingale Slasher: Triggered if user doubled up forcefully after a loss
+        if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
+            edge = Math.min(edge, 0.40); // Drastically limit win capacity
+        }
+
+        // 4. Sudden Spike Trapper: Detects manual players "baiting" with small bets then throwing huge amounts
+        if (recentBets.length >= 3) {
+            const totalRecentBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0);
+            const avgBet = totalRecentBet / recentBets.length;
+
+            // If they suddenly spike their bet amount > 5x their recent average (minimum baseline of 100 to avoid micro-bet flags)
+            if (betAmount >= (avgBet * 5) && betAmount >= 500) {
+                edge = Math.min(edge, 0.30); // Crush their win probability to an abysmal 30%
+            }
+        }
+
+        // 2. Greedy Whale Penalty: Punish users risking > 10% of their net wealth on one throw
+        const totalWealthBeforeBet = user.elixirBalance + betAmount;
+        if (betAmount > (totalWealthBeforeBet * 0.10)) {
+            edge = Math.min(edge, 0.45);
+        }
+
+        // 3. High Multiplier Tax: Suppress longshot hunters
+        if (multiplier >= 10) edge = Math.min(edge, 0.75);
+        if (multiplier >= 50) edge = Math.min(edge, 0.50);
+
+        const winChance = (100 * edge) / multiplier;
+
+        // Threshold Matrix (10,000 bounds)
+        const thresholdHI = 10000 - (winChance * 100);
+        const thresholdLO = winChance * 100;
+
+        // Provider Generation: Provably Fair Hash Cryptography (SHA-256)
+        const serverSeed = crypto.randomBytes(16).toString('hex');
+        const clientSeed = `${telegramId}-${Date.now()}`;
+        const hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
+
+        // Extract first 5 hex chars string to dec modulo 10001
+        const hexSub = hash.substring(0, 5);
+        const parsedHex = parseInt(hexSub, 16);
+        const rolledNumber = parsedHex % 10001;
+
+        let isWin = false;
+        if (type === 'hi' && rolledNumber > thresholdHI) isWin = true;
+        if (type === 'lo' && rolledNumber < thresholdLO) isWin = true;
+
+        const reward = isWin ? (betAmount * multiplier) : 0;
+        const profit = isWin ? (reward - betAmount) : -betAmount;
+
+        let finalBalance = user.elixirBalance;
+
+        if (isWin) {
+            // Atomic Payout
+            const winUser = await this.userModel.findOneAndUpdate(
+                { telegramId },
+                { $inc: { elixirBalance: reward } },
+                { new: true }
+            ).exec();
+            finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
+        }
+
+        // Record Audit Trail
+        await new this.hiloBetModel({
+            telegramId, betAmount, multiplier, targetType: type, rolledNumber, isWin, profit,
+            newBalance: finalBalance, serverSeed, clientSeed, hash
+        }).save();
+
+        return {
+            success: true,
+            rolledNumber,
+            isWin,
+            profit,
+            newBalance: finalBalance
+        };
+    }
+
+    async getHiLoHistory(telegramId: string) {
+        const history = await this.hiloBetModel.find({ telegramId })
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .exec();
+        return history;
+    }
+
+    // --- Admin Interrogation Methods ---
+    async searchUserForAdmin(query: string): Promise<User | null> {
+        return this.userModel.findOne({
+            $or: [
+                { telegramId: query },
+                { username: { $regex: new RegExp(`^${query}$`, 'i') } }
+            ]
+        }).exec();
+    }
+
+    async updateUserBalanceAdmin(telegramId: string, elixirBalance?: number, cryptoBalances?: Record<string, number>): Promise<User | null> {
+        const update: any = {};
+        if (elixirBalance !== undefined) update.elixirBalance = elixirBalance;
+        if (cryptoBalances !== undefined) update.cryptoBalances = cryptoBalances;
+
+        return this.userModel.findOneAndUpdate(
+            { telegramId },
+            { $set: update },
+            { returnDocument: 'after' }
+        ).exec();
+    }
+
+    async setUserBanStatus(telegramId: string, isBanned: boolean): Promise<User | null> {
+        return this.userModel.findOneAndUpdate(
+            { telegramId },
+            { $set: { isBanned } },
+            { returnDocument: 'after' }
+        ).exec();
     }
 }

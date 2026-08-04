@@ -94,6 +94,23 @@ let UsersController = class UsersController {
         }
         return await this.usersService.swapTokens(body.telegramId, body.amount, body.targetCoin);
     }
+    async executeHiLoBet(body) {
+        if (!body.telegramId || !body.betAmount || !body.multiplier || !body.type) {
+            return { error: 'Missing required betting parameters' };
+        }
+        const strictBet = Number(body.betAmount);
+        const strictMultiplier = Number(body.multiplier);
+        if (isNaN(strictBet) || isNaN(strictMultiplier) || strictBet <= 0) {
+            return { error: 'Malicious payload detected: Numeric type coercion failed' };
+        }
+        return await this.usersService.executeHiLoBet(body.telegramId, strictBet, strictMultiplier, body.type);
+    }
+    async getHiLoHistory(telegramId) {
+        if (!telegramId)
+            return { error: 'Missing telegramId' };
+        const history = await this.usersService.getHiLoHistory(telegramId);
+        return { success: true, history };
+    }
 };
 exports.UsersController = UsersController;
 __decorate([
@@ -173,6 +190,20 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "swapElixir", null);
+__decorate([
+    (0, common_1.Post)('hilo-bet'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "executeHiLoBet", null);
+__decorate([
+    (0, common_1.Post)('hilo-history'),
+    __param(0, (0, common_1.Body)('telegramId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getHiLoHistory", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('users'),
     __metadata("design:paramtypes", [users_service_1.UsersService])

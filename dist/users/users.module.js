@@ -13,6 +13,7 @@ const users_service_1 = require("./users.service");
 const users_controller_1 = require("./users.controller");
 const user_schema_1 = require("./schemas/user.schema");
 const referral_log_schema_1 = require("./schemas/referral-log.schema");
+const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
 const achievements_module_1 = require("../achievements/achievements.module");
 let UsersModule = class UsersModule {
 };
@@ -22,7 +23,8 @@ exports.UsersModule = UsersModule = __decorate([
         imports: [
             mongoose_1.MongooseModule.forFeature([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
-                { name: referral_log_schema_1.ReferralLog.name, schema: referral_log_schema_1.ReferralLogSchema }
+                { name: referral_log_schema_1.ReferralLog.name, schema: referral_log_schema_1.ReferralLogSchema },
+                { name: hilo_bet_schema_1.HiLoBet.name, schema: hilo_bet_schema_1.HiLoBetSchema }
             ]),
             (0, common_1.forwardRef)(() => achievements_module_1.AchievementsModule)
         ],

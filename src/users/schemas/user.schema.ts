@@ -23,6 +23,9 @@ export class User {
   @Prop({ default: false })
   isPremium: boolean;
 
+  @Prop({ default: false })
+  isBanned: boolean;
+
   @Prop({ type: Object, default: {} })
   cryptoBalances: Record<string, number>;
 

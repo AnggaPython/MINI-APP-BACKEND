@@ -188,4 +188,34 @@ export declare class UsersController {
     } | {
         error: string;
     }>;
+    executeHiLoBet(body: {
+        telegramId: string;
+        betAmount: any;
+        multiplier: any;
+        type: 'hi' | 'lo';
+    }): Promise<{
+        success: boolean;
+        rolledNumber: number;
+        isWin: boolean;
+        profit: number;
+        newBalance: number;
+        error?: undefined;
+    } | {
+        error: string;
+    }>;
+    getHiLoHistory(telegramId: string): Promise<{
+        error: string;
+        success?: undefined;
+        history?: undefined;
+    } | {
+        success: boolean;
+        history: (import("mongoose").Document<unknown, {}, import("./schemas/hilo-bet.schema").HiLoBetDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/hilo-bet.schema").HiLoBet & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        })[];
+        error?: undefined;
+    }>;
 }
