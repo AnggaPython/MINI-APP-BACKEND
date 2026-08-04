@@ -65,6 +65,26 @@ export class UsersController {
     async getBalance(@Param('id') id: string) {
         if (!id) return { error: 'Missing id' };
         const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance };
+        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress };
+    }
+
+    @Post('bind-wallet')
+    async bindWallet(@Body() body: { telegramId: string, cwalletUid: string }) {
+        if (!body.telegramId || !body.cwalletUid) return { error: 'Missing parameters' };
+        return await this.usersService.bindCwalletUid(body.telegramId, body.cwalletUid);
+    }
+
+    @Post('bind-solana')
+    async bindSolana(@Body() body: { telegramId: string, solanaAddress: string }) {
+        if (!body.telegramId || !body.solanaAddress) return { error: 'Missing parameters' };
+        return await this.usersService.bindSolanaAddress(body.telegramId, body.solanaAddress);
+    }
+
+    @Post('swap')
+    async swapElixir(@Body() body: { telegramId: string, amount: number, targetCoin: string }) {
+        if (!body.telegramId || !body.amount || !body.targetCoin) {
+            return { error: 'Missing swap parameters' };
+        }
+        return await this.usersService.swapTokens(body.telegramId, body.amount, body.targetCoin);
     }
 }

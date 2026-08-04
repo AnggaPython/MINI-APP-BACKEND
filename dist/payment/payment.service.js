@@ -1,0 +1,356 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var PaymentService_1;
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PaymentService = void 0;
+const common_1 = require("@nestjs/common");
+const crypto = __importStar(require("crypto"));
+const users_service_1 = require("../users/users.service");
+const mongoose_1 = require("@nestjs/mongoose");
+const mongoose_2 = require("mongoose");
+const transaction_schema_1 = require("./schemas/transaction.schema");
+let PaymentService = PaymentService_1 = class PaymentService {
+    usersService;
+    txModel;
+    logger = new common_1.Logger(PaymentService_1.name);
+    appId = 'I7YTwbXVHbXGiSEb';
+    appSecret = '68e3e1e7db332c9f79a0843919619781';
+    constructor(usersService, txModel) {
+        this.usersService = usersService;
+        this.txModel = txModel;
+    }
+    async createDepositCharge(telegramId, amountElixir) {
+        const usdAmount = amountElixir / 10000;
+        const payload = {
+            orderId: `DEP_${Date.now()}_${telegramId}`,
+            price: usdAmount.toFixed(2),
+            name: `${amountElixir} ELIXIR Deposit`,
+            priceFiatId: 1033,
+            customValue: telegramId.toString(),
+            returnUrl: "https://mini-app-nine-mu.vercel.app/add-elixir",
+            notifyUrl: "https://mini-app-backend-production-30ea.up.railway.app/payment/webhook"
+        };
+        const rawBody = JSON.stringify(payload);
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const signatureText = this.appId + timestamp + rawBody;
+        const signHeader = crypto.createHmac('sha256', this.appSecret).update(signatureText).digest('hex');
+        try {
+            const res = await fetch('https://ccpayment.com/ccpayment/v2/createInvoiceUrl', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Appid': this.appId,
+                    'Timestamp': timestamp,
+                    'Sign': signHeader
+                },
+                body: rawBody
+            });
+            const data = await res.json();
+            if (data.code === 10000 && data.data && data.data.invoiceUrl) {
+                return { success: true, paymentUrl: data.data.invoiceUrl };
+            }
+            return { success: false, error: data.msg || 'Gateway rejected payload' };
+        }
+        catch (e) {
+            this.logger.error("Create Deposit Failed", e);
+            return { success: false, error: 'Internal server error while reaching CCPayment.' };
+        }
+    }
+    coinMap = {
+        'USDT': 1280,
+        'PEPE': 1877,
+        'ETH': 1161,
+        'SOL': 1186,
+        'MATIC': 1329,
+        'ARB': 1296,
+        'USDC': 1282,
+        'LINK': 1207
+    };
+    getHeaders(rawBody, timestamp) {
+        const signatureText = this.appId + timestamp + rawBody;
+        const signHeader = crypto.createHmac('sha256', this.appSecret).update(signatureText).digest('hex');
+        return {
+            'Content-Type': 'application/json',
+            'Appid': this.appId,
+            'Timestamp': timestamp,
+            'Sign': signHeader
+        };
+    }
+    async refillTreasuryLiquidityViaSwap(targetCoinId, requiredAmount) {
+        const USDC_COIN_ID = 1282;
+        if (targetCoinId === USDC_COIN_ID)
+            return false;
+        try {
+            let ts = Math.floor(Date.now() / 1000).toString();
+            const pricePayload = JSON.stringify({ coinIds: [targetCoinId] });
+            const priceRes = await fetch('https://ccpayment.com/ccpayment/v2/getCoinUSDTPrice', {
+                method: 'POST',
+                headers: this.getHeaders(pricePayload, ts),
+                body: pricePayload
+            });
+            const priceData = await priceRes.json();
+            if (priceData.code !== 10000 || !priceData.data.prices[targetCoinId.toString()])
+                return false;
+            const coinUsdtPrice = parseFloat(priceData.data.prices[targetCoinId.toString()]);
+            let neededUsdc = requiredAmount * coinUsdtPrice;
+            let inputUsdc = (neededUsdc * 1.02) + 0.2;
+            ts = Math.floor(Date.now() / 1000).toString();
+            const estPayload = JSON.stringify({
+                coinIdIn: USDC_COIN_ID,
+                amountIn: inputUsdc.toFixed(6),
+                coinIdOut: targetCoinId
+            });
+            const estRes = await fetch('https://ccpayment.com/ccpayment/v2/estimate', {
+                method: 'POST',
+                headers: this.getHeaders(estPayload, ts),
+                body: estPayload
+            });
+            const estData = await estRes.json();
+            if (estData.code !== 10000)
+                return false;
+            const netAmountOut = parseFloat(estData.data.netAmountOut);
+            if (netAmountOut < requiredAmount)
+                return false;
+            ts = Math.floor(Date.now() / 1000).toString();
+            const orderId = `SWP_${Date.now()}_${targetCoinId}`;
+            const swapPayload = JSON.stringify({
+                orderId,
+                coinIdIn: USDC_COIN_ID,
+                amountIn: inputUsdc.toFixed(6),
+                coinIdOut: targetCoinId,
+                amountOutMinimum: requiredAmount.toFixed(8)
+            });
+            const swapRes = await fetch('https://ccpayment.com/ccpayment/v2/swap', {
+                method: 'POST',
+                headers: this.getHeaders(swapPayload, ts),
+                body: swapPayload
+            });
+            const swapData = await swapRes.json();
+            if (swapData.code !== 10000)
+                return false;
+            const recordId = swapData.data.recordId;
+            for (let i = 0; i < 6; i++) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                ts = Math.floor(Date.now() / 1000).toString();
+                const pollPayload = JSON.stringify({ recordId });
+                const pollRes = await fetch('https://ccpayment.com/ccpayment/v2/getSwapRecord', {
+                    method: 'POST',
+                    headers: this.getHeaders(pollPayload, ts),
+                    body: pollPayload
+                });
+                const pollData = await pollRes.json();
+                if (pollData.code === 10000) {
+                    if (pollData.data.record.status === 'Success')
+                        return true;
+                    if (pollData.data.record.status === 'Failed')
+                        return false;
+                }
+            }
+            return false;
+        }
+        catch (error) {
+            console.error("Auto Swap Error:", error);
+            return false;
+        }
+    }
+    async createWithdrawRequest(telegramId, coin, amount, walletAddress, tier = 'standard') {
+        if (amount <= 0)
+            return { success: false, error: 'Invalid amount' };
+        let executionAmount = amount;
+        if (tier === 'advance') {
+            executionAmount = amount * 0.985;
+        }
+        else if (tier === 'onchain') {
+            executionAmount = amount * 0.965;
+        }
+        const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
+        if (!debited)
+            return { success: false, error: 'Insufficient crypto balance' };
+        const coinId = this.coinMap[coin.toUpperCase()];
+        if (!coinId) {
+            await this.usersService.creditCrypto(telegramId, coin, amount);
+            return { success: false, error: 'Unsupported withdrawal token' };
+        }
+        const triggerWithdraw = async () => {
+            const timestamp = Math.floor(Date.now() / 1000).toString();
+            if (tier === 'onchain') {
+                const payload = {
+                    orderId: `WD_ON_${Date.now()}_${telegramId}`,
+                    address: walletAddress,
+                    amount: executionAmount.toFixed(8),
+                    coinId: coinId,
+                    chain: 'SOL'
+                };
+                const rawBody = JSON.stringify(payload);
+                const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
+                    method: 'POST',
+                    headers: this.getHeaders(rawBody, timestamp),
+                    body: rawBody
+                });
+                return await res.json();
+            }
+            else {
+                const payload = {
+                    orderId: `WD_${Date.now()}_${telegramId}`,
+                    cwalletUser: walletAddress,
+                    amount: executionAmount.toFixed(8),
+                    coinId: coinId
+                };
+                const rawBody = JSON.stringify(payload);
+                const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToCwallet', {
+                    method: 'POST',
+                    headers: this.getHeaders(rawBody, timestamp),
+                    body: rawBody
+                });
+                return await res.json();
+            }
+        };
+        try {
+            let data = await triggerWithdraw();
+            if (data.code === 14000) {
+                this.logger.warn(`Insufficient Treasury Balance (Code 14000). Triggering Auto-Swap Bridge for ${coin}...`);
+                const refilled = await this.refillTreasuryLiquidityViaSwap(coinId, executionAmount);
+                if (refilled) {
+                    this.logger.log(`Auto-Swap Bridge Successful. Re-attempting Withdrawal...`);
+                    data = await triggerWithdraw();
+                }
+                else {
+                    this.logger.warn(`Auto-Swap Bridge failed for ${coin}.`);
+                }
+            }
+            if (data.code === 10000) {
+                let displayStatus = tier === 'onchain' ? 'pending' : 'complete';
+                await this.txModel.create({
+                    telegramId,
+                    type: 'WITHDRAW',
+                    coin: coin.toUpperCase(),
+                    amount: executionAmount,
+                    tier: tier.toUpperCase(),
+                    status: displayStatus
+                });
+                return { success: true, msg: `Withdrawal of ${amount} ${coin} to ${walletAddress} processed successfully` };
+            }
+            await this.usersService.creditCrypto(telegramId, coin, amount);
+            await this.txModel.create({
+                telegramId,
+                type: 'WITHDRAW',
+                coin: coin.toUpperCase(),
+                amount: executionAmount,
+                tier: tier.toUpperCase(),
+                status: 'reject'
+            });
+            return { success: false, error: data.msg || 'CCPayment V2 Gateway rejected payload' };
+        }
+        catch (e) {
+            this.logger.error("Create Withdrawal Failed", e);
+            await this.usersService.creditCrypto(telegramId, coin, amount);
+            return { success: false, error: 'Network failure. Balance refunded.' };
+        }
+    }
+    verifyWebhookSignature(headers, rawBody) {
+        const sign = headers['sign'] || headers['x-signature'];
+        const timestamp = headers['timestamp'] || '';
+        if (!sign)
+            return false;
+        const hash1 = crypto.createHmac('sha256', this.appSecret).update(rawBody).digest('hex');
+        if (hash1 === sign)
+            return true;
+        const text2 = this.appId + timestamp + rawBody;
+        const hash2 = crypto.createHmac('sha256', this.appSecret).update(text2).digest('hex');
+        if (hash2 === sign)
+            return true;
+        const text3 = timestamp + rawBody;
+        const hash3 = crypto.createHmac('sha256', this.appSecret).update(text3).digest('hex');
+        if (hash3 === sign)
+            return true;
+        return false;
+    }
+    async handleWebhook(event) {
+        this.logger.log('Receiving Webhook Event from CCPayment: ', event);
+        if (event.status !== 'Successful' && event.status !== 2) {
+            return { success: true, processed: false, reason: 'Status is not paid' };
+        }
+        const telegramId = event.customValue;
+        if (!telegramId)
+            return { success: true, processed: false, reason: 'No identifier attached' };
+        let elixirAmount = 0;
+        if (event.productName) {
+            const match = event.productName.match(/^([0-9\.]+)\s+ELIXIR/);
+            if (match && match[1]) {
+                elixirAmount = parseFloat(match[1]);
+            }
+        }
+        if (elixirAmount <= 0) {
+            return { success: true, processed: false, reason: 'Invalid or zero ELIXIR payload' };
+        }
+        await this.usersService.creditRewardAndLogTask(telegramId, elixirAmount, `DEP_CCPAYMENT_${event.orderId || Date.now()}`);
+        const cryptoSymbol = event.coinSymbol || event.crypto || 'USDT';
+        const cryptoAmountStr = event.amount || event.cryptoAmount || '0';
+        await this.txModel.create({
+            telegramId,
+            type: 'DEPOSIT',
+            coin: cryptoSymbol.toUpperCase(),
+            amount: parseFloat(cryptoAmountStr) || elixirAmount,
+            tier: 'STANDARD',
+            status: 'complete'
+        });
+        return { success: true, processed: true, credited: elixirAmount };
+    }
+    async getTransactions(telegramId) {
+        const txs = await this.txModel.find({ telegramId }).sort({ createdAt: -1 }).limit(100).exec();
+        return { success: true, transactions: txs };
+    }
+};
+exports.PaymentService = PaymentService;
+exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
+    (0, common_1.Injectable)(),
+    __param(0, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
+    __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
+    __metadata("design:paramtypes", [users_service_1.UsersService,
+        mongoose_2.Model])
+], PaymentService);
+//# sourceMappingURL=payment.service.js.map

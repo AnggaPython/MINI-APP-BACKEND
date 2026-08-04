@@ -76,7 +76,23 @@ let UsersController = class UsersController {
         if (!id)
             return { error: 'Missing id' };
         const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance };
+        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress };
+    }
+    async bindWallet(body) {
+        if (!body.telegramId || !body.cwalletUid)
+            return { error: 'Missing parameters' };
+        return await this.usersService.bindCwalletUid(body.telegramId, body.cwalletUid);
+    }
+    async bindSolana(body) {
+        if (!body.telegramId || !body.solanaAddress)
+            return { error: 'Missing parameters' };
+        return await this.usersService.bindSolanaAddress(body.telegramId, body.solanaAddress);
+    }
+    async swapElixir(body) {
+        if (!body.telegramId || !body.amount || !body.targetCoin) {
+            return { error: 'Missing swap parameters' };
+        }
+        return await this.usersService.swapTokens(body.telegramId, body.amount, body.targetCoin);
     }
 };
 exports.UsersController = UsersController;
@@ -136,6 +152,27 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getBalance", null);
+__decorate([
+    (0, common_1.Post)('bind-wallet'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "bindWallet", null);
+__decorate([
+    (0, common_1.Post)('bind-solana'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "bindSolana", null);
+__decorate([
+    (0, common_1.Post)('swap'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "swapElixir", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('users'),
     __metadata("design:paramtypes", [users_service_1.UsersService])

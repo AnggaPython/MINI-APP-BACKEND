@@ -16,6 +16,8 @@ export declare class UsersService {
     }>;
     findByTelegramId(telegramId: string): Promise<User | null>;
     debitElixir(telegramId: string, amount: number): Promise<boolean>;
+    debitCrypto(telegramId: string, coin: string, amount: number): Promise<boolean>;
+    creditCrypto(telegramId: string, coin: string, amount: number): Promise<boolean>;
     creditRewardAndLogTask(telegramId: string, reward: number, campaignId: string): Promise<boolean>;
     creditReferralBonus(uplineTelegramId: string, margin: number, downlineUsername: string, actionHash: string): Promise<boolean>;
     getReferralStats(telegramId: string): Promise<{
@@ -96,5 +98,59 @@ export declare class UsersService {
     }>;
     getBalance(telegramId: string): Promise<{
         elixirBalance: number;
+        cryptoBalances: Record<string, number>;
+        cwalletUid: string | null;
+        solanaAddress: string | null;
+    }>;
+    bindCwalletUid(telegramId: string, uid: string): Promise<{
+        error: string;
+        success?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        user: (import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | null;
+        error?: undefined;
+    }>;
+    bindSolanaAddress(telegramId: string, address: string): Promise<{
+        error: string;
+        success?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        user: (import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | null;
+        error?: undefined;
+    }>;
+    swapTokens(telegramId: string, fromAmount: number, targetCoin: string): Promise<{
+        error: string;
+        success?: undefined;
+        user?: undefined;
+        received?: undefined;
+        gross?: undefined;
+        spread?: undefined;
+    } | {
+        success: boolean;
+        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
+        received: number;
+        gross: number;
+        spread: number;
+        error?: undefined;
     }>;
 }

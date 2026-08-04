@@ -99,6 +99,31 @@ export class UsersService {
         return !!result;
     }
 
+    async debitCrypto(telegramId: string, coin: string, amount: number): Promise<boolean> {
+        if (amount <= 0 || !coin) return false;
+
+        // Ensure atomic deduction directly on the dynamic symbol mapping
+        const result = await this.userModel.findOneAndUpdate(
+            {
+                telegramId,
+                [`cryptoBalances.${coin}`]: { $gte: amount }
+            },
+            {
+                $inc: { [`cryptoBalances.${coin}`]: -amount }
+            }
+        ).exec();
+        return !!result;
+    }
+
+    async creditCrypto(telegramId: string, coin: string, amount: number): Promise<boolean> {
+        if (amount <= 0 || !coin) return false;
+        const result = await this.userModel.findOneAndUpdate(
+            { telegramId },
+            { $inc: { [`cryptoBalances.${coin}`]: amount } }
+        ).exec();
+        return !!result;
+    }
+
     async creditRewardAndLogTask(telegramId: string, reward: number, campaignId: string): Promise<boolean> {
         // Prevent double claiming
         const result = await this.userModel.findOneAndUpdate(
@@ -211,6 +236,95 @@ export class UsersService {
 
     async getBalance(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
-        return { elixirBalance: user?.elixirBalance || 0 };
+        return {
+            elixirBalance: user?.elixirBalance || 0,
+            cryptoBalances: user?.cryptoBalances || {},
+            cwalletUid: user?.cwalletUid || null,
+            solanaAddress: user?.solanaAddress || null
+        };
+    }
+
+    async bindCwalletUid(telegramId: string, uid: string) {
+        if (!uid || uid.trim() === '') return { error: 'Invalid UID' };
+        const user = await this.userModel.findOneAndUpdate(
+            { telegramId },
+            { $set: { cwalletUid: uid } },
+            { returnDocument: 'after' }
+        ).exec();
+        return { success: true, user };
+    }
+
+    async bindSolanaAddress(telegramId: string, address: string) {
+        if (!address || address.trim() === '') return { error: 'Invalid Address' };
+        const user = await this.userModel.findOneAndUpdate(
+            { telegramId },
+            { $set: { solanaAddress: address } },
+            { returnDocument: 'after' }
+        ).exec();
+        return { success: true, user };
+    }
+
+    async swapTokens(telegramId: string, fromAmount: number, targetCoin: string) {
+        if (fromAmount <= 0) return { error: 'Invalid exchange amount' };
+
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user || user.elixirBalance < fromAmount) {
+            return { error: 'Insufficient ELIXIR balance for this swap' };
+        }
+
+        const coinGeckoMap: Record<string, string> = {
+            'ETH': 'ethereum',
+            'MATIC': 'matic-network',
+            'PEPE': 'pepe',
+            'SOL': 'solana',
+            'TIA': 'celestia',
+            'LINK': 'chainlink',
+            'INJ': 'injective-protocol',
+            'DYM': 'dymension',
+            'DOT': 'polkadot',
+            'CRO': 'crypto-com-chain',
+            'ARB': 'arbitrum'
+        };
+
+        const geckoId = coinGeckoMap[targetCoin.toUpperCase()];
+        if (!geckoId && !['USDT', 'USDC'].includes(targetCoin.toUpperCase())) {
+            return { error: 'Unsupported destination token selected' };
+        }
+
+        let cryptoPrice = 1.0;
+        if (geckoId) {
+            try {
+                const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+                const data = await res.json();
+                cryptoPrice = data[geckoId]?.usd || 1;
+            } catch (e) {
+                cryptoPrice = targetCoin === 'ETH' ? 3000 : (targetCoin === 'PEPE' ? 0.0000045 : 0.5); // Fallback
+            }
+        }
+
+        // Math Calculations
+        const usdValue = (fromAmount / 10000); // 10000 ELIXIR = 1 USD
+        const grossCryptoAmount = usdValue / cryptoPrice;
+
+        // 8% Spread Deduction
+        const netCryptoAmount = grossCryptoAmount * 0.92;
+
+        if (!user.cryptoBalances) user.cryptoBalances = {};
+
+        const currentTargetBalance = user.cryptoBalances[targetCoin] || 0;
+        user.cryptoBalances[targetCoin] = currentTargetBalance + netCryptoAmount;
+        user.elixirBalance -= fromAmount;
+
+        // Mark explicitly for Mongoose to save Object Maps correctly
+        user.markModified('cryptoBalances');
+        await user.save();
+
+        return {
+            success: true,
+            user,
+            received: netCryptoAmount,
+            gross: grossCryptoAmount,
+            spread: (grossCryptoAmount * 0.08)
+        };
     }
 }

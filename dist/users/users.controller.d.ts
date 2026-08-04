@@ -125,9 +125,67 @@ export declare class UsersController {
         error: string;
         success?: undefined;
         balance?: undefined;
+        cryptoBalances?: undefined;
+        cwalletUid?: undefined;
+        solanaAddress?: undefined;
     } | {
         success: boolean;
         balance: number;
+        cryptoBalances: Record<string, number>;
+        cwalletUid: string | null;
+        solanaAddress: string | null;
         error?: undefined;
+    }>;
+    bindWallet(body: {
+        telegramId: string;
+        cwalletUid: string;
+    }): Promise<{
+        success: boolean;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | null;
+        error?: undefined;
+    } | {
+        error: string;
+    }>;
+    bindSolana(body: {
+        telegramId: string;
+        solanaAddress: string;
+    }): Promise<{
+        success: boolean;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | null;
+        error?: undefined;
+    } | {
+        error: string;
+    }>;
+    swapElixir(body: {
+        telegramId: string;
+        amount: number;
+        targetCoin: string;
+    }): Promise<{
+        success: boolean;
+        user: import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
+        received: number;
+        gross: number;
+        spread: number;
+        error?: undefined;
+    } | {
+        error: string;
     }>;
 }

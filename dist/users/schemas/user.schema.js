@@ -18,6 +18,7 @@ let User = class User {
     username;
     photoUrl;
     isPremium;
+    cryptoBalances;
     elixirBalance;
     miningStartDate;
     completedTasks;
@@ -25,6 +26,8 @@ let User = class User {
     referralBalance;
     lastDailyLogin;
     joinedTelegram;
+    cwalletUid;
+    solanaAddress;
 };
 exports.User = User;
 __decorate([
@@ -51,6 +54,10 @@ __decorate([
     (0, mongoose_1.Prop)({ default: false }),
     __metadata("design:type", Boolean)
 ], User.prototype, "isPremium", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, default: {} }),
+    __metadata("design:type", Object)
+], User.prototype, "cryptoBalances", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
@@ -79,6 +86,14 @@ __decorate([
     (0, mongoose_1.Prop)({ default: false }),
     __metadata("design:type", Boolean)
 ], User.prototype, "joinedTelegram", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: null }),
+    __metadata("design:type", String)
+], User.prototype, "cwalletUid", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: null }),
+    __metadata("design:type", String)
+], User.prototype, "solanaAddress", void 0);
 exports.User = User = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], User);

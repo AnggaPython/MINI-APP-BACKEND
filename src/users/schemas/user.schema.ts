@@ -23,6 +23,9 @@ export class User {
   @Prop({ default: false })
   isPremium: boolean;
 
+  @Prop({ type: Object, default: {} })
+  cryptoBalances: Record<string, number>;
+
   @Prop({ default: 0 })
   elixirBalance: number;
 
@@ -43,6 +46,12 @@ export class User {
 
   @Prop({ default: false })
   joinedTelegram: boolean;
+
+  @Prop({ default: null })
+  cwalletUid: string;
+
+  @Prop({ default: null })
+  solanaAddress: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

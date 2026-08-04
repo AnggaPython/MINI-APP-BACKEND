@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { BankModule } from './bank/bank.module';
 import { AchievementsModule } from './achievements/achievements.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AchievementsModule } from './achievements/achievements.module';
     CampaignsModule,
     BankModule,
     AchievementsModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
