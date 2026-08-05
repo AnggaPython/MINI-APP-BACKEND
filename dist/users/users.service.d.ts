@@ -157,6 +157,19 @@ export declare class UsersService {
         spread: number;
         error?: undefined;
     }>;
+    convertDustToElixir(telegramId: string, coinsToConvert: string[]): Promise<{
+        error: string;
+        success?: undefined;
+        elixirGained?: undefined;
+        newElixirBalance?: undefined;
+        cryptoBalances?: undefined;
+    } | {
+        success: boolean;
+        elixirGained: number;
+        newElixirBalance: number;
+        cryptoBalances: Record<string, number>;
+        error?: undefined;
+    }>;
     executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo'): Promise<{
         error: string;
         success?: undefined;

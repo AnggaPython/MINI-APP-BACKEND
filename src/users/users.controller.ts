@@ -80,6 +80,14 @@ export class UsersController {
         return await this.usersService.bindSolanaAddress(body.telegramId, body.solanaAddress);
     }
 
+    @Post('convert-dust')
+    async convertDust(@Body() body: { telegramId: string, coins: string[] }) {
+        if (!body.telegramId || !body.coins || !body.coins.length) {
+            return { error: 'Missing parameters: telegramId or coins array' };
+        }
+        return await this.usersService.convertDustToElixir(body.telegramId, body.coins);
+    }
+
     @Post('swap')
     async swapElixir(@Body() body: { telegramId: string, amount: number, targetCoin: string }) {
         if (!body.telegramId || !body.amount || !body.targetCoin) {

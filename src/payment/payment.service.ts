@@ -197,6 +197,25 @@ export class PaymentService {
     // Creates a withdrawal request from Merchant -> User
     async createWithdrawRequest(telegramId: string, coin: string, amount: number, walletAddress: string, tier: string = 'standard') {
         if (amount <= 0) return { success: false, error: 'Invalid amount' };
+        if (coin.toUpperCase() === 'PEPE' && amount < 1500) return { success: false, error: 'Minimum withdrawal for PEPE is 1500' };
+
+        // Fetch live USD value strictly to authenticate subsidiary eligibility
+        let liveUsdPrice = coin.toUpperCase() === 'PEPE' ? 0.0000045 : 1;
+        const geckoIds: Record<string, string> = { 'PEPE': 'pepe', 'MATIC': 'matic-network', 'ETH': 'ethereum', 'USDT': 'tether', 'USDC': 'usd-coin', 'SOL': 'solana' };
+        const geckoId = geckoIds[coin.toUpperCase()];
+        if (geckoId) {
+            try {
+                const priceRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+                const priceData = await priceRes.json();
+                if (priceData[geckoId]?.usd) {
+                    liveUsdPrice = priceData[geckoId].usd;
+                }
+            } catch (e) {
+                // Fallback to static baseline if Coingecko is completely offline
+            }
+        }
+        const usdValue = amount * liveUsdPrice;
+        const isBonusEligible = usdValue >= 0.3;
 
         // Process Advance / On-chain split fees
         let executionAmount = amount;
@@ -204,16 +223,19 @@ export class PaymentService {
             executionAmount = amount * 0.985; // 1.5% Cut
         } else if (tier === 'onchain') {
             executionAmount = amount * 0.965; // 3.5% Cut
+        } else if (tier === 'standard' && isBonusEligible) {
+            executionAmount = amount * 1.03; // 3% Bonus Subsidy
         }
 
         // 1. Debit exact Crypto immediately from user DB (we still debit the theoretical gross `amount` from their balance)
         const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
         if (!debited) return { success: false, error: 'Insufficient crypto balance' };
 
-        // Route profit margin (Tier Cut) to Admin Profit Pool
+        // Route profit margin (Tier Cut or Subsidy Deduct) to Admin Profit Pool
         const withdrawalMargin = amount - executionAmount;
-        if (withdrawalMargin > 0) {
-            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, 'WITHDRAW_FEE', telegramId);
+        if (withdrawalMargin !== 0) {
+            const marginSource = withdrawalMargin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
+            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, marginSource, telegramId);
         }
 
         // 2. Identify the Coin ID for CCPayment V2

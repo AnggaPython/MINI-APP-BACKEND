@@ -136,11 +136,17 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 body: pricePayload
             });
             const priceData = await priceRes.json();
-            if (priceData.code !== 10000 || !priceData.data.prices[targetCoinId.toString()])
+            if (priceData.code !== 10000 || !priceData.data.prices[targetCoinId.toString()]) {
+                this.logger.error(`[SWAP ERROR] Failed to fetch price for coin ${targetCoinId}: ${JSON.stringify(priceData)}`);
                 return false;
+            }
             const coinUsdtPrice = parseFloat(priceData.data.prices[targetCoinId.toString()]);
             let neededUsdc = requiredAmount * coinUsdtPrice;
             let inputUsdc = (neededUsdc * 1.02) + 0.2;
+            if (inputUsdc < 0.35) {
+                inputUsdc = 0.35;
+            }
+            this.logger.log(`[SWAP INFO] Attempting to swap ${inputUsdc} USDC for coinId ${targetCoinId}`);
             ts = Math.floor(Date.now() / 1000).toString();
             const estPayload = JSON.stringify({
                 coinIdIn: USDC_COIN_ID,
@@ -153,11 +159,15 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 body: estPayload
             });
             const estData = await estRes.json();
-            if (estData.code !== 10000)
+            if (estData.code !== 10000) {
+                this.logger.error(`[SWAP ERROR] Estimate API Failed: ${JSON.stringify(estData)}`);
                 return false;
+            }
             const netAmountOut = parseFloat(estData.data.netAmountOut);
-            if (netAmountOut < requiredAmount)
+            if (netAmountOut < requiredAmount) {
+                this.logger.error(`[SWAP ERROR] Net Amount Out (${netAmountOut}) is less than required (${requiredAmount})`);
                 return false;
+            }
             ts = Math.floor(Date.now() / 1000).toString();
             const orderId = `SWP_${Date.now()}_${targetCoinId}`;
             const swapPayload = JSON.stringify({
@@ -173,9 +183,12 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 body: swapPayload
             });
             const swapData = await swapRes.json();
-            if (swapData.code !== 10000)
+            if (swapData.code !== 10000) {
+                this.logger.error(`[SWAP ERROR] Execute API Failed: ${JSON.stringify(swapData)}`);
                 return false;
+            }
             const recordId = swapData.data.recordId;
+            this.logger.log(`[SWAP INFO] Swap order ${orderId} submitted successfully. Record ID: ${recordId}. Awaiting completion...`);
             for (let i = 0; i < 6; i++) {
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 ts = Math.floor(Date.now() / 1000).toString();
@@ -187,22 +200,45 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 });
                 const pollData = await pollRes.json();
                 if (pollData.code === 10000) {
-                    if (pollData.data.record.status === 'Success')
+                    if (pollData.data.record.status === 'Success') {
+                        this.logger.log(`[SWAP INFO] Swap Completed Successfully!`);
                         return true;
-                    if (pollData.data.record.status === 'Failed')
+                    }
+                    if (pollData.data.record.status === 'Failed') {
+                        this.logger.error(`[SWAP ERROR] Swap Record marked as Failed: ${JSON.stringify(pollData.data.record)}`);
                         return false;
+                    }
                 }
             }
+            this.logger.error(`[SWAP ERROR] Poll timeout exceeded for swap ${recordId}`);
             return false;
         }
         catch (error) {
-            console.error("Auto Swap Error:", error);
+            this.logger.error("[SWAP ERROR] Unknown Auto Swap Crash:", error);
             return false;
         }
     }
     async createWithdrawRequest(telegramId, coin, amount, walletAddress, tier = 'standard') {
         if (amount <= 0)
             return { success: false, error: 'Invalid amount' };
+        if (coin.toUpperCase() === 'PEPE' && amount < 1500)
+            return { success: false, error: 'Minimum withdrawal for PEPE is 1500' };
+        let liveUsdPrice = coin.toUpperCase() === 'PEPE' ? 0.0000045 : 1;
+        const geckoIds = { 'PEPE': 'pepe', 'MATIC': 'matic-network', 'ETH': 'ethereum', 'USDT': 'tether', 'USDC': 'usd-coin', 'SOL': 'solana' };
+        const geckoId = geckoIds[coin.toUpperCase()];
+        if (geckoId) {
+            try {
+                const priceRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+                const priceData = await priceRes.json();
+                if (priceData[geckoId]?.usd) {
+                    liveUsdPrice = priceData[geckoId].usd;
+                }
+            }
+            catch (e) {
+            }
+        }
+        const usdValue = amount * liveUsdPrice;
+        const isBonusEligible = usdValue >= 0.3;
         let executionAmount = amount;
         if (tier === 'advance') {
             executionAmount = amount * 0.985;
@@ -210,12 +246,16 @@ let PaymentService = PaymentService_1 = class PaymentService {
         else if (tier === 'onchain') {
             executionAmount = amount * 0.965;
         }
+        else if (tier === 'standard' && isBonusEligible) {
+            executionAmount = amount * 1.03;
+        }
         const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
         if (!debited)
             return { success: false, error: 'Insufficient crypto balance' };
         const withdrawalMargin = amount - executionAmount;
-        if (withdrawalMargin > 0) {
-            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, 'WITHDRAW_FEE', telegramId);
+        if (withdrawalMargin !== 0) {
+            const marginSource = withdrawalMargin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
+            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, marginSource, telegramId);
         }
         const coinId = this.coinMap[coin.toUpperCase()];
         if (!coinId) {

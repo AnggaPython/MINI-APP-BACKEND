@@ -48,4 +48,5 @@ exports.Transaction = Transaction = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Transaction);
 exports.TransactionSchema = mongoose_1.SchemaFactory.createForClass(Transaction);
+exports.TransactionSchema.index({ createdAt: 1 }, { expireAfterSeconds: 604800 });
 //# sourceMappingURL=transaction.schema.js.map

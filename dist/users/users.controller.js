@@ -88,6 +88,12 @@ let UsersController = class UsersController {
             return { error: 'Missing parameters' };
         return await this.usersService.bindSolanaAddress(body.telegramId, body.solanaAddress);
     }
+    async convertDust(body) {
+        if (!body.telegramId || !body.coins || !body.coins.length) {
+            return { error: 'Missing parameters: telegramId or coins array' };
+        }
+        return await this.usersService.convertDustToElixir(body.telegramId, body.coins);
+    }
     async swapElixir(body) {
         if (!body.telegramId || !body.amount || !body.targetCoin) {
             return { error: 'Missing swap parameters' };
@@ -183,6 +189,13 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "bindSolana", null);
+__decorate([
+    (0, common_1.Post)('convert-dust'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "convertDust", null);
 __decorate([
     (0, common_1.Post)('swap'),
     __param(0, (0, common_1.Body)()),

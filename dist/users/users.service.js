@@ -306,6 +306,69 @@ let UsersService = class UsersService {
             spread: (grossCryptoAmount * 0.08)
         };
     }
+    async convertDustToElixir(telegramId, coinsToConvert) {
+        if (!coinsToConvert || coinsToConvert.length === 0)
+            return { error: 'No coins selected' };
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user)
+            return { error: 'User not found' };
+        if (!user.cryptoBalances)
+            return { error: 'No balances to convert' };
+        const coinGeckoMap = {
+            'ETH': 'ethereum',
+            'MATIC': 'matic-network',
+            'PEPE': 'pepe',
+            'SOL': 'solana',
+            'TIA': 'celestia',
+            'LINK': 'chainlink',
+            'INJ': 'injective-protocol',
+            'DYM': 'dymension',
+            'DOT': 'polkadot',
+            'CRO': 'crypto-com-chain',
+            'ARB': 'arbitrum'
+        };
+        let totalUsdValue = 0;
+        for (const coin of coinsToConvert) {
+            const sym = coin.toUpperCase();
+            const balance = user.cryptoBalances[sym] || 0;
+            if (balance <= 0)
+                continue;
+            let cryptoPrice = 1.0;
+            const geckoId = coinGeckoMap[sym];
+            if (geckoId) {
+                try {
+                    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+                    const data = await res.json();
+                    cryptoPrice = data[geckoId]?.usd || 1;
+                }
+                catch (e) {
+                    cryptoPrice = sym === 'ETH' ? 3000 : (sym === 'PEPE' ? 0.0000045 : 0.5);
+                }
+            }
+            const grossUsdValue = balance * cryptoPrice;
+            const feeUsd = grossUsdValue * 0.003;
+            const netUsdValue = grossUsdValue - feeUsd;
+            totalUsdValue += netUsdValue;
+            const feeInNativeToken = balance * 0.003;
+            if (feeInNativeToken > 0) {
+                await this.adminService.addProfit(sym, feeInNativeToken, 'DUST_CONVERT', telegramId);
+            }
+            user.cryptoBalances[sym] = 0;
+        }
+        if (totalUsdValue <= 0) {
+            return { error: 'Selected balances have zero value.' };
+        }
+        const elixirGained = totalUsdValue * 10000;
+        user.elixirBalance = (user.elixirBalance || 0) + elixirGained;
+        user.markModified('cryptoBalances');
+        await user.save();
+        return {
+            success: true,
+            elixirGained,
+            newElixirBalance: user.elixirBalance,
+            cryptoBalances: user.cryptoBalances
+        };
+    }
     async executeHiLoBet(telegramId, betAmount, multiplier, type) {
         if (betAmount < 10 || betAmount > 1000000) {
             return { error: 'Bet amount must be between 10 and 1000000 ELIXIR' };

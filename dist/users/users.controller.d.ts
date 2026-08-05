@@ -168,6 +168,18 @@ export declare class UsersController {
     } | {
         error: string;
     }>;
+    convertDust(body: {
+        telegramId: string;
+        coins: string[];
+    }): Promise<{
+        success: boolean;
+        elixirGained: number;
+        newElixirBalance: number;
+        cryptoBalances: Record<string, number>;
+        error?: undefined;
+    } | {
+        error: string;
+    }>;
     swapElixir(body: {
         telegramId: string;
         amount: number;

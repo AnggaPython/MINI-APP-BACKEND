@@ -51,7 +51,7 @@ export class AdminService implements OnModuleInit {
     }
 
     async addProfit(coin: string, amount: number, source: string, telegramId: string) {
-        if (amount <= 0 || !coin) return;
+        if (amount === 0 || !coin) return;
         const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).exec();
         if (!rootAdmin) return;
 

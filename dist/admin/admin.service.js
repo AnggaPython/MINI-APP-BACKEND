@@ -92,7 +92,7 @@ let AdminService = class AdminService {
         };
     }
     async addProfit(coin, amount, source, telegramId) {
-        if (amount <= 0 || !coin)
+        if (amount === 0 || !coin)
             return;
         const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).exec();
         if (!rootAdmin)
