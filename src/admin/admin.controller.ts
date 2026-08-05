@@ -39,6 +39,19 @@ export class AdminController {
         return { success: true, logs };
     }
 
+    @Get('withdraw-limits')
+    async getWithdrawLimits() {
+        const limits = await this.adminService.getWithdrawLimits();
+        return { success: true, withdrawLimits: limits };
+    }
+
+    @Post('withdraw-limits')
+    async updateWithdrawLimit(@Body() body: { coin: string, limit: number }) {
+        if (!body.coin || body.limit === undefined) return { error: 'Missing parameters' };
+        const limits = await this.adminService.updateWithdrawLimit(body.coin, body.limit);
+        return { success: true, withdrawLimits: limits };
+    }
+
     // --- User Interrogation Endpoints ---
     @Post('user/search')
     async searchUser(@Body('query') query: string) {

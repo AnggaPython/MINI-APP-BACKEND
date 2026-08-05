@@ -22,6 +22,9 @@ export class Admin {
 
     @Prop({ type: Object, default: {} })
     profitBalances: Record<string, number>;
+
+    @Prop({ type: Object, default: { 'PEPE': 10000000, 'USDC': 200 } })
+    withdrawLimits: Record<string, number>;
 }
 
 export const AdminSchema = SchemaFactory.createForClass(Admin);

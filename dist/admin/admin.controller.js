@@ -42,6 +42,16 @@ let AdminController = class AdminController {
         const logs = await this.adminService.getProfitLogs(coin);
         return { success: true, logs };
     }
+    async getWithdrawLimits() {
+        const limits = await this.adminService.getWithdrawLimits();
+        return { success: true, withdrawLimits: limits };
+    }
+    async updateWithdrawLimit(body) {
+        if (!body.coin || body.limit === undefined)
+            return { error: 'Missing parameters' };
+        const limits = await this.adminService.updateWithdrawLimit(body.coin, body.limit);
+        return { success: true, withdrawLimits: limits };
+    }
     async searchUser(query) {
         if (!query)
             return { error: 'Missing search query' };
@@ -96,6 +106,19 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getProfitLogs", null);
+__decorate([
+    (0, common_1.Get)('withdraw-limits'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getWithdrawLimits", null);
+__decorate([
+    (0, common_1.Post)('withdraw-limits'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "updateWithdrawLimit", null);
 __decorate([
     (0, common_1.Post)('user/search'),
     __param(0, (0, common_1.Body)('query')),

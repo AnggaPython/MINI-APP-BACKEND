@@ -244,7 +244,12 @@ let PaymentService = PaymentService_1 = class PaymentService {
             executionAmount = amount * 0.985;
         }
         else if (tier === 'onchain') {
-            executionAmount = amount * 0.965;
+            const cryptoFee = 0.5 / liveUsdPrice;
+            executionAmount = amount - cryptoFee;
+            if (executionAmount <= 0) {
+                await this.usersService.creditCrypto(telegramId, coin, amount);
+                return { success: false, error: 'Withdrawal size too small to cover the $0.5 flat network fee' };
+            }
         }
         else if (tier === 'standard' && isBonusEligible) {
             executionAmount = amount * 1.03;
@@ -252,10 +257,14 @@ let PaymentService = PaymentService_1 = class PaymentService {
         const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
         if (!debited)
             return { success: false, error: 'Insufficient crypto balance' };
-        const withdrawalMargin = amount - executionAmount;
-        if (withdrawalMargin !== 0) {
-            const marginSource = withdrawalMargin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
-            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, marginSource, telegramId);
+        let withdrawalMarginToAdmin = amount - executionAmount;
+        if (tier === 'onchain') {
+            const ccPaymentToll = 0.25 / liveUsdPrice;
+            withdrawalMarginToAdmin = withdrawalMarginToAdmin - ccPaymentToll;
+        }
+        if (withdrawalMarginToAdmin !== 0) {
+            const marginSource = withdrawalMarginToAdmin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
+            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMarginToAdmin, marginSource, telegramId);
         }
         const coinId = this.coinMap[coin.toUpperCase()];
         if (!coinId) {
@@ -310,14 +319,13 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 }
             }
             if (data.code === 10000) {
-                let displayStatus = tier === 'onchain' ? 'pending' : 'complete';
                 await this.txModel.create({
                     telegramId,
                     type: 'WITHDRAW',
                     coin: coin.toUpperCase(),
                     amount: executionAmount,
                     tier: tier.toUpperCase(),
-                    status: displayStatus
+                    status: 'complete'
                 });
                 return { success: true, msg: `Withdrawal of ${amount} ${coin} to ${walletAddress} processed successfully` };
             }

@@ -120,6 +120,22 @@ let AdminService = class AdminService {
         const filter = coin && coin !== 'ALL' ? { coin: coin.toUpperCase() } : {};
         return this.profitLogModel.find(filter).sort({ createdAt: -1 }).limit(50).exec();
     }
+    async getWithdrawLimits() {
+        const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).select('withdrawLimits').exec();
+        return rootAdmin?.withdrawLimits || { 'PEPE': 10000000, 'USDC': 200 };
+    }
+    async updateWithdrawLimit(coin, limit) {
+        const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).exec();
+        if (rootAdmin) {
+            if (!rootAdmin.withdrawLimits)
+                rootAdmin.withdrawLimits = {};
+            rootAdmin.withdrawLimits[coin.toUpperCase()] = limit;
+            rootAdmin.markModified('withdrawLimits');
+            await rootAdmin.save();
+            return rootAdmin.withdrawLimits;
+        }
+        return {};
+    }
 };
 exports.AdminService = AdminService;
 exports.AdminService = AdminService = __decorate([

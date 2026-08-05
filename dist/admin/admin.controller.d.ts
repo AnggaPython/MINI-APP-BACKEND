@@ -38,6 +38,22 @@ export declare class AdminController {
             id: string;
         })[];
     }>;
+    getWithdrawLimits(): Promise<{
+        success: boolean;
+        withdrawLimits: Record<string, number>;
+    }>;
+    updateWithdrawLimit(body: {
+        coin: string;
+        limit: number;
+    }): Promise<{
+        error: string;
+        success?: undefined;
+        withdrawLimits?: undefined;
+    } | {
+        success: boolean;
+        withdrawLimits: Record<string, number>;
+        error?: undefined;
+    }>;
     searchUser(query: string): Promise<{
         error: string;
         success?: undefined;

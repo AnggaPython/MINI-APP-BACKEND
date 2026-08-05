@@ -105,6 +105,7 @@ export declare class UsersService {
         cryptoBalances: Record<string, number>;
         cwalletUid: string | null;
         solanaAddress: string | null;
+        withdrawLimits: Record<string, number>;
     }>;
     bindCwalletUid(telegramId: string, uid: string): Promise<{
         error: string;

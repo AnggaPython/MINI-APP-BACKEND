@@ -241,11 +241,13 @@ export class UsersService {
 
     async getBalance(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
+        const withdrawLimits = await this.adminService.getWithdrawLimits();
         return {
             elixirBalance: user?.elixirBalance || 0,
             cryptoBalances: user?.cryptoBalances || {},
             cwalletUid: user?.cwalletUid || null,
-            solanaAddress: user?.solanaAddress || null
+            solanaAddress: user?.solanaAddress || null,
+            withdrawLimits
         };
     }
 

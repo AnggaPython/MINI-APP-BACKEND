@@ -222,7 +222,13 @@ export class PaymentService {
         if (tier === 'advance') {
             executionAmount = amount * 0.985; // 1.5% Cut
         } else if (tier === 'onchain') {
-            executionAmount = amount * 0.965; // 3.5% Cut
+            const cryptoFee = 0.5 / liveUsdPrice;
+            executionAmount = amount - cryptoFee;
+            if (executionAmount <= 0) {
+                // Refund before aborting
+                await this.usersService.creditCrypto(telegramId, coin, amount);
+                return { success: false, error: 'Withdrawal size too small to cover the $0.5 flat network fee' };
+            }
         } else if (tier === 'standard' && isBonusEligible) {
             executionAmount = amount * 1.03; // 3% Bonus Subsidy
         }
@@ -232,10 +238,17 @@ export class PaymentService {
         if (!debited) return { success: false, error: 'Insufficient crypto balance' };
 
         // Route profit margin (Tier Cut or Subsidy Deduct) to Admin Profit Pool
-        const withdrawalMargin = amount - executionAmount;
-        if (withdrawalMargin !== 0) {
-            const marginSource = withdrawalMargin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
-            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, marginSource, telegramId);
+        let withdrawalMarginToAdmin = amount - executionAmount;
+
+        // CCPayment strictly slices $0.25 as network toll for On-Chain, so Admin receives only the remaining margin
+        if (tier === 'onchain') {
+            const ccPaymentToll = 0.25 / liveUsdPrice;
+            withdrawalMarginToAdmin = withdrawalMarginToAdmin - ccPaymentToll;
+        }
+
+        if (withdrawalMarginToAdmin !== 0) {
+            const marginSource = withdrawalMarginToAdmin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
+            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMarginToAdmin, marginSource, telegramId);
         }
 
         // 2. Identify the Coin ID for CCPayment V2
@@ -297,14 +310,13 @@ export class PaymentService {
             }
 
             if (data.code === 10000) {
-                let displayStatus: string = tier === 'onchain' ? 'pending' : 'complete';
                 await this.txModel.create({
                     telegramId,
                     type: 'WITHDRAW',
                     coin: coin.toUpperCase(),
                     amount: executionAmount,
                     tier: tier.toUpperCase(),
-                    status: displayStatus
+                    status: 'complete'
                 });
                 return { success: true, msg: `Withdrawal of ${amount} ${coin} to ${walletAddress} processed successfully` };
             }

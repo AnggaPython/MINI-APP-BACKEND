@@ -18,6 +18,7 @@ let Admin = class Admin {
     lastLogin;
     lastIp;
     profitBalances;
+    withdrawLimits;
 };
 exports.Admin = Admin;
 __decorate([
@@ -44,6 +45,10 @@ __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
     __metadata("design:type", Object)
 ], Admin.prototype, "profitBalances", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, default: { 'PEPE': 10000000, 'USDC': 200 } }),
+    __metadata("design:type", Object)
+], Admin.prototype, "withdrawLimits", void 0);
 exports.Admin = Admin = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Admin);

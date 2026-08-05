@@ -27,4 +27,6 @@ export declare class AdminService implements OnModuleInit {
     } & {
         id: string;
     })[]>;
+    getWithdrawLimits(): Promise<Record<string, number>>;
+    updateWithdrawLimit(coin: string, limit: number): Promise<Record<string, number>>;
 }
