@@ -4,6 +4,7 @@ import { UsersService } from '../users/users.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
+import { AdminService } from '../admin/admin.service';
 
 @Injectable()
 export class PaymentService {
@@ -14,7 +15,8 @@ export class PaymentService {
 
     constructor(
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
-        @InjectModel(Transaction.name) private txModel: Model<TransactionDocument>
+        @InjectModel(Transaction.name) private txModel: Model<TransactionDocument>,
+        @Inject(forwardRef(() => AdminService)) private adminService: AdminService
     ) { }
 
     // Creates an invoice URL for Elixir top-up
@@ -180,6 +182,12 @@ export class PaymentService {
         const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
         if (!debited) return { success: false, error: 'Insufficient crypto balance' };
 
+        // Route profit margin (Tier Cut) to Admin Profit Pool
+        const withdrawalMargin = amount - executionAmount;
+        if (withdrawalMargin > 0) {
+            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, 'WITHDRAW_FEE', telegramId);
+        }
+
         // 2. Identify the Coin ID for CCPayment V2
         const coinId = this.coinMap[coin.toUpperCase()];
         if (!coinId) {
@@ -295,6 +303,12 @@ export class PaymentService {
 
     async handleWebhook(event: any) {
         this.logger.log('Receiving Webhook Event from CCPayment: ', event);
+
+        // Required by CCPayment setup tester
+        if (event.type === 'ActivateWebhookURL') {
+            this.logger.log('CCPayment Webhook Activated successfully');
+            return { success: true, processed: true, activation: true };
+        }
 
         // Status 2 is typically "Successful Payment" in CCPayment
         if (event.status !== 'Successful' && event.status !== 2) {

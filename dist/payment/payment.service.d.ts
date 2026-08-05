@@ -1,13 +1,15 @@
 import { UsersService } from '../users/users.service';
 import { Model } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
+import { AdminService } from '../admin/admin.service';
 export declare class PaymentService {
     private usersService;
     private txModel;
+    private adminService;
     private readonly logger;
     private readonly appId;
     private readonly appSecret;
-    constructor(usersService: UsersService, txModel: Model<TransactionDocument>);
+    constructor(usersService: UsersService, txModel: Model<TransactionDocument>, adminService: AdminService);
     createDepositCharge(telegramId: string, amountElixir: number): Promise<{
         success: boolean;
         paymentUrl: any;
@@ -33,12 +35,20 @@ export declare class PaymentService {
     handleWebhook(event: any): Promise<{
         success: boolean;
         processed: boolean;
+        activation: boolean;
+        reason?: undefined;
+        credited?: undefined;
+    } | {
+        success: boolean;
+        processed: boolean;
         reason: string;
+        activation?: undefined;
         credited?: undefined;
     } | {
         success: boolean;
         processed: boolean;
         credited: number;
+        activation?: undefined;
         reason?: undefined;
     }>;
     getTransactions(telegramId: string): Promise<{

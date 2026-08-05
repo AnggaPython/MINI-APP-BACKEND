@@ -3,13 +3,15 @@ import { Stake, StakeDocument } from './schemas/stake.schema';
 import { BankLog, BankLogDocument } from './schemas/bank-log.schema';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { AdminService } from '../admin/admin.service';
 export declare class BankService {
     private stakeModel;
     private bankLogModel;
     private usersService;
     private achievementsService;
+    private adminService;
     private readonly logger;
-    constructor(stakeModel: Model<StakeDocument>, bankLogModel: Model<BankLogDocument>, usersService: UsersService, achievementsService: AchievementsService);
+    constructor(stakeModel: Model<StakeDocument>, bankLogModel: Model<BankLogDocument>, usersService: UsersService, achievementsService: AchievementsService, adminService: AdminService);
     handleAutoClaim(): Promise<void>;
     calculateYield(stake: StakeDocument): number;
     getStats(telegramId: string): Promise<{

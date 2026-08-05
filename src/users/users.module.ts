@@ -6,6 +6,7 @@ import { User, UserSchema } from './schemas/user.schema';
 import { ReferralLog, ReferralLogSchema } from './schemas/referral-log.schema';
 import { HiLoBet, HiLoBetSchema } from './schemas/hilo-bet.schema';
 import { AchievementsModule } from '../achievements/achievements.module';
+import { AdminModule } from '../admin/admin.module';
 
 @Module({
   imports: [
@@ -14,7 +15,8 @@ import { AchievementsModule } from '../achievements/achievements.module';
       { name: ReferralLog.name, schema: ReferralLogSchema },
       { name: HiLoBet.name, schema: HiLoBetSchema }
     ]),
-    forwardRef(() => AchievementsModule)
+    forwardRef(() => AchievementsModule),
+    forwardRef(() => AdminModule)
   ],
   controllers: [UsersController],
   providers: [UsersService],

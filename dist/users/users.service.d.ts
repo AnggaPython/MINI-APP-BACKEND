@@ -3,12 +3,14 @@ import { User, UserDocument } from './schemas/user.schema';
 import { ReferralLog, ReferralLogDocument } from './schemas/referral-log.schema';
 import { HiLoBet, HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
+import { AdminService } from '../admin/admin.service';
 export declare class UsersService {
     private userModel;
     private referralLogModel;
     private hiloBetModel;
     private achievementsService;
-    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService);
+    private adminService;
+    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService, adminService: AdminService);
     syncTelegramUser(userData: any, referredBy?: string): Promise<User>;
     startMining(telegramId: string): Promise<User | null>;
     claimMining(telegramId: string): Promise<{
@@ -180,4 +182,15 @@ export declare class UsersService {
     searchUserForAdmin(query: string): Promise<User | null>;
     updateUserBalanceAdmin(telegramId: string, elixirBalance?: number, cryptoBalances?: Record<string, number>): Promise<User | null>;
     setUserBanStatus(telegramId: string, isBanned: boolean): Promise<User | null>;
+    getDashboardStatsAdmin(): Promise<{
+        totalUsers: number;
+        totalElixir: number;
+        recentUsers: (import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        })[];
+    }>;
 }

@@ -15,6 +15,7 @@ const stake_schema_1 = require("./schemas/stake.schema");
 const bank_log_schema_1 = require("./schemas/bank-log.schema");
 const users_module_1 = require("../users/users.module");
 const achievements_module_1 = require("../achievements/achievements.module");
+const admin_module_1 = require("../admin/admin.module");
 let BankModule = class BankModule {
 };
 exports.BankModule = BankModule;
@@ -26,7 +27,8 @@ exports.BankModule = BankModule = __decorate([
                 { name: bank_log_schema_1.BankLog.name, schema: bank_log_schema_1.BankLogSchema }
             ]),
             (0, common_1.forwardRef)(() => users_module_1.UsersModule),
-            (0, common_1.forwardRef)(() => achievements_module_1.AchievementsModule)
+            (0, common_1.forwardRef)(() => achievements_module_1.AchievementsModule),
+            (0, common_1.forwardRef)(() => admin_module_1.AdminModule)
         ],
         controllers: [bank_controller_1.BankController],
         providers: [bank_service_1.BankService],

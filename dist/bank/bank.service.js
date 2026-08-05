@@ -22,17 +22,20 @@ const stake_schema_1 = require("./schemas/stake.schema");
 const bank_log_schema_1 = require("./schemas/bank-log.schema");
 const users_service_1 = require("../users/users.service");
 const achievements_service_1 = require("../achievements/achievements.service");
+const admin_service_1 = require("../admin/admin.service");
 let BankService = BankService_1 = class BankService {
     stakeModel;
     bankLogModel;
     usersService;
     achievementsService;
+    adminService;
     logger = new common_1.Logger(BankService_1.name);
-    constructor(stakeModel, bankLogModel, usersService, achievementsService) {
+    constructor(stakeModel, bankLogModel, usersService, achievementsService, adminService) {
         this.stakeModel = stakeModel;
         this.bankLogModel = bankLogModel;
         this.usersService = usersService;
         this.achievementsService = achievementsService;
+        this.adminService = adminService;
     }
     async handleAutoClaim() {
         const activeStakes = await this.stakeModel.find({ status: 'active', autoClaim: true }).exec();
@@ -177,10 +180,10 @@ let BankService = BankService_1 = class BankService {
         else {
             const penalty = stake.amount * 0.10;
             returnAmount = stake.amount - penalty;
+            await this.adminService.addProfit('ELIXIR', penalty, 'UNSTAKE_PENALTY', telegramId);
         }
         stake.status = 'withdrawn';
         await stake.save();
-        await this.usersService.creditReferralBonus(telegramId, returnAmount, 'SYSTEM', 'UNSTAKE');
         await this.usersService.debitElixir(telegramId, -returnAmount);
         await new this.bankLogModel({
             telegramId,
@@ -210,6 +213,7 @@ exports.BankService = BankService = BankService_1 = __decorate([
     __metadata("design:paramtypes", [mongoose_2.Model,
         mongoose_2.Model,
         users_service_1.UsersService,
-        achievements_service_1.AchievementsService])
+        achievements_service_1.AchievementsService,
+        admin_service_1.AdminService])
 ], BankService);
 //# sourceMappingURL=bank.service.js.map

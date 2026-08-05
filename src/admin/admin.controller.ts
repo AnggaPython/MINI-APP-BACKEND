@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Req, Query } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { UsersService } from '../users/users.service';
 
@@ -19,6 +19,24 @@ export class AdminController {
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
 
         return await this.adminService.authenticate(body.username, body.password, ip as string);
+    }
+
+    @Get('feed')
+    async getFeed() {
+        const stats = await this.usersService.getDashboardStatsAdmin();
+        return { success: true, ...stats };
+    }
+
+    @Get('profit-balances')
+    async getProfitBalances() {
+        const balances = await this.adminService.getProfitBalances();
+        return { success: true, profitBalances: balances };
+    }
+
+    @Get('profit-logs')
+    async getProfitLogs(@Query('coin') coin: string) {
+        const logs = await this.adminService.getProfitLogs(coin);
+        return { success: true, logs };
     }
 
     // --- User Interrogation Endpoints ---

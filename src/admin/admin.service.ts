@@ -1,14 +1,16 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Admin } from './schemas/admin.schema';
+import { Admin, AdminDocument } from './schemas/admin.schema';
+import { ProfitLog, ProfitLogDocument } from './schemas/profit-log.schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class AdminService implements OnModuleInit {
     constructor(
-        @InjectModel(Admin.name) private adminModel: Model<Admin>
+        @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
+        @InjectModel(ProfitLog.name) private profitLogModel: Model<ProfitLogDocument>
     ) { }
 
     async onModuleInit() {
@@ -46,5 +48,37 @@ export class AdminService implements OnModuleInit {
             token: fakeJwt,
             role: admin.role
         };
+    }
+
+    async addProfit(coin: string, amount: number, source: string, telegramId: string) {
+        if (amount <= 0 || !coin) return;
+        const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).exec();
+        if (!rootAdmin) return;
+
+        if (!rootAdmin.profitBalances) rootAdmin.profitBalances = {};
+        const current = rootAdmin.profitBalances[coin.toUpperCase()] || 0;
+        rootAdmin.profitBalances[coin.toUpperCase()] = current + amount;
+
+        rootAdmin.markModified('profitBalances');
+        await rootAdmin.save();
+
+        if (source && telegramId) {
+            await new this.profitLogModel({
+                coin: coin.toUpperCase(),
+                amount,
+                source,
+                telegramId
+            }).save();
+        }
+    }
+
+    async getProfitBalances() {
+        const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).select('profitBalances').exec();
+        return rootAdmin?.profitBalances || {};
+    }
+
+    async getProfitLogs(coin?: string) {
+        const filter = coin && coin !== 'ALL' ? { coin: coin.toUpperCase() } : {};
+        return this.profitLogModel.find(filter).sort({ createdAt: -1 }).limit(50).exec();
     }
 }

@@ -43,6 +43,9 @@ let PaymentController = class PaymentController {
         }
         const eventData = req.body;
         const result = await this.paymentService.handleWebhook(eventData);
+        if (result.activation) {
+            return res.status(common_1.HttpStatus.OK).json({ msg: 'Success' });
+        }
         if (result.success) {
             return res.status(common_1.HttpStatus.OK).send('success');
         }

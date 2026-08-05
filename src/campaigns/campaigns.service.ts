@@ -4,13 +4,15 @@ import { Model } from 'mongoose';
 import { Campaign, CampaignDocument } from './schemas/campaign.schema';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { AdminService } from '../admin/admin.service';
 
 @Injectable()
 export class CampaignsService {
     constructor(
         @InjectModel(Campaign.name) private campaignModel: Model<CampaignDocument>,
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
-        @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService
+        @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService,
+        @Inject(forwardRef(() => AdminService)) private adminService: AdminService
     ) { }
 
     async createCampaign(data: {
@@ -101,10 +103,10 @@ export class CampaignsService {
             return { success: false, error: 'Reward already claimed or user invalid' };
         }
 
-        // 3. Grant 5% margin to Upline if exists
+        // 3. Grant 10% margin to Upline if exists
         const user = await this.usersService.findByTelegramId(telegramId);
         if (user && user.referredBy) {
-            const uplineCut = deductRes.rewardPerClick * 0.05;
+            const uplineCut = deductRes.rewardPerClick * 0.10;
             await this.usersService.creditReferralBonus(
                 user.referredBy,
                 uplineCut,
@@ -113,7 +115,10 @@ export class CampaignsService {
             );
         }
 
-        // 60% Margin remaining automatically vanishes into the Ecosystem vault because it was deducted but never credited!
+        // 55-65% Margin remaining automatically vanishes into the Ecosystem vault because it was deducted but never credited.
+        // We now explicitly route this to the Admin margin profit center.
+        const adminMargin = deductRes.rewardPerClick * (user && user.referredBy ? 0.55 : 0.65);
+        await this.adminService.addProfit('ELIXIR', adminMargin, 'CAMPAIGN_FEE', telegramId);
 
         await this.achievementsService.incrementProgress(telegramId, [2, 3, 4], 1);
 

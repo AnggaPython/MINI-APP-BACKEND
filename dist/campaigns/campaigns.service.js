@@ -19,14 +19,17 @@ const mongoose_2 = require("mongoose");
 const campaign_schema_1 = require("./schemas/campaign.schema");
 const users_service_1 = require("../users/users.service");
 const achievements_service_1 = require("../achievements/achievements.service");
+const admin_service_1 = require("../admin/admin.service");
 let CampaignsService = class CampaignsService {
     campaignModel;
     usersService;
     achievementsService;
-    constructor(campaignModel, usersService, achievementsService) {
+    adminService;
+    constructor(campaignModel, usersService, achievementsService, adminService) {
         this.campaignModel = campaignModel;
         this.usersService = usersService;
         this.achievementsService = achievementsService;
+        this.adminService = adminService;
     }
     async createCampaign(data) {
         if (data.totalBudget < 10000) {
@@ -87,9 +90,11 @@ let CampaignsService = class CampaignsService {
         }
         const user = await this.usersService.findByTelegramId(telegramId);
         if (user && user.referredBy) {
-            const uplineCut = deductRes.rewardPerClick * 0.05;
+            const uplineCut = deductRes.rewardPerClick * 0.10;
             await this.usersService.creditReferralBonus(user.referredBy, uplineCut, user.username || `USER_${user.telegramId.substring(0, 5)}...`, 'Airdrop Ad');
         }
+        const adminMargin = deductRes.rewardPerClick * (user && user.referredBy ? 0.55 : 0.65);
+        await this.adminService.addProfit('ELIXIR', adminMargin, 'CAMPAIGN_FEE', telegramId);
         await this.achievementsService.incrementProgress(telegramId, [2, 3, 4], 1);
         return { success: true, reward: userCut };
     }
@@ -123,8 +128,10 @@ exports.CampaignsService = CampaignsService = __decorate([
     __param(0, (0, mongoose_1.InjectModel)(campaign_schema_1.Campaign.name)),
     __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
+    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __metadata("design:paramtypes", [mongoose_2.Model,
         users_service_1.UsersService,
-        achievements_service_1.AchievementsService])
+        achievements_service_1.AchievementsService,
+        admin_service_1.AdminService])
 ], CampaignsService);
 //# sourceMappingURL=campaigns.service.js.map

@@ -14,6 +14,7 @@ const campaigns_controller_1 = require("./campaigns.controller");
 const campaign_schema_1 = require("./schemas/campaign.schema");
 const users_module_1 = require("../users/users.module");
 const achievements_module_1 = require("../achievements/achievements.module");
+const admin_module_1 = require("../admin/admin.module");
 let CampaignsModule = class CampaignsModule {
 };
 exports.CampaignsModule = CampaignsModule;
@@ -22,7 +23,8 @@ exports.CampaignsModule = CampaignsModule = __decorate([
         imports: [
             mongoose_1.MongooseModule.forFeature([{ name: campaign_schema_1.Campaign.name, schema: campaign_schema_1.CampaignSchema }]),
             (0, common_1.forwardRef)(() => users_module_1.UsersModule),
-            (0, common_1.forwardRef)(() => achievements_module_1.AchievementsModule)
+            (0, common_1.forwardRef)(() => achievements_module_1.AchievementsModule),
+            (0, common_1.forwardRef)(() => admin_module_1.AdminModule)
         ],
         controllers: [campaigns_controller_1.CampaignsController],
         providers: [campaigns_service_1.CampaignsService]

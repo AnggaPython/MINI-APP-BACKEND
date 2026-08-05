@@ -6,6 +6,7 @@ export declare class Admin {
     role: string;
     lastLogin: Date;
     lastIp: string;
+    profitBalances: Record<string, number>;
 }
 export declare const AdminSchema: import("mongoose").Schema<Admin, import("mongoose").Model<Admin, any, any, any, any, any, Admin>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, Admin, import("mongoose").Document<unknown, {}, Admin, {
     id: string;
@@ -53,6 +54,15 @@ export declare const AdminSchema: import("mongoose").Schema<Admin, import("mongo
         id: string;
     }>> | undefined;
     lastIp?: import("mongoose").SchemaDefinitionProperty<string, Admin, import("mongoose").Document<unknown, {}, Admin, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<Admin & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    profitBalances?: import("mongoose").SchemaDefinitionProperty<Record<string, number>, Admin, import("mongoose").Document<unknown, {}, Admin, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<Admin & {
         _id: import("mongoose").Types.ObjectId;

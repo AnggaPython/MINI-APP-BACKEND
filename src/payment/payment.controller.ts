@@ -49,6 +49,11 @@ export class PaymentController {
         // Let service handle core logic
         const result = await this.paymentService.handleWebhook(eventData);
 
+        // CCPayment explicitly demands { msg: 'Success' } JSON for activation
+        if (result.activation) {
+            return res.status(HttpStatus.OK).json({ msg: 'Success' });
+        }
+
         // Acknowledge CCPayment so they stop retrying
         if (result.success) {
             return res.status(HttpStatus.OK).send('success');

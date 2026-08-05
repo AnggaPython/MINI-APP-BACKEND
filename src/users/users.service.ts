@@ -6,6 +6,7 @@ import { User, UserDocument } from './schemas/user.schema';
 import { ReferralLog, ReferralLogDocument } from './schemas/referral-log.schema';
 import { HiLoBet, HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
+import { AdminService } from '../admin/admin.service';
 
 @Injectable()
 export class UsersService {
@@ -13,7 +14,8 @@ export class UsersService {
         @InjectModel(User.name) private userModel: Model<UserDocument>,
         @InjectModel(ReferralLog.name) private referralLogModel: Model<ReferralLogDocument>,
         @InjectModel(HiLoBet.name) private hiloBetModel: Model<HiLoBetDocument>,
-        @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService
+        @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService,
+        @Inject(forwardRef(() => AdminService)) private adminService: AdminService
     ) { }
 
     async syncTelegramUser(userData: any, referredBy?: string): Promise<User> {
@@ -322,6 +324,9 @@ export class UsersService {
         user.markModified('cryptoBalances');
         await user.save();
 
+        const spread = grossCryptoAmount * 0.08;
+        await this.adminService.addProfit(targetCoin, spread, 'SWAP_SPREAD', telegramId);
+
         return {
             success: true,
             user,
@@ -469,5 +474,26 @@ export class UsersService {
             { $set: { isBanned } },
             { returnDocument: 'after' }
         ).exec();
+    }
+
+    async getDashboardStatsAdmin() {
+        const totalUsers = await this.userModel.countDocuments().exec();
+
+        // Return total raw ELIXIR across all users
+        const users = await this.userModel.find({}, { elixirBalance: 1 }).exec();
+        const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
+
+        // Fetch top users by highest Elixir balance
+        const recentUsers = await this.userModel.find()
+            .sort({ elixirBalance: -1 })
+            .limit(20)
+            .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
+            .exec();
+
+        return {
+            totalUsers,
+            totalElixir, // Pass raw Total Elixir
+            recentUsers
+        };
     }
 }

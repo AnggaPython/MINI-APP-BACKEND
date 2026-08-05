@@ -14,6 +14,7 @@ const common_2 = require("@nestjs/common");
 const users_module_1 = require("../users/users.module");
 const mongoose_1 = require("@nestjs/mongoose");
 const transaction_schema_1 = require("./schemas/transaction.schema");
+const admin_module_1 = require("../admin/admin.module");
 let PaymentModule = class PaymentModule {
 };
 exports.PaymentModule = PaymentModule;
@@ -21,6 +22,7 @@ exports.PaymentModule = PaymentModule = __decorate([
     (0, common_1.Module)({
         imports: [
             (0, common_2.forwardRef)(() => users_module_1.UsersModule),
+            (0, common_2.forwardRef)(() => admin_module_1.AdminModule),
             mongoose_1.MongooseModule.forFeature([{ name: transaction_schema_1.Transaction.name, schema: transaction_schema_1.TransactionSchema }])
         ],
         providers: [payment_service_1.PaymentService],

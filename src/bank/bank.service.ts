@@ -6,6 +6,7 @@ import { Stake, StakeDocument } from './schemas/stake.schema';
 import { BankLog, BankLogDocument } from './schemas/bank-log.schema';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { AdminService } from '../admin/admin.service';
 
 @Injectable()
 export class BankService {
@@ -15,7 +16,8 @@ export class BankService {
         @InjectModel(Stake.name) private stakeModel: Model<StakeDocument>,
         @InjectModel(BankLog.name) private bankLogModel: Model<BankLogDocument>,
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
-        @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService
+        @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService,
+        private adminService: AdminService
     ) { }
 
     @Cron(CronExpression.EVERY_MINUTE)
@@ -196,13 +198,15 @@ export class BankService {
             // Premature Unstake => 10% penalty on principal AND forfeit all pending APR yield
             const penalty = stake.amount * 0.10;
             returnAmount = stake.amount - penalty;
+
+            // Re-route penalty to admin ecosystem profit pool
+            await this.adminService.addProfit('ELIXIR', penalty, 'UNSTAKE_PENALTY', telegramId);
         }
 
         stake.status = 'withdrawn';
         await stake.save();
 
-        // Directly add to elixir balance using generic transaction. 
-        await this.usersService.creditReferralBonus(telegramId, returnAmount, 'SYSTEM', 'UNSTAKE');
+        // Directly add to elixir balance (debitElixir supports negative math for credits)
         await this.usersService.debitElixir(telegramId, -returnAmount);
 
         await new this.bankLogModel({

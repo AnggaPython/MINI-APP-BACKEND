@@ -17,6 +17,7 @@ let Admin = class Admin {
     role;
     lastLogin;
     lastIp;
+    profitBalances;
 };
 exports.Admin = Admin;
 __decorate([
@@ -39,6 +40,10 @@ __decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", String)
 ], Admin.prototype, "lastIp", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, default: {} }),
+    __metadata("design:type", Object)
+], Admin.prototype, "profitBalances", void 0);
 exports.Admin = Admin = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Admin);

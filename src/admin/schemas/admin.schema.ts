@@ -19,6 +19,9 @@ export class Admin {
 
     @Prop({ default: null })
     lastIp: string;
+
+    @Prop({ type: Object, default: {} })
+    profitBalances: Record<string, number>;
 }
 
 export const AdminSchema = SchemaFactory.createForClass(Admin);

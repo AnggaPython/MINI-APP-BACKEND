@@ -2,11 +2,13 @@ import { Model } from 'mongoose';
 import { Campaign, CampaignDocument } from './schemas/campaign.schema';
 import { UsersService } from '../users/users.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { AdminService } from '../admin/admin.service';
 export declare class CampaignsService {
     private campaignModel;
     private usersService;
     private achievementsService;
-    constructor(campaignModel: Model<CampaignDocument>, usersService: UsersService, achievementsService: AchievementsService);
+    private adminService;
+    constructor(campaignModel: Model<CampaignDocument>, usersService: UsersService, achievementsService: AchievementsService, adminService: AdminService);
     createCampaign(data: {
         creatorTelegramId: string;
         title: string;

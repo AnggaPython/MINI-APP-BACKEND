@@ -12,6 +12,7 @@ const mongoose_1 = require("@nestjs/mongoose");
 const admin_controller_1 = require("./admin.controller");
 const admin_service_1 = require("./admin.service");
 const admin_schema_1 = require("./schemas/admin.schema");
+const profit_log_schema_1 = require("./schemas/profit-log.schema");
 const users_module_1 = require("../users/users.module");
 let AdminModule = class AdminModule {
 };
@@ -20,12 +21,14 @@ exports.AdminModule = AdminModule = __decorate([
     (0, common_1.Module)({
         imports: [
             mongoose_1.MongooseModule.forFeature([
-                { name: admin_schema_1.Admin.name, schema: admin_schema_1.AdminSchema }
+                { name: admin_schema_1.Admin.name, schema: admin_schema_1.AdminSchema },
+                { name: profit_log_schema_1.ProfitLog.name, schema: profit_log_schema_1.ProfitLogSchema }
             ]),
-            users_module_1.UsersModule
+            (0, common_1.forwardRef)(() => users_module_1.UsersModule)
         ],
         controllers: [admin_controller_1.AdminController],
         providers: [admin_service_1.AdminService],
+        exports: [admin_service_1.AdminService]
     })
 ], AdminModule);
 //# sourceMappingURL=admin.module.js.map

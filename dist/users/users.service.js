@@ -54,16 +54,19 @@ const user_schema_1 = require("./schemas/user.schema");
 const referral_log_schema_1 = require("./schemas/referral-log.schema");
 const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
 const achievements_service_1 = require("../achievements/achievements.service");
+const admin_service_1 = require("../admin/admin.service");
 let UsersService = class UsersService {
     userModel;
     referralLogModel;
     hiloBetModel;
     achievementsService;
-    constructor(userModel, referralLogModel, hiloBetModel, achievementsService) {
+    adminService;
+    constructor(userModel, referralLogModel, hiloBetModel, achievementsService, adminService) {
         this.userModel = userModel;
         this.referralLogModel = referralLogModel;
         this.hiloBetModel = hiloBetModel;
         this.achievementsService = achievementsService;
+        this.adminService = adminService;
     }
     async syncTelegramUser(userData, referredBy) {
         const { id, first_name, last_name, username, photo_url, is_premium } = userData;
@@ -293,6 +296,8 @@ let UsersService = class UsersService {
         user.elixirBalance -= fromAmount;
         user.markModified('cryptoBalances');
         await user.save();
+        const spread = grossCryptoAmount * 0.08;
+        await this.adminService.addProfit(targetCoin, spread, 'SWAP_SPREAD', telegramId);
         return {
             success: true,
             user,
@@ -302,8 +307,8 @@ let UsersService = class UsersService {
         };
     }
     async executeHiLoBet(telegramId, betAmount, multiplier, type) {
-        if (betAmount < 10 || betAmount > 10000) {
-            return { error: 'Bet amount must be between 10 and 10000 ELIXIR' };
+        if (betAmount < 10 || betAmount > 1000000) {
+            return { error: 'Bet amount must be between 10 and 1000000 ELIXIR' };
         }
         if (multiplier < 1.01 || multiplier > 100) {
             return { error: 'Invalid multiplier constraint' };
@@ -392,6 +397,21 @@ let UsersService = class UsersService {
     async setUserBanStatus(telegramId, isBanned) {
         return this.userModel.findOneAndUpdate({ telegramId }, { $set: { isBanned } }, { returnDocument: 'after' }).exec();
     }
+    async getDashboardStatsAdmin() {
+        const totalUsers = await this.userModel.countDocuments().exec();
+        const users = await this.userModel.find({}, { elixirBalance: 1 }).exec();
+        const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
+        const recentUsers = await this.userModel.find()
+            .sort({ elixirBalance: -1 })
+            .limit(20)
+            .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
+            .exec();
+        return {
+            totalUsers,
+            totalElixir,
+            recentUsers
+        };
+    }
 };
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([
@@ -400,9 +420,11 @@ exports.UsersService = UsersService = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(referral_log_schema_1.ReferralLog.name)),
     __param(2, (0, mongoose_1.InjectModel)(hilo_bet_schema_1.HiLoBet.name)),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
+    __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __metadata("design:paramtypes", [mongoose_2.Model,
         mongoose_2.Model,
         mongoose_2.Model,
-        achievements_service_1.AchievementsService])
+        achievements_service_1.AchievementsService,
+        admin_service_1.AdminService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

@@ -30,6 +30,18 @@ let AdminController = class AdminController {
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
         return await this.adminService.authenticate(body.username, body.password, ip);
     }
+    async getFeed() {
+        const stats = await this.usersService.getDashboardStatsAdmin();
+        return { success: true, ...stats };
+    }
+    async getProfitBalances() {
+        const balances = await this.adminService.getProfitBalances();
+        return { success: true, profitBalances: balances };
+    }
+    async getProfitLogs(coin) {
+        const logs = await this.adminService.getProfitLogs(coin);
+        return { success: true, logs };
+    }
     async searchUser(query) {
         if (!query)
             return { error: 'Missing search query' };
@@ -65,6 +77,25 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "login", null);
+__decorate([
+    (0, common_1.Get)('feed'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getFeed", null);
+__decorate([
+    (0, common_1.Get)('profit-balances'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getProfitBalances", null);
+__decorate([
+    (0, common_1.Get)('profit-logs'),
+    __param(0, (0, common_1.Query)('coin')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getProfitLogs", null);
 __decorate([
     (0, common_1.Post)('user/search'),
     __param(0, (0, common_1.Body)('query')),

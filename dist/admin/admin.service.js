@@ -50,12 +50,15 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const admin_schema_1 = require("./schemas/admin.schema");
+const profit_log_schema_1 = require("./schemas/profit-log.schema");
 const bcrypt = __importStar(require("bcrypt"));
 const crypto = __importStar(require("crypto"));
 let AdminService = class AdminService {
     adminModel;
-    constructor(adminModel) {
+    profitLogModel;
+    constructor(adminModel, profitLogModel) {
         this.adminModel = adminModel;
+        this.profitLogModel = profitLogModel;
     }
     async onModuleInit() {
         const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' });
@@ -88,11 +91,42 @@ let AdminService = class AdminService {
             role: admin.role
         };
     }
+    async addProfit(coin, amount, source, telegramId) {
+        if (amount <= 0 || !coin)
+            return;
+        const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).exec();
+        if (!rootAdmin)
+            return;
+        if (!rootAdmin.profitBalances)
+            rootAdmin.profitBalances = {};
+        const current = rootAdmin.profitBalances[coin.toUpperCase()] || 0;
+        rootAdmin.profitBalances[coin.toUpperCase()] = current + amount;
+        rootAdmin.markModified('profitBalances');
+        await rootAdmin.save();
+        if (source && telegramId) {
+            await new this.profitLogModel({
+                coin: coin.toUpperCase(),
+                amount,
+                source,
+                telegramId
+            }).save();
+        }
+    }
+    async getProfitBalances() {
+        const rootAdmin = await this.adminModel.findOne({ username: 'superadmin' }).select('profitBalances').exec();
+        return rootAdmin?.profitBalances || {};
+    }
+    async getProfitLogs(coin) {
+        const filter = coin && coin !== 'ALL' ? { coin: coin.toUpperCase() } : {};
+        return this.profitLogModel.find(filter).sort({ createdAt: -1 }).limit(50).exec();
+    }
 };
 exports.AdminService = AdminService;
 exports.AdminService = AdminService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(admin_schema_1.Admin.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model])
+    __param(1, (0, mongoose_1.InjectModel)(profit_log_schema_1.ProfitLog.name)),
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model])
 ], AdminService);
 //# sourceMappingURL=admin.service.js.map

@@ -53,15 +53,18 @@ const users_service_1 = require("../users/users.service");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const transaction_schema_1 = require("./schemas/transaction.schema");
+const admin_service_1 = require("../admin/admin.service");
 let PaymentService = PaymentService_1 = class PaymentService {
     usersService;
     txModel;
+    adminService;
     logger = new common_1.Logger(PaymentService_1.name);
     appId = 'I7YTwbXVHbXGiSEb';
     appSecret = '68e3e1e7db332c9f79a0843919619781';
-    constructor(usersService, txModel) {
+    constructor(usersService, txModel, adminService) {
         this.usersService = usersService;
         this.txModel = txModel;
+        this.adminService = adminService;
     }
     async createDepositCharge(telegramId, amountElixir) {
         const usdAmount = amountElixir / 10000;
@@ -210,6 +213,10 @@ let PaymentService = PaymentService_1 = class PaymentService {
         const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
         if (!debited)
             return { success: false, error: 'Insufficient crypto balance' };
+        const withdrawalMargin = amount - executionAmount;
+        if (withdrawalMargin > 0) {
+            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMargin, 'WITHDRAW_FEE', telegramId);
+        }
         const coinId = this.coinMap[coin.toUpperCase()];
         if (!coinId) {
             await this.usersService.creditCrypto(telegramId, coin, amount);
@@ -311,6 +318,10 @@ let PaymentService = PaymentService_1 = class PaymentService {
     }
     async handleWebhook(event) {
         this.logger.log('Receiving Webhook Event from CCPayment: ', event);
+        if (event.type === 'ActivateWebhookURL') {
+            this.logger.log('CCPayment Webhook Activated successfully');
+            return { success: true, processed: true, activation: true };
+        }
         if (event.status !== 'Successful' && event.status !== 2) {
             return { success: true, processed: false, reason: 'Status is not paid' };
         }
@@ -350,7 +361,9 @@ exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
+    __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __metadata("design:paramtypes", [users_service_1.UsersService,
-        mongoose_2.Model])
+        mongoose_2.Model,
+        admin_service_1.AdminService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map
