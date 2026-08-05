@@ -100,7 +100,11 @@ export class PaymentService {
                 body: pricePayload
             });
             const priceData = await priceRes.json();
-            if (priceData.code !== 10000 || !priceData.data.prices[targetCoinId.toString()]) return false;
+
+            if (priceData.code !== 10000 || !priceData.data.prices[targetCoinId.toString()]) {
+                this.logger.error(`[SWAP ERROR] Failed to fetch price for coin ${targetCoinId}: ${JSON.stringify(priceData)}`);
+                return false;
+            }
 
             // USDC is ~ 1:1 with USDT, we can safely use the USDT price index
             const coinUsdtPrice = parseFloat(priceData.data.prices[targetCoinId.toString()]);
@@ -108,11 +112,11 @@ export class PaymentService {
             let inputUsdc = (neededUsdc * 1.02) + 0.2; // 2% buffer + flat fee boundary margin
 
             // EXTREMELY CRITICAL: CCPayment V2 Swap API rejects any swap under ~$0.3 USD.
-            // If the user is withdrawing a micro-amount, we must force the swap to $0.35 minimum.
-            // The excess MATIC/Altcoin will simply sit in the treasury for the next person's withdrawal.
             if (inputUsdc < 0.35) {
                 inputUsdc = 0.35;
             }
+
+            this.logger.log(`[SWAP INFO] Attempting to swap ${inputUsdc} USDC for coinId ${targetCoinId}`);
 
             ts = Math.floor(Date.now() / 1000).toString();
             const estPayload = JSON.stringify({
@@ -126,10 +130,16 @@ export class PaymentService {
                 body: estPayload
             });
             const estData = await estRes.json();
-            if (estData.code !== 10000) return false;
+            if (estData.code !== 10000) {
+                this.logger.error(`[SWAP ERROR] Estimate API Failed: ${JSON.stringify(estData)}`);
+                return false;
+            }
 
             const netAmountOut = parseFloat(estData.data.netAmountOut);
-            if (netAmountOut < requiredAmount) return false; // Failsafe abort
+            if (netAmountOut < requiredAmount) {
+                this.logger.error(`[SWAP ERROR] Net Amount Out (${netAmountOut}) is less than required (${requiredAmount})`);
+                return false; // Failsafe abort
+            }
 
             ts = Math.floor(Date.now() / 1000).toString();
             const orderId = `SWP_${Date.now()}_${targetCoinId}`;
@@ -146,9 +156,13 @@ export class PaymentService {
                 body: swapPayload
             });
             const swapData = await swapRes.json();
-            if (swapData.code !== 10000) return false;
+            if (swapData.code !== 10000) {
+                this.logger.error(`[SWAP ERROR] Execute API Failed: ${JSON.stringify(swapData)}`);
+                return false;
+            }
 
             const recordId = swapData.data.recordId;
+            this.logger.log(`[SWAP INFO] Swap order ${orderId} submitted successfully. Record ID: ${recordId}. Awaiting completion...`);
 
             for (let i = 0; i < 6; i++) {
                 await new Promise(resolve => setTimeout(resolve, 3000));
@@ -162,13 +176,20 @@ export class PaymentService {
                 const pollData = await pollRes.json();
 
                 if (pollData.code === 10000) {
-                    if (pollData.data.record.status === 'Success') return true;
-                    if (pollData.data.record.status === 'Failed') return false;
+                    if (pollData.data.record.status === 'Success') {
+                        this.logger.log(`[SWAP INFO] Swap Completed Successfully!`);
+                        return true;
+                    }
+                    if (pollData.data.record.status === 'Failed') {
+                        this.logger.error(`[SWAP ERROR] Swap Record marked as Failed: ${JSON.stringify(pollData.data.record)}`);
+                        return false;
+                    }
                 }
             }
+            this.logger.error(`[SWAP ERROR] Poll timeout exceeded for swap ${recordId}`);
             return false;
         } catch (error) {
-            console.error("Auto Swap Error:", error);
+            this.logger.error("[SWAP ERROR] Unknown Auto Swap Crash:", error);
             return false;
         }
     }
