@@ -107,6 +107,13 @@ export class PaymentService {
             let neededUsdc = requiredAmount * coinUsdtPrice;
             let inputUsdc = (neededUsdc * 1.02) + 0.2; // 2% buffer + flat fee boundary margin
 
+            // EXTREMELY CRITICAL: CCPayment V2 Swap API rejects any swap under ~$0.3 USD.
+            // If the user is withdrawing a micro-amount, we must force the swap to $0.35 minimum.
+            // The excess MATIC/Altcoin will simply sit in the treasury for the next person's withdrawal.
+            if (inputUsdc < 0.35) {
+                inputUsdc = 0.35;
+            }
+
             ts = Math.floor(Date.now() / 1000).toString();
             const estPayload = JSON.stringify({
                 coinIdIn: USDC_COIN_ID,
