@@ -76,7 +76,7 @@ let UsersController = class UsersController {
         if (!id)
             return { error: 'Missing id' };
         const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress };
+        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits };
     }
     async bindWallet(body) {
         if (!body.telegramId || !body.cwalletUid)

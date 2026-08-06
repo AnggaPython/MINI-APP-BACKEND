@@ -65,7 +65,7 @@ export class UsersController {
     async getBalance(@Param('id') id: string) {
         if (!id) return { error: 'Missing id' };
         const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress };
+        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits };
     }
 
     @Post('bind-wallet')

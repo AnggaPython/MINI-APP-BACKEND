@@ -128,12 +128,14 @@ export declare class UsersController {
         cryptoBalances?: undefined;
         cwalletUid?: undefined;
         solanaAddress?: undefined;
+        withdrawLimits?: undefined;
     } | {
         success: boolean;
         balance: number;
         cryptoBalances: Record<string, number>;
         cwalletUid: string | null;
         solanaAddress: string | null;
+        withdrawLimits: Record<string, number>;
         error?: undefined;
     }>;
     bindWallet(body: {
