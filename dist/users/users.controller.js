@@ -34,6 +34,14 @@ let UsersController = class UsersController {
         const result = await this.usersService.startMining(telegramId);
         return { success: true, user: result };
     }
+    async boostMining(telegramId) {
+        if (!telegramId)
+            return { error: 'Missing telegramId' };
+        const result = await this.usersService.boostMining(telegramId);
+        if (result.error)
+            return { success: false, error: result.error };
+        return { success: true, user: result.user };
+    }
     async claimMining(telegramId) {
         if (!telegramId)
             return { error: 'Missing telegramId' };
@@ -64,6 +72,30 @@ let UsersController = class UsersController {
             return { success: false, error: result.error };
         return { success: true, user: result.user, reward: result.reward };
     }
+    async claimFaucet(telegramId) {
+        if (!telegramId)
+            return { error: 'Missing telegramId' };
+        const result = await this.usersService.claimFaucet(telegramId);
+        if (result.error)
+            return { success: false, error: result.error };
+        return { success: true, finalNum: result.finalNum, reward: result.reward };
+    }
+    async claimCodeDrop(body) {
+        if (!body.telegramId || !body.code)
+            return { error: 'Missing parameters' };
+        const result = await this.usersService.claimCodeDrop(body.telegramId, body.code);
+        if (result.error)
+            return { success: false, error: result.error };
+        return { success: true, user: result.user, reward: result.reward };
+    }
+    async claimVipRank(body) {
+        if (!body.telegramId || !body.rankName)
+            return { error: 'Missing parameters' };
+        const result = await this.usersService.claimVipRank(body.telegramId, body.rankName);
+        if (result.error)
+            return { success: false, error: result.error };
+        return { success: true, user: result.user, reward: result.reward };
+    }
     async verifyTelegram(telegramId) {
         if (!telegramId)
             return { error: 'Missing telegramId' };
@@ -76,7 +108,7 @@ let UsersController = class UsersController {
         if (!id)
             return { error: 'Missing id' };
         const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits };
+        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits, lifetimeElixir: result.lifetimeElixir, totalReferrals: result.totalReferrals, lastFaucetRoll: result.lastFaucetRoll };
     }
     async bindWallet(body) {
         if (!body.telegramId || !body.cwalletUid)
@@ -134,6 +166,13 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "startMining", null);
 __decorate([
+    (0, common_1.Post)('boost-mining'),
+    __param(0, (0, common_1.Body)('telegramId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "boostMining", null);
+__decorate([
     (0, common_1.Post)('claim-mining'),
     __param(0, (0, common_1.Body)('telegramId')),
     __metadata("design:type", Function),
@@ -161,6 +200,27 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimDaily", null);
+__decorate([
+    (0, common_1.Post)('claim-faucet'),
+    __param(0, (0, common_1.Body)('telegramId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "claimFaucet", null);
+__decorate([
+    (0, common_1.Post)('claim-drop'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "claimCodeDrop", null);
+__decorate([
+    (0, common_1.Post)('claim-vip-rank'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "claimVipRank", null);
 __decorate([
     (0, common_1.Post)('verify-telegram'),
     __param(0, (0, common_1.Body)('telegramId')),

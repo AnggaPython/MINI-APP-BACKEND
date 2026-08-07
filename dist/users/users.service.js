@@ -45,16 +45,39 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UsersService = void 0;
+exports.UsersService = exports.VIP_RANKS = void 0;
+exports.getUserVipRank = getUserVipRank;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const crypto = __importStar(require("crypto"));
+const schedule_1 = require("@nestjs/schedule");
+const messages_constant_1 = require("../bot/messages.constant");
 const user_schema_1 = require("./schemas/user.schema");
 const referral_log_schema_1 = require("./schemas/referral-log.schema");
 const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
 const achievements_service_1 = require("../achievements/achievements.service");
 const admin_service_1 = require("../admin/admin.service");
+exports.VIP_RANKS = [
+    { name: 'NON-VIP', xp: 0, reward: 0, wdLimit: 3, maxWdUsd: 3, miningBoost: 0 },
+    { name: 'BRONZE', xp: 100, reward: 200, wdLimit: 10, maxWdUsd: 10, miningBoost: 0.05 },
+    { name: 'SILVER', xp: 1000, reward: 2000, wdLimit: 20, maxWdUsd: 50, miningBoost: 0.10 },
+    { name: 'GOLD', xp: 2000, reward: 4000, wdLimit: 50, maxWdUsd: 100, miningBoost: 0.25 },
+    { name: 'PLATINUM', xp: 15000, reward: 30000, wdLimit: 100, maxWdUsd: 250, miningBoost: 0.50 },
+    { name: 'DIAMOND', xp: 50000, reward: 100000, wdLimit: Infinity, maxWdUsd: 500, miningBoost: 1.0 },
+    { name: 'RUBY', xp: 100000, reward: 200000, wdLimit: Infinity, maxWdUsd: 1000, miningBoost: 2.5 },
+    { name: 'EMERALD', xp: 250000, reward: 500000, wdLimit: Infinity, maxWdUsd: Infinity, miningBoost: 5.0 }
+];
+function getUserVipRank(exp) {
+    let rank = exports.VIP_RANKS[0];
+    for (const tier of exports.VIP_RANKS) {
+        if (exp >= tier.xp)
+            rank = tier;
+        else
+            break;
+    }
+    return rank;
+}
 let UsersService = class UsersService {
     userModel;
     referralLogModel;
@@ -67,6 +90,69 @@ let UsersService = class UsersService {
         this.hiloBetModel = hiloBetModel;
         this.achievementsService = achievementsService;
         this.adminService = adminService;
+    }
+    async cleanupOldCodeDrops() {
+        const expiredCodes = [];
+        const now = new Date();
+        for (let i = 7; i <= 30; i++) {
+            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+            expiredCodes.push(`ELIX-${dateStr}`);
+        }
+        try {
+            const result = await this.userModel.updateMany({ claimedCodeDrops: { $in: expiredCodes } }, { $pull: { claimedCodeDrops: { $in: expiredCodes } } }).exec();
+            console.log(`[Cron Garbage Collector] Wiped expired drop codes (>= 7 days old) from database arrays. Users cleared: ${result.modifiedCount}`);
+        }
+        catch (e) {
+            console.error('[Cron Garbage Collector] Failed to cleanup old drop codes', e);
+        }
+    }
+    async notifyFullMining() {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (!botToken)
+            return;
+        const twoHoursAgo = new Date(Date.now() - 7200000);
+        const usersToNotify = await this.userModel.find({
+            miningStartDate: { $lte: twoHoursAgo, $ne: null },
+            isMiningNotified: { $ne: true }
+        }).limit(40).exec();
+        const now = new Date();
+        const epochDays = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
+        const messageIndex = epochDays % 30;
+        const animIndex = epochDays % messages_constant_1.MINING_FULL_ANIMATIONS.length;
+        const rawMessageTemplate = messages_constant_1.MINING_FULL_TEMPLATES[messageIndex];
+        const animationUrl = messages_constant_1.MINING_FULL_ANIMATIONS[animIndex];
+        for (const user of usersToNotify) {
+            try {
+                const payload = {
+                    chat_id: user.telegramId,
+                    animation: animationUrl,
+                    caption: rawMessageTemplate,
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "💰 CLAIM EXTRACTED ELIXIR", url: "https://t.me/ElixirAds_bot/app?startapp=earn" }]
+                        ]
+                    }
+                };
+                const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAnimation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    await this.userModel.updateOne({ telegramId: user.telegramId }, { $set: { isMiningNotified: true } }).exec();
+                }
+                else if (data.error_code === 403 || data.error_code === 400 || (data.description && data.description.includes('bot was blocked'))) {
+                    await this.userModel.updateOne({ telegramId: user.telegramId }, { $set: { isMiningNotified: true } }).exec();
+                }
+            }
+            catch (e) {
+                console.error(`[DM Pinger] Network error notifying mining full for user ${user.telegramId}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
     }
     async syncTelegramUser(userData, referredBy) {
         const { id, first_name, last_name, username, photo_url, is_premium } = userData;
@@ -94,7 +180,18 @@ let UsersService = class UsersService {
         return user;
     }
     async startMining(telegramId) {
-        return this.userModel.findOneAndUpdate({ telegramId }, { $set: { miningStartDate: new Date() } }, { returnDocument: 'after' }).exec();
+        return this.userModel.findOneAndUpdate({ telegramId }, { $set: { miningStartDate: new Date(), isMiningBoosted: false, isMiningNotified: false } }, { returnDocument: 'after' }).exec();
+    }
+    async boostMining(telegramId) {
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user)
+            return { user: null, error: 'User not found' };
+        if (!user.miningStartDate)
+            return { user, error: 'Mining not started' };
+        if (user.isMiningBoosted)
+            return { user, error: 'Already boosted' };
+        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId }, { $set: { isMiningBoosted: true } }, { returnDocument: 'after' }).exec();
+        return { user: updatedUser };
     }
     async claimMining(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
@@ -107,13 +204,21 @@ let UsersService = class UsersService {
         let secondsToClaim = diffSec > 7200 ? 7200 : diffSec;
         if (secondsToClaim < 0)
             secondsToClaim = 0;
-        const reward = (15 / 7200) * secondsToClaim;
+        const baseReward = user.isMiningBoosted ? 5 : 2.5;
+        let reward = (baseReward / 7200) * secondsToClaim;
+        const vipRank = getUserVipRank(user.exp || 0);
+        reward = reward + (reward * vipRank.miningBoost);
+        if (user.miningVoucherExpiry && new Date() < user.miningVoucherExpiry) {
+            reward = reward * 1.5;
+        }
         if (reward <= 0.0001)
             return { user, claimedAmount: 0, error: 'Reward too small to claim yet' };
-        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId }, {
-            $inc: { elixirBalance: reward },
-            $set: { miningStartDate: null }
+        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId, miningStartDate: { $ne: null } }, {
+            $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 },
+            $set: { miningStartDate: null, isMiningBoosted: false, isMiningNotified: false }
         }, { returnDocument: 'after' }).exec();
+        if (!updatedUser)
+            return { user: null, claimedAmount: 0, error: 'Mining already claimed or not started' };
         if (updatedUser) {
             await this.achievementsService.incrementProgress(telegramId, [1, 8, 9, 10], 1);
         }
@@ -145,7 +250,7 @@ let UsersService = class UsersService {
     }
     async creditRewardAndLogTask(telegramId, reward, campaignId) {
         const result = await this.userModel.findOneAndUpdate({ telegramId, completedTasks: { $ne: campaignId } }, {
-            $inc: { elixirBalance: reward },
+            $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 },
             $push: { completedTasks: campaignId }
         }).exec();
         return !!result;
@@ -164,7 +269,7 @@ let UsersService = class UsersService {
     async getReferralStats(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         const totalReferrals = await this.userModel.countDocuments({ referredBy: telegramId }).exec();
-        const history = await this.referralLogModel.find({ uplineTelegramId: telegramId }).sort({ createdAt: -1 }).limit(10).exec();
+        const history = await this.referralLogModel.find({ uplineTelegramId: telegramId }).sort({ createdAt: -1 }).limit(10).lean().exec();
         return {
             referralBalance: user ? (user.referralBalance || 0) : 0,
             totalReferrals,
@@ -177,7 +282,7 @@ let UsersService = class UsersService {
             return { error: 'Minimum 1000 ELIXIR required to claim vault' };
         const claimAmount = user.referralBalance;
         const updated = await this.userModel.findOneAndUpdate({ telegramId, referralBalance: { $gte: 1000 } }, {
-            $inc: { elixirBalance: claimAmount },
+            $inc: { elixirBalance: claimAmount, lifetimeElixir: claimAmount },
             $set: { referralBalance: 0 }
         }, { returnDocument: 'after' }).exec();
         if (!updated)
@@ -185,20 +290,96 @@ let UsersService = class UsersService {
         return { success: true, user: updated, claimedAmount: claimAmount };
     }
     async claimDailyLogin(telegramId) {
+        const now = new Date();
+        const updatedUser = await this.userModel.findOneAndUpdate({
+            telegramId,
+            $or: [
+                { lastDailyLogin: null },
+                { lastDailyLogin: { $lte: new Date(Date.now() - 86390000) } }
+            ]
+        }, {
+            $set: { lastDailyLogin: now },
+            $inc: { elixirBalance: 5, lifetimeElixir: 5 }
+        }, { returnDocument: 'after' }).exec();
+        if (!updatedUser)
+            return { error: 'Come back in 24 hours to claim again or race condition mitigated!' };
+        return { success: true, reward: 5, user: updatedUser };
+    }
+    async claimVipRank(telegramId, rankName) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user)
             return { error: 'User not found' };
+        const rank = exports.VIP_RANKS.find(r => r.name === rankName.toUpperCase());
+        if (!rank)
+            return { error: 'Invalid rank' };
+        if ((user.exp || 0) < rank.xp)
+            return { error: 'Not enough XP for this rank' };
+        if (user.claimedVipRanks && user.claimedVipRanks.includes(rank.name))
+            return { error: 'Rank already claimed' };
+        if (rank.reward <= 0)
+            return { error: 'No reward available for this tier' };
+        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId, claimedVipRanks: { $ne: rank.name } }, {
+            $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward },
+            $addToSet: { claimedVipRanks: rank.name }
+        }, { returnDocument: 'after' }).exec();
+        if (!updatedUser)
+            return { error: 'Rank already claimed' };
+        return { success: true, user: updatedUser, reward: rank.reward };
+    }
+    async claimFaucet(telegramId) {
         const now = new Date();
-        if (user.lastDailyLogin) {
-            const msSinceLast = now.getTime() - user.lastDailyLogin.getTime();
-            if (msSinceLast < 86400000) {
-                return { error: 'Come back in 24 hours to claim again!' };
-            }
+        const finalNum = Math.floor(Math.random() * 980001);
+        let reward = 3;
+        if (finalNum >= 950001)
+            reward = 10;
+        else if (finalNum >= 800001)
+            reward = 5;
+        const updatedUser = await this.userModel.findOneAndUpdate({
+            telegramId,
+            $or: [
+                { lastFaucetRoll: null },
+                { lastFaucetRoll: { $lte: new Date(Date.now() - 3590000) } }
+            ]
+        }, {
+            $set: { lastFaucetRoll: now },
+            $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 }
+        }, { returnDocument: 'after' }).exec();
+        if (!updatedUser)
+            return { error: 'Race condition mitigated or cooldown active' };
+        return { success: true, finalNum, reward, user: updatedUser };
+    }
+    async claimCodeDrop(telegramId, code) {
+        if (!code)
+            return { error: 'Invalid code provided' };
+        const now = new Date();
+        const utcHours = now.getUTCHours();
+        if (utcHours < 12) {
+            return { error: '⚠️ CODE EXPIRED OR FULL CLAIMED!' };
         }
-        user.lastDailyLogin = now;
-        user.elixirBalance += 5;
-        await user.save();
-        return { success: true, reward: 5, user };
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const todayCode = `ELIX-${dateStr}`;
+        if (code.toUpperCase() !== todayCode) {
+            return { error: '⚠️ CODE EXPIRED OR FULL CLAIMED!' };
+        }
+        const totalClaims = await this.userModel.countDocuments({ claimedCodeDrops: todayCode }).exec();
+        if (totalClaims >= 50) {
+            return { error: '⚠️ CODE EXPIRED OR FULL CLAIMED! This voucher was fully exhausted by the first 50 players.' };
+        }
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user)
+            return { error: 'User not found' };
+        if (user.claimedCodeDrops && user.claimedCodeDrops.includes(code.toUpperCase())) {
+            return { error: 'Anda sudah mengklaim Drop Code ini!' };
+        }
+        const voucherExpiry = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId, claimedCodeDrops: { $ne: code.toUpperCase() } }, {
+            $addToSet: { claimedCodeDrops: code.toUpperCase() },
+            $set: { miningVoucherExpiry: voucherExpiry },
+            $inc: { elixirBalance: 2.5, lifetimeElixir: 2.5, exp: 1 }
+        }, { returnDocument: 'after' }).exec();
+        if (!updatedUser)
+            return { error: 'Gagal mengklaim voucher!' };
+        return { success: true, user: updatedUser, reward: 2.5 };
     }
     async verifyTelegramChannel(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
@@ -208,19 +389,19 @@ let UsersService = class UsersService {
             return { error: 'Already claimed' };
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
         if (!botToken) {
-            user.joinedTelegram = true;
-            user.elixirBalance += 100;
-            await user.save();
-            return { success: true, reward: 100, user, mock: true };
+            const updatedUser = await this.userModel.findOneAndUpdate({ telegramId, joinedTelegram: { $ne: true } }, { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100 } }, { returnDocument: 'after' }).exec();
+            if (!updatedUser)
+                return { error: 'Already claimed' };
+            return { success: true, reward: 100, user: updatedUser, mock: true };
         }
         try {
             const response = await fetch(`https://api.telegram.org/bot${botToken}/getChatMember?chat_id=@ElixirNetwork&user_id=${telegramId}`);
             const data = await response.json();
             if (data.ok && ['member', 'administrator', 'creator'].includes(data.result.status)) {
-                user.joinedTelegram = true;
-                user.elixirBalance += 100;
-                await user.save();
-                return { success: true, reward: 100, user };
+                const updatedUser = await this.userModel.findOneAndUpdate({ telegramId, joinedTelegram: { $ne: true } }, { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100 } }, { returnDocument: 'after' }).exec();
+                if (!updatedUser)
+                    return { error: 'Already claimed' };
+                return { success: true, reward: 100, user: updatedUser };
             }
             else {
                 return { error: 'Please join the channel first!' };
@@ -233,12 +414,16 @@ let UsersService = class UsersService {
     async getBalance(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         const withdrawLimits = await this.adminService.getWithdrawLimits();
+        const totalReferrals = await this.userModel.countDocuments({ referredBy: telegramId }).exec();
         return {
             elixirBalance: user?.elixirBalance || 0,
             cryptoBalances: user?.cryptoBalances || {},
             cwalletUid: user?.cwalletUid || null,
             solanaAddress: user?.solanaAddress || null,
-            withdrawLimits
+            withdrawLimits,
+            lifetimeElixir: user?.lifetimeElixir || 0,
+            lastFaucetRoll: user?.lastFaucetRoll || null,
+            totalReferrals
         };
     }
     async bindCwalletUid(telegramId, uid) {
@@ -253,123 +438,139 @@ let UsersService = class UsersService {
         const user = await this.userModel.findOneAndUpdate({ telegramId }, { $set: { solanaAddress: address } }, { returnDocument: 'after' }).exec();
         return { success: true, user };
     }
+    priceCache = {};
+    async getLivePrice(geckoId) {
+        const now = Date.now();
+        const cacheEntry = this.priceCache[geckoId];
+        if (cacheEntry && (now - cacheEntry.timestamp < 180000)) {
+            return cacheEntry.price;
+        }
+        try {
+            const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+            const data = await res.json();
+            const price = data[geckoId]?.usd;
+            if (price) {
+                this.priceCache[geckoId] = { price, timestamp: now };
+                return price;
+            }
+        }
+        catch (e) {
+        }
+        if (cacheEntry) {
+            return cacheEntry.price;
+        }
+        return null;
+    }
     async swapTokens(telegramId, fromAmount, targetCoin) {
         if (fromAmount <= 0)
             return { error: 'Invalid exchange amount' };
-        const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user || user.elixirBalance < fromAmount) {
-            return { error: 'Insufficient ELIXIR balance for this swap' };
-        }
-        const coinGeckoMap = {
-            'ETH': 'ethereum',
-            'MATIC': 'matic-network',
-            'PEPE': 'pepe',
-            'SOL': 'solana',
-            'TIA': 'celestia',
-            'LINK': 'chainlink',
-            'INJ': 'injective-protocol',
-            'DYM': 'dymension',
-            'DOT': 'polkadot',
-            'CRO': 'crypto-com-chain',
-            'ARB': 'arbitrum'
-        };
-        const geckoId = coinGeckoMap[targetCoin.toUpperCase()];
-        if (!geckoId && !['USDT', 'USDC'].includes(targetCoin.toUpperCase())) {
-            return { error: 'Unsupported destination token selected' };
-        }
-        let cryptoPrice = 1.0;
-        if (geckoId) {
-            try {
-                const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
-                const data = await res.json();
-                cryptoPrice = data[geckoId]?.usd || 1;
+        const locked = await this.lockUserForWithdrawal(telegramId);
+        if (!locked)
+            return { error: 'A transaction is currently processing, please wait.' };
+        try {
+            const user = await this.userModel.findOne({ telegramId }).exec();
+            if (!user || user.elixirBalance < fromAmount) {
+                return { error: 'Insufficient ELIXIR balance for this swap' };
             }
-            catch (e) {
-                cryptoPrice = targetCoin === 'ETH' ? 3000 : (targetCoin === 'PEPE' ? 0.0000045 : 0.5);
+            const coinGeckoMap = {
+                'ETH': 'ethereum', 'MATIC': 'matic-network', 'PEPE': 'pepe', 'SOL': 'solana',
+                'TIA': 'celestia', 'LINK': 'chainlink', 'INJ': 'injective-protocol',
+                'DYM': 'dymension', 'DOT': 'polkadot', 'CRO': 'crypto-com-chain', 'ARB': 'arbitrum'
+            };
+            const geckoId = coinGeckoMap[targetCoin.toUpperCase()];
+            if (!geckoId && !['USDT', 'USDC'].includes(targetCoin.toUpperCase())) {
+                return { error: 'Unsupported destination token selected' };
             }
+            let cryptoPrice = 1.0;
+            if (geckoId) {
+                const livePrice = await this.getLivePrice(geckoId);
+                if (!livePrice)
+                    return { error: 'Price Oracle is currently offline. Trading is paused to protect market integrity.' };
+                cryptoPrice = livePrice;
+            }
+            const usdValue = (fromAmount / 10000);
+            const grossCryptoAmount = usdValue / cryptoPrice;
+            const netCryptoAmount = grossCryptoAmount * 0.92;
+            if (!user.cryptoBalances)
+                user.cryptoBalances = {};
+            const currentTargetBalance = user.cryptoBalances[targetCoin] || 0;
+            user.cryptoBalances[targetCoin] = currentTargetBalance + netCryptoAmount;
+            user.elixirBalance -= fromAmount;
+            user.markModified('cryptoBalances');
+            await user.save();
+            const spread = grossCryptoAmount * 0.08;
+            await this.adminService.addProfit(targetCoin, spread, 'SWAP_SPREAD', telegramId);
+            return {
+                success: true,
+                user,
+                received: netCryptoAmount,
+                gross: grossCryptoAmount,
+                spread: (grossCryptoAmount * 0.08)
+            };
         }
-        const usdValue = (fromAmount / 10000);
-        const grossCryptoAmount = usdValue / cryptoPrice;
-        const netCryptoAmount = grossCryptoAmount * 0.92;
-        if (!user.cryptoBalances)
-            user.cryptoBalances = {};
-        const currentTargetBalance = user.cryptoBalances[targetCoin] || 0;
-        user.cryptoBalances[targetCoin] = currentTargetBalance + netCryptoAmount;
-        user.elixirBalance -= fromAmount;
-        user.markModified('cryptoBalances');
-        await user.save();
-        const spread = grossCryptoAmount * 0.08;
-        await this.adminService.addProfit(targetCoin, spread, 'SWAP_SPREAD', telegramId);
-        return {
-            success: true,
-            user,
-            received: netCryptoAmount,
-            gross: grossCryptoAmount,
-            spread: (grossCryptoAmount * 0.08)
-        };
+        finally {
+            await this.unlockUserWithdrawal(telegramId);
+        }
     }
     async convertDustToElixir(telegramId, coinsToConvert) {
         if (!coinsToConvert || coinsToConvert.length === 0)
             return { error: 'No coins selected' };
-        const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user)
-            return { error: 'User not found' };
-        if (!user.cryptoBalances)
-            return { error: 'No balances to convert' };
-        const coinGeckoMap = {
-            'ETH': 'ethereum',
-            'MATIC': 'matic-network',
-            'PEPE': 'pepe',
-            'SOL': 'solana',
-            'TIA': 'celestia',
-            'LINK': 'chainlink',
-            'INJ': 'injective-protocol',
-            'DYM': 'dymension',
-            'DOT': 'polkadot',
-            'CRO': 'crypto-com-chain',
-            'ARB': 'arbitrum'
-        };
-        let totalUsdValue = 0;
-        for (const coin of coinsToConvert) {
-            const sym = coin.toUpperCase();
-            const balance = user.cryptoBalances[sym] || 0;
-            if (balance <= 0)
-                continue;
-            let cryptoPrice = 1.0;
-            const geckoId = coinGeckoMap[sym];
-            if (geckoId) {
-                try {
-                    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
-                    const data = await res.json();
-                    cryptoPrice = data[geckoId]?.usd || 1;
+        const locked = await this.lockUserForWithdrawal(telegramId);
+        if (!locked)
+            return { error: 'A transaction is currently processing, please wait.' };
+        try {
+            const user = await this.userModel.findOne({ telegramId }).exec();
+            if (!user)
+                return { error: 'User not found' };
+            if (!user.cryptoBalances)
+                return { error: 'No balances to convert' };
+            const coinGeckoMap = {
+                'ETH': 'ethereum', 'MATIC': 'matic-network', 'PEPE': 'pepe', 'SOL': 'solana',
+                'TIA': 'celestia', 'LINK': 'chainlink', 'INJ': 'injective-protocol',
+                'DYM': 'dymension', 'DOT': 'polkadot', 'CRO': 'crypto-com-chain', 'ARB': 'arbitrum'
+            };
+            let totalUsdValue = 0;
+            for (const coin of coinsToConvert) {
+                const sym = coin.toUpperCase();
+                const balance = user.cryptoBalances[sym] || 0;
+                if (balance <= 0)
+                    continue;
+                let cryptoPrice = 1.0;
+                const geckoId = coinGeckoMap[sym];
+                if (geckoId) {
+                    const livePrice = await this.getLivePrice(geckoId);
+                    if (!livePrice)
+                        return { error: `Price Oracle is offline for ${sym}. Trading is paused.` };
+                    cryptoPrice = livePrice;
                 }
-                catch (e) {
-                    cryptoPrice = sym === 'ETH' ? 3000 : (sym === 'PEPE' ? 0.0000045 : 0.5);
+                const grossUsdValue = balance * cryptoPrice;
+                const feeUsd = grossUsdValue * 0.003;
+                const netUsdValue = grossUsdValue - feeUsd;
+                totalUsdValue += netUsdValue;
+                const feeInNativeToken = balance * 0.003;
+                if (feeInNativeToken > 0) {
+                    await this.adminService.addProfit(sym, feeInNativeToken, 'DUST_CONVERT', telegramId);
                 }
+                user.cryptoBalances[sym] = 0;
             }
-            const grossUsdValue = balance * cryptoPrice;
-            const feeUsd = grossUsdValue * 0.003;
-            const netUsdValue = grossUsdValue - feeUsd;
-            totalUsdValue += netUsdValue;
-            const feeInNativeToken = balance * 0.003;
-            if (feeInNativeToken > 0) {
-                await this.adminService.addProfit(sym, feeInNativeToken, 'DUST_CONVERT', telegramId);
+            if (totalUsdValue <= 0) {
+                return { error: 'Selected balances have zero value.' };
             }
-            user.cryptoBalances[sym] = 0;
+            const elixirGained = totalUsdValue * 10000;
+            user.elixirBalance = (user.elixirBalance || 0) + elixirGained;
+            user.lifetimeElixir = (user.lifetimeElixir || 0) + elixirGained;
+            user.markModified('cryptoBalances');
+            await user.save();
+            return {
+                success: true,
+                elixirGained,
+                newElixirBalance: user.elixirBalance,
+                cryptoBalances: user.cryptoBalances
+            };
         }
-        if (totalUsdValue <= 0) {
-            return { error: 'Selected balances have zero value.' };
+        finally {
+            await this.unlockUserWithdrawal(telegramId);
         }
-        const elixirGained = totalUsdValue * 10000;
-        user.elixirBalance = (user.elixirBalance || 0) + elixirGained;
-        user.markModified('cryptoBalances');
-        await user.save();
-        return {
-            success: true,
-            elixirGained,
-            newElixirBalance: user.elixirBalance,
-            cryptoBalances: user.cryptoBalances
-        };
     }
     async executeHiLoBet(telegramId, betAmount, multiplier, type) {
         if (betAmount < 10 || betAmount > 1000000) {
@@ -383,7 +584,7 @@ let UsersService = class UsersService {
             return { error: 'Insufficient balance or invalid bet amount' };
         }
         let edge = 0.95;
-        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).exec();
+        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
         const lastBet = recentBets.length > 0 ? recentBets[0] : null;
         if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
             edge = Math.min(edge, 0.40);
@@ -421,13 +622,16 @@ let UsersService = class UsersService {
         const profit = isWin ? (reward - betAmount) : -betAmount;
         let finalBalance = user.elixirBalance;
         if (isWin) {
-            const winUser = await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: reward } }, { new: true }).exec();
+            const winUser = await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: reward, lifetimeElixir: reward } }, { new: true }).exec();
             finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
         }
         await new this.hiloBetModel({
             telegramId, betAmount, multiplier, targetType: type, rolledNumber, isWin, profit,
             newBalance: finalBalance, serverSeed, clientSeed, hash
         }).save();
+        if (betAmount >= 5000) {
+            await this.userModel.updateOne({ telegramId }, { $inc: { exp: 3 } }).exec();
+        }
         return {
             success: true,
             rolledNumber,
@@ -440,6 +644,7 @@ let UsersService = class UsersService {
         const history = await this.hiloBetModel.find({ telegramId })
             .sort({ createdAt: -1 })
             .limit(50)
+            .lean()
             .exec();
         return history;
     }
@@ -464,12 +669,13 @@ let UsersService = class UsersService {
     }
     async getDashboardStatsAdmin() {
         const totalUsers = await this.userModel.countDocuments().exec();
-        const users = await this.userModel.find({}, { elixirBalance: 1 }).exec();
+        const users = await this.userModel.find({}, { elixirBalance: 1 }).lean().exec();
         const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
         const recentUsers = await this.userModel.find()
             .sort({ elixirBalance: -1 })
             .limit(20)
             .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
+            .lean()
             .exec();
         return {
             totalUsers,
@@ -477,8 +683,27 @@ let UsersService = class UsersService {
             recentUsers
         };
     }
+    async lockUserForWithdrawal(telegramId) {
+        const locked = await this.userModel.findOneAndUpdate({ telegramId, isWithdrawing: { $ne: true } }, { $set: { isWithdrawing: true } }).exec();
+        return !!locked;
+    }
+    async unlockUserWithdrawal(telegramId) {
+        await this.userModel.updateOne({ telegramId }, { $set: { isWithdrawing: false } }).exec();
+    }
 };
 exports.UsersService = UsersService;
+__decorate([
+    (0, schedule_1.Cron)('0 1 * * *', { timeZone: 'UTC' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UsersService.prototype, "cleanupOldCodeDrops", null);
+__decorate([
+    (0, schedule_1.Cron)('*/5 * * * *', { timeZone: 'UTC' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UsersService.prototype, "notifyFullMining", null);
 exports.UsersService = UsersService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),

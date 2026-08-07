@@ -20,6 +20,7 @@ const achievements_module_1 = require("./achievements/achievements.module");
 const payment_module_1 = require("./payment/payment.module");
 const history_module_1 = require("./history/history.module");
 const admin_module_1 = require("./admin/admin.module");
+const bot_module_1 = require("./bot/bot.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -44,6 +45,7 @@ exports.AppModule = AppModule = __decorate([
             payment_module_1.PaymentModule,
             history_module_1.HistoryModule,
             admin_module_1.AdminModule,
+            bot_module_1.BotModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

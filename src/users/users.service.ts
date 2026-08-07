@@ -2,11 +2,33 @@ import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
+import { Cron } from '@nestjs/schedule';
+import { MINING_FULL_TEMPLATES, MINING_FULL_ANIMATIONS } from '../bot/messages.constant';
 import { User, UserDocument } from './schemas/user.schema';
 import { ReferralLog, ReferralLogDocument } from './schemas/referral-log.schema';
 import { HiLoBet, HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
 import { AdminService } from '../admin/admin.service';
+
+export const VIP_RANKS = [
+    { name: 'NON-VIP', xp: 0, reward: 0, wdLimit: 3, maxWdUsd: 3, miningBoost: 0 },
+    { name: 'BRONZE', xp: 100, reward: 200, wdLimit: 10, maxWdUsd: 10, miningBoost: 0.05 },
+    { name: 'SILVER', xp: 1000, reward: 2000, wdLimit: 20, maxWdUsd: 50, miningBoost: 0.10 },
+    { name: 'GOLD', xp: 2000, reward: 4000, wdLimit: 50, maxWdUsd: 100, miningBoost: 0.25 },
+    { name: 'PLATINUM', xp: 15000, reward: 30000, wdLimit: 100, maxWdUsd: 250, miningBoost: 0.50 },
+    { name: 'DIAMOND', xp: 50000, reward: 100000, wdLimit: Infinity, maxWdUsd: 500, miningBoost: 1.0 },
+    { name: 'RUBY', xp: 100000, reward: 200000, wdLimit: Infinity, maxWdUsd: 1000, miningBoost: 2.5 },
+    { name: 'EMERALD', xp: 250000, reward: 500000, wdLimit: Infinity, maxWdUsd: Infinity, miningBoost: 5.0 }
+];
+
+export function getUserVipRank(exp: number) {
+    let rank = VIP_RANKS[0];
+    for (const tier of VIP_RANKS) {
+        if (exp >= tier.xp) rank = tier;
+        else break;
+    }
+    return rank;
+}
 
 @Injectable()
 export class UsersService {
@@ -17,6 +39,91 @@ export class UsersService {
         @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService,
         @Inject(forwardRef(() => AdminService)) private adminService: AdminService
     ) { }
+
+    @Cron('0 1 * * *', { timeZone: 'UTC' })
+    async cleanupOldCodeDrops() {
+        const expiredCodes: string[] = [];
+        const now = new Date();
+
+        // Loop to generate deterministic codes from 7 Days ago up to 30 Days ago
+        for (let i = 7; i <= 30; i++) {
+            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+            expiredCodes.push(`ELIX-${dateStr}`);
+        }
+
+        try {
+            const result = await this.userModel.updateMany(
+                { claimedCodeDrops: { $in: expiredCodes } },
+                { $pull: { claimedCodeDrops: { $in: expiredCodes } } }
+            ).exec();
+
+            console.log(`[Cron Garbage Collector] Wiped expired drop codes (>= 7 days old) from database arrays. Users cleared: ${result.modifiedCount}`);
+        } catch (e) {
+            console.error('[Cron Garbage Collector] Failed to cleanup old drop codes', e);
+        }
+    }
+
+    // ============================================
+    // PERSONALIZED 100% MINING CAPACITY ALERTS
+    // ============================================
+    @Cron('*/5 * * * *', { timeZone: 'UTC' })
+    async notifyFullMining() {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (!botToken) return;
+
+        // Exactly 2 Hours = 7200000ms
+        const twoHoursAgo = new Date(Date.now() - 7200000);
+
+        // Anti-Rate Limit Buffer: Only grab 40 targets per 5 minutes maximum
+        const usersToNotify = await this.userModel.find({
+            miningStartDate: { $lte: twoHoursAgo, $ne: null },
+            isMiningNotified: { $ne: true }
+        }).limit(40).exec();
+
+        const now = new Date();
+        const epochDays = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
+        const messageIndex = epochDays % 30; // Modulo rotation 0-29
+        const animIndex = epochDays % MINING_FULL_ANIMATIONS.length;
+
+        const rawMessageTemplate = MINING_FULL_TEMPLATES[messageIndex];
+        const animationUrl = MINING_FULL_ANIMATIONS[animIndex];
+
+        for (const user of usersToNotify) {
+            try {
+                const payload = {
+                    chat_id: user.telegramId,
+                    animation: animationUrl,
+                    caption: rawMessageTemplate,
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "💰 CLAIM EXTRACTED ELIXIR", url: "https://t.me/ElixirAds_bot/app?startapp=earn" }]
+                        ]
+                    }
+                };
+
+                const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAnimation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    await this.userModel.updateOne({ telegramId: user.telegramId }, { $set: { isMiningNotified: true } }).exec();
+                } else if (data.error_code === 403 || data.error_code === 400 || (data.description && data.description.includes('bot was blocked'))) {
+                    // Bot was blocked by the user or Chat doesn't exist anymore -- flag true to silently stop trying
+                    await this.userModel.updateOne({ telegramId: user.telegramId }, { $set: { isMiningNotified: true } }).exec();
+                }
+            } catch (e) {
+                console.error(`[DM Pinger] Network error notifying mining full for user ${user.telegramId}`);
+            }
+
+            // Add a synthetic 100ms delay to enforce safety against 30 msg/sec bounds
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
 
     async syncTelegramUser(userData: any, referredBy?: string): Promise<User> {
         const { id, first_name, last_name, username, photo_url, is_premium } = userData;
@@ -56,9 +163,24 @@ export class UsersService {
     async startMining(telegramId: string): Promise<User | null> {
         return this.userModel.findOneAndUpdate(
             { telegramId },
-            { $set: { miningStartDate: new Date() } },
+            { $set: { miningStartDate: new Date(), isMiningBoosted: false, isMiningNotified: false } },
             { returnDocument: 'after' }
         ).exec();
+    }
+
+    async boostMining(telegramId: string): Promise<{ user: User | null; error?: string }> {
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user) return { user: null, error: 'User not found' };
+        if (!user.miningStartDate) return { user, error: 'Mining not started' };
+        if (user.isMiningBoosted) return { user, error: 'Already boosted' };
+
+        const updatedUser = await this.userModel.findOneAndUpdate(
+            { telegramId },
+            { $set: { isMiningBoosted: true } },
+            { returnDocument: 'after' }
+        ).exec();
+
+        return { user: updatedUser };
     }
 
     async claimMining(telegramId: string): Promise<{ user: User | null; claimedAmount: number; error?: string }> {
@@ -72,18 +194,29 @@ export class UsersService {
         let secondsToClaim = diffSec > 7200 ? 7200 : diffSec;
         if (secondsToClaim < 0) secondsToClaim = 0;
 
-        const reward = (15 / 7200) * secondsToClaim;
+        const baseReward = user.isMiningBoosted ? 5 : 2.5;
+        let reward = (baseReward / 7200) * secondsToClaim;
+
+        const vipRank = getUserVipRank(user.exp || 0);
+        reward = reward + (reward * vipRank.miningBoost);
+
+        // Code Drop Voucher 1.5x Multiplier
+        if (user.miningVoucherExpiry && new Date() < user.miningVoucherExpiry) {
+            reward = reward * 1.5;
+        }
 
         if (reward <= 0.0001) return { user, claimedAmount: 0, error: 'Reward too small to claim yet' };
 
         const updatedUser = await this.userModel.findOneAndUpdate(
-            { telegramId },
+            { telegramId, miningStartDate: { $ne: null } },
             {
-                $inc: { elixirBalance: reward },
-                $set: { miningStartDate: null }
+                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 },
+                $set: { miningStartDate: null, isMiningBoosted: false, isMiningNotified: false }
             },
             { returnDocument: 'after' }
         ).exec();
+
+        if (!updatedUser) return { user: null, claimedAmount: 0, error: 'Mining already claimed or not started' };
 
         if (updatedUser) {
             await this.achievementsService.incrementProgress(telegramId, [1, 8, 9, 10], 1);
@@ -130,11 +263,10 @@ export class UsersService {
     }
 
     async creditRewardAndLogTask(telegramId: string, reward: number, campaignId: string): Promise<boolean> {
-        // Prevent double claiming
         const result = await this.userModel.findOneAndUpdate(
             { telegramId, completedTasks: { $ne: campaignId } },
             {
-                $inc: { elixirBalance: reward },
+                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 },
                 $push: { completedTasks: campaignId }
             }
         ).exec();
@@ -161,7 +293,7 @@ export class UsersService {
     async getReferralStats(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         const totalReferrals = await this.userModel.countDocuments({ referredBy: telegramId }).exec();
-        const history = await this.referralLogModel.find({ uplineTelegramId: telegramId }).sort({ createdAt: -1 }).limit(10).exec();
+        const history = await this.referralLogModel.find({ uplineTelegramId: telegramId }).sort({ createdAt: -1 }).limit(10).lean().exec();
 
         return {
             referralBalance: user ? (user.referralBalance || 0) : 0,
@@ -179,7 +311,7 @@ export class UsersService {
         const updated = await this.userModel.findOneAndUpdate(
             { telegramId, referralBalance: { $gte: 1000 } },
             {
-                $inc: { elixirBalance: claimAmount },
+                $inc: { elixirBalance: claimAmount, lifetimeElixir: claimAmount },
                 $set: { referralBalance: 0 }
             },
             { returnDocument: 'after' }
@@ -191,21 +323,128 @@ export class UsersService {
     }
 
     async claimDailyLogin(telegramId: string) {
+        const now = new Date();
+        const updatedUser = await this.userModel.findOneAndUpdate(
+            {
+                telegramId,
+                $or: [
+                    { lastDailyLogin: null },
+                    { lastDailyLogin: { $lte: new Date(Date.now() - 86390000) } }
+                ]
+            },
+            {
+                $set: { lastDailyLogin: now },
+                $inc: { elixirBalance: 5, lifetimeElixir: 5 }
+            },
+            { returnDocument: 'after' }
+        ).exec();
+
+        if (!updatedUser) return { error: 'Come back in 24 hours to claim again or race condition mitigated!' };
+
+        return { success: true, reward: 5, user: updatedUser };
+    }
+
+    async claimVipRank(telegramId: string, rankName: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
 
+        const rank = VIP_RANKS.find(r => r.name === rankName.toUpperCase());
+        if (!rank) return { error: 'Invalid rank' };
+
+        if ((user.exp || 0) < rank.xp) return { error: 'Not enough XP for this rank' };
+        if (user.claimedVipRanks && user.claimedVipRanks.includes(rank.name)) return { error: 'Rank already claimed' };
+        if (rank.reward <= 0) return { error: 'No reward available for this tier' };
+
+        const updatedUser = await this.userModel.findOneAndUpdate(
+            { telegramId, claimedVipRanks: { $ne: rank.name } },
+            {
+                $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward },
+                $addToSet: { claimedVipRanks: rank.name }
+            },
+            { returnDocument: 'after' }
+        ).exec();
+
+        if (!updatedUser) return { error: 'Rank already claimed' };
+
+        return { success: true, user: updatedUser, reward: rank.reward };
+    }
+
+    async claimFaucet(telegramId: string) {
         const now = new Date();
-        if (user.lastDailyLogin) {
-            const msSinceLast = now.getTime() - user.lastDailyLogin.getTime();
-            if (msSinceLast < 86400000) {
-                return { error: 'Come back in 24 hours to claim again!' };
-            }
+
+        // Rigged Logic: Max roll is strictly 980,000 so the user gets 10 Elixir at most
+        const finalNum = Math.floor(Math.random() * 980001);
+
+        let reward = 3;
+        if (finalNum >= 950001) reward = 10;
+        else if (finalNum >= 800001) reward = 5;
+
+        const updatedUser = await this.userModel.findOneAndUpdate(
+            {
+                telegramId,
+                $or: [
+                    { lastFaucetRoll: null },
+                    { lastFaucetRoll: { $lte: new Date(Date.now() - 3590000) } }
+                ]
+            },
+            {
+                $set: { lastFaucetRoll: now },
+                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 }
+            },
+            { returnDocument: 'after' }
+        ).exec();
+
+        if (!updatedUser) return { error: 'Race condition mitigated or cooldown active' };
+
+        return { success: true, finalNum, reward, user: updatedUser };
+    }
+
+    async claimCodeDrop(telegramId: string, code: string) {
+        if (!code) return { error: 'Invalid code provided' };
+
+        const now = new Date();
+        const utcHours = now.getUTCHours();
+
+        // Cron deploys the drop exactly at 12:00 UTC. The 12-Hour Expiration lasts precisely until 23:59:59 UTC.
+        // Attempting to claim before 12:00 implies claiming yesterday's code, which is mathematically > 12 hours old = EXPIRED.
+        if (utcHours < 12) {
+            return { error: '⚠️ CODE EXPIRED OR FULL CLAIMED!' };
         }
 
-        user.lastDailyLogin = now;
-        user.elixirBalance += 5;
-        await user.save();
-        return { success: true, reward: 5, user };
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ''); // e.g. 20260807
+        const todayCode = `ELIX-${dateStr}`;
+
+        if (code.toUpperCase() !== todayCode) {
+            return { error: '⚠️ CODE EXPIRED OR FULL CLAIMED!' };
+        }
+
+        const totalClaims = await this.userModel.countDocuments({ claimedCodeDrops: todayCode }).exec();
+        if (totalClaims >= 50) {
+            return { error: '⚠️ CODE EXPIRED OR FULL CLAIMED! This voucher was fully exhausted by the first 50 players.' };
+        }
+
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user) return { error: 'User not found' };
+
+        if (user.claimedCodeDrops && user.claimedCodeDrops.includes(code.toUpperCase())) {
+            return { error: 'Anda sudah mengklaim Drop Code ini!' };
+        }
+
+        const voucherExpiry = new Date(now.getTime() + 6 * 60 * 60 * 1000); // 6 hours
+
+        const updatedUser = await this.userModel.findOneAndUpdate(
+            { telegramId, claimedCodeDrops: { $ne: code.toUpperCase() } },
+            {
+                $addToSet: { claimedCodeDrops: code.toUpperCase() },
+                $set: { miningVoucherExpiry: voucherExpiry },
+                $inc: { elixirBalance: 2.5, lifetimeElixir: 2.5, exp: 1 }
+            },
+            { returnDocument: 'after' }
+        ).exec();
+
+        if (!updatedUser) return { error: 'Gagal mengklaim voucher!' };
+
+        return { success: true, user: updatedUser, reward: 2.5 };
     }
 
     async verifyTelegramChannel(telegramId: string) {
@@ -216,10 +455,13 @@ export class UsersService {
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
         if (!botToken) {
             // Mock mode if no token is available
-            user.joinedTelegram = true;
-            user.elixirBalance += 100;
-            await user.save();
-            return { success: true, reward: 100, user, mock: true };
+            const updatedUser = await this.userModel.findOneAndUpdate(
+                { telegramId, joinedTelegram: { $ne: true } },
+                { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100 } },
+                { returnDocument: 'after' }
+            ).exec();
+            if (!updatedUser) return { error: 'Already claimed' };
+            return { success: true, reward: 100, user: updatedUser, mock: true };
         }
 
         try {
@@ -227,10 +469,13 @@ export class UsersService {
             const data = await response.json();
 
             if (data.ok && ['member', 'administrator', 'creator'].includes(data.result.status)) {
-                user.joinedTelegram = true;
-                user.elixirBalance += 100;
-                await user.save();
-                return { success: true, reward: 100, user };
+                const updatedUser = await this.userModel.findOneAndUpdate(
+                    { telegramId, joinedTelegram: { $ne: true } },
+                    { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100 } },
+                    { returnDocument: 'after' }
+                ).exec();
+                if (!updatedUser) return { error: 'Already claimed' };
+                return { success: true, reward: 100, user: updatedUser };
             } else {
                 return { error: 'Please join the channel first!' };
             }
@@ -242,12 +487,16 @@ export class UsersService {
     async getBalance(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         const withdrawLimits = await this.adminService.getWithdrawLimits();
+        const totalReferrals = await this.userModel.countDocuments({ referredBy: telegramId }).exec();
         return {
             elixirBalance: user?.elixirBalance || 0,
             cryptoBalances: user?.cryptoBalances || {},
             cwalletUid: user?.cwalletUid || null,
             solanaAddress: user?.solanaAddress || null,
-            withdrawLimits
+            withdrawLimits,
+            lifetimeElixir: user?.lifetimeElixir || 0,
+            lastFaucetRoll: user?.lastFaucetRoll || null,
+            totalReferrals
         };
     }
 
@@ -271,148 +520,171 @@ export class UsersService {
         return { success: true, user };
     }
 
+    private priceCache: Record<string, { price: number, timestamp: number }> = {};
+
+    async getLivePrice(geckoId: string): Promise<number | null> {
+        const now = Date.now();
+        const cacheEntry = this.priceCache[geckoId];
+
+        // Cache valid for 3 minutes to prevent rapid spam rate limits
+        if (cacheEntry && (now - cacheEntry.timestamp < 180000)) {
+            return cacheEntry.price;
+        }
+
+        try {
+            const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+            const data = await res.json();
+            const price = data[geckoId]?.usd;
+
+            if (price) {
+                this.priceCache[geckoId] = { price, timestamp: now };
+                return price;
+            }
+        } catch (e) {
+            // Silently fall to cache
+        }
+
+        // Fallback to stale cache if API is offline but we have history
+        if (cacheEntry) {
+            return cacheEntry.price;
+        }
+
+        return null; // NO FALLBACK CONSTANTS. Fail securely to prevent hyper-inflation drain exploits.
+    }
+
     async swapTokens(telegramId: string, fromAmount: number, targetCoin: string) {
         if (fromAmount <= 0) return { error: 'Invalid exchange amount' };
 
-        const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user || user.elixirBalance < fromAmount) {
-            return { error: 'Insufficient ELIXIR balance for this swap' };
-        }
+        const locked = await this.lockUserForWithdrawal(telegramId);
+        if (!locked) return { error: 'A transaction is currently processing, please wait.' };
 
-        const coinGeckoMap: Record<string, string> = {
-            'ETH': 'ethereum',
-            'MATIC': 'matic-network',
-            'PEPE': 'pepe',
-            'SOL': 'solana',
-            'TIA': 'celestia',
-            'LINK': 'chainlink',
-            'INJ': 'injective-protocol',
-            'DYM': 'dymension',
-            'DOT': 'polkadot',
-            'CRO': 'crypto-com-chain',
-            'ARB': 'arbitrum'
-        };
-
-        const geckoId = coinGeckoMap[targetCoin.toUpperCase()];
-        if (!geckoId && !['USDT', 'USDC'].includes(targetCoin.toUpperCase())) {
-            return { error: 'Unsupported destination token selected' };
-        }
-
-        let cryptoPrice = 1.0;
-        if (geckoId) {
-            try {
-                const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
-                const data = await res.json();
-                cryptoPrice = data[geckoId]?.usd || 1;
-            } catch (e) {
-                cryptoPrice = targetCoin === 'ETH' ? 3000 : (targetCoin === 'PEPE' ? 0.0000045 : 0.5); // Fallback
+        try {
+            const user = await this.userModel.findOne({ telegramId }).exec();
+            if (!user || user.elixirBalance < fromAmount) {
+                return { error: 'Insufficient ELIXIR balance for this swap' };
             }
+
+            const coinGeckoMap: Record<string, string> = {
+                'ETH': 'ethereum', 'MATIC': 'matic-network', 'PEPE': 'pepe', 'SOL': 'solana',
+                'TIA': 'celestia', 'LINK': 'chainlink', 'INJ': 'injective-protocol',
+                'DYM': 'dymension', 'DOT': 'polkadot', 'CRO': 'crypto-com-chain', 'ARB': 'arbitrum'
+            };
+
+            const geckoId = coinGeckoMap[targetCoin.toUpperCase()];
+            if (!geckoId && !['USDT', 'USDC'].includes(targetCoin.toUpperCase())) {
+                return { error: 'Unsupported destination token selected' };
+            }
+
+            let cryptoPrice = 1.0;
+            if (geckoId) {
+                const livePrice = await this.getLivePrice(geckoId);
+                if (!livePrice) return { error: 'Price Oracle is currently offline. Trading is paused to protect market integrity.' };
+                cryptoPrice = livePrice;
+            }
+
+            // Math Calculations
+            const usdValue = (fromAmount / 10000); // 10000 ELIXIR = 1 USD
+            const grossCryptoAmount = usdValue / cryptoPrice;
+
+            // 8% Spread Deduction
+            const netCryptoAmount = grossCryptoAmount * 0.92;
+
+            if (!user.cryptoBalances) user.cryptoBalances = {};
+
+            const currentTargetBalance = user.cryptoBalances[targetCoin] || 0;
+            user.cryptoBalances[targetCoin] = currentTargetBalance + netCryptoAmount;
+            user.elixirBalance -= fromAmount;
+
+            // Mark explicitly for Mongoose to save Object Maps correctly
+            user.markModified('cryptoBalances');
+            await user.save();
+
+            const spread = grossCryptoAmount * 0.08;
+            await this.adminService.addProfit(targetCoin, spread, 'SWAP_SPREAD', telegramId);
+
+            return {
+                success: true,
+                user,
+                received: netCryptoAmount,
+                gross: grossCryptoAmount,
+                spread: (grossCryptoAmount * 0.08)
+            };
+        } finally {
+            await this.unlockUserWithdrawal(telegramId);
         }
-
-        // Math Calculations
-        const usdValue = (fromAmount / 10000); // 10000 ELIXIR = 1 USD
-        const grossCryptoAmount = usdValue / cryptoPrice;
-
-        // 8% Spread Deduction
-        const netCryptoAmount = grossCryptoAmount * 0.92;
-
-        if (!user.cryptoBalances) user.cryptoBalances = {};
-
-        const currentTargetBalance = user.cryptoBalances[targetCoin] || 0;
-        user.cryptoBalances[targetCoin] = currentTargetBalance + netCryptoAmount;
-        user.elixirBalance -= fromAmount;
-
-        // Mark explicitly for Mongoose to save Object Maps correctly
-        user.markModified('cryptoBalances');
-        await user.save();
-
-        const spread = grossCryptoAmount * 0.08;
-        await this.adminService.addProfit(targetCoin, spread, 'SWAP_SPREAD', telegramId);
-
-        return {
-            success: true,
-            user,
-            received: netCryptoAmount,
-            gross: grossCryptoAmount,
-            spread: (grossCryptoAmount * 0.08)
-        };
     }
 
     async convertDustToElixir(telegramId: string, coinsToConvert: string[]) {
         if (!coinsToConvert || coinsToConvert.length === 0) return { error: 'No coins selected' };
 
-        const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user) return { error: 'User not found' };
-        if (!user.cryptoBalances) return { error: 'No balances to convert' };
+        const locked = await this.lockUserForWithdrawal(telegramId);
+        if (!locked) return { error: 'A transaction is currently processing, please wait.' };
 
-        const coinGeckoMap: Record<string, string> = {
-            'ETH': 'ethereum',
-            'MATIC': 'matic-network',
-            'PEPE': 'pepe',
-            'SOL': 'solana',
-            'TIA': 'celestia',
-            'LINK': 'chainlink',
-            'INJ': 'injective-protocol',
-            'DYM': 'dymension',
-            'DOT': 'polkadot',
-            'CRO': 'crypto-com-chain',
-            'ARB': 'arbitrum'
-        };
+        try {
+            const user = await this.userModel.findOne({ telegramId }).exec();
+            if (!user) return { error: 'User not found' };
+            if (!user.cryptoBalances) return { error: 'No balances to convert' };
 
-        let totalUsdValue = 0;
+            const coinGeckoMap: Record<string, string> = {
+                'ETH': 'ethereum', 'MATIC': 'matic-network', 'PEPE': 'pepe', 'SOL': 'solana',
+                'TIA': 'celestia', 'LINK': 'chainlink', 'INJ': 'injective-protocol',
+                'DYM': 'dymension', 'DOT': 'polkadot', 'CRO': 'crypto-com-chain', 'ARB': 'arbitrum'
+            };
 
-        for (const coin of coinsToConvert) {
-            const sym = coin.toUpperCase();
-            const balance = user.cryptoBalances[sym] || 0;
-            if (balance <= 0) continue;
+            let totalUsdValue = 0;
 
-            let cryptoPrice = 1.0;
-            const geckoId = coinGeckoMap[sym];
+            for (const coin of coinsToConvert) {
+                const sym = coin.toUpperCase();
+                const balance = user.cryptoBalances[sym] || 0;
+                if (balance <= 0) continue;
 
-            if (geckoId) {
-                try {
-                    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
-                    const data = await res.json();
-                    cryptoPrice = data[geckoId]?.usd || 1;
-                } catch (e) {
-                    cryptoPrice = sym === 'ETH' ? 3000 : (sym === 'PEPE' ? 0.0000045 : 0.5); // Fallback
+                let cryptoPrice = 1.0;
+                const geckoId = coinGeckoMap[sym];
+
+                if (geckoId) {
+                    const livePrice = await this.getLivePrice(geckoId);
+                    if (!livePrice) return { error: `Price Oracle is offline for ${sym}. Trading is paused.` };
+                    cryptoPrice = livePrice;
                 }
+
+                const grossUsdValue = balance * cryptoPrice;
+                const feeUsd = grossUsdValue * 0.003; // 0.3% fee
+                const netUsdValue = grossUsdValue - feeUsd;
+
+                totalUsdValue += netUsdValue;
+
+                // Calculate native coin fee amount for Admin Logging
+                const feeInNativeToken = balance * 0.003;
+                if (feeInNativeToken > 0) {
+                    await this.adminService.addProfit(sym, feeInNativeToken, 'DUST_CONVERT', telegramId);
+                }
+
+                // Zero out the converted balance by modifying the actual MAP directly
+                user.cryptoBalances[sym] = 0;
             }
 
-            const grossUsdValue = balance * cryptoPrice;
-            const feeUsd = grossUsdValue * 0.003; // 0.3% fee
-            const netUsdValue = grossUsdValue - feeUsd;
-
-            totalUsdValue += netUsdValue;
-
-            // Calculate native coin fee amount for Admin Logging
-            const feeInNativeToken = balance * 0.003;
-            if (feeInNativeToken > 0) {
-                await this.adminService.addProfit(sym, feeInNativeToken, 'DUST_CONVERT', telegramId);
+            if (totalUsdValue <= 0) {
+                return { error: 'Selected balances have zero value.' };
             }
 
-            // Zero out the converted balance by modifying the actual MAP directly
-            user.cryptoBalances[sym] = 0;
+            // 1 USD = 10,000 ELIXIR
+            const elixirGained = totalUsdValue * 10000;
+            user.elixirBalance = (user.elixirBalance || 0) + elixirGained;
+            user.lifetimeElixir = (user.lifetimeElixir || 0) + elixirGained;
+
+            // Force Mongoose to recognize changes in a Map object
+            user.markModified('cryptoBalances');
+            await user.save();
+
+            return {
+                success: true,
+                elixirGained,
+                newElixirBalance: user.elixirBalance,
+                cryptoBalances: user.cryptoBalances
+            };
+        } finally {
+            await this.unlockUserWithdrawal(telegramId);
         }
-
-        if (totalUsdValue <= 0) {
-            return { error: 'Selected balances have zero value.' };
-        }
-
-        // 1 USD = 10,000 ELIXIR
-        const elixirGained = totalUsdValue * 10000;
-        user.elixirBalance = (user.elixirBalance || 0) + elixirGained;
-
-        // Force Mongoose to recognize changes in a Map object
-        user.markModified('cryptoBalances');
-        await user.save();
-
-        return {
-            success: true,
-            elixirGained,
-            newElixirBalance: user.elixirBalance,
-            cryptoBalances: user.cryptoBalances
-        };
     }
 
     async executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo') {
@@ -437,8 +709,8 @@ export class UsersService {
         // RNG Engine with dynamic Psychological House Edge Algorithm
         let edge = 0.95; // Base 5% Platform Advantage
 
-        // Extract Recent Bet History to detect Manual/Auto betting patterns
-        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).exec();
+        // Extract Recent Bet History to detect Manual/Auto betting patterns (80% RAM optimal using lean())
+        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
         const lastBet = recentBets.length > 0 ? recentBets[0] : null;
 
         // 1. Martingale Slasher: Triggered if user doubled up forcefully after a loss
@@ -496,7 +768,7 @@ export class UsersService {
             // Atomic Payout
             const winUser = await this.userModel.findOneAndUpdate(
                 { telegramId },
-                { $inc: { elixirBalance: reward } },
+                { $inc: { elixirBalance: reward, lifetimeElixir: reward } },
                 { new: true }
             ).exec();
             finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
@@ -507,6 +779,10 @@ export class UsersService {
             telegramId, betAmount, multiplier, targetType: type, rolledNumber, isWin, profit,
             newBalance: finalBalance, serverSeed, clientSeed, hash
         }).save();
+
+        if (betAmount >= 5000) {
+            await this.userModel.updateOne({ telegramId }, { $inc: { exp: 3 } }).exec();
+        }
 
         return {
             success: true,
@@ -521,6 +797,7 @@ export class UsersService {
         const history = await this.hiloBetModel.find({ telegramId })
             .sort({ createdAt: -1 })
             .limit(50)
+            .lean()
             .exec();
         return history;
     }
@@ -558,8 +835,8 @@ export class UsersService {
     async getDashboardStatsAdmin() {
         const totalUsers = await this.userModel.countDocuments().exec();
 
-        // Return total raw ELIXIR across all users
-        const users = await this.userModel.find({}, { elixirBalance: 1 }).exec();
+        // Return total raw ELIXIR across all users (Lean parsing drops memory load heavily)
+        const users = await this.userModel.find({}, { elixirBalance: 1 }).lean().exec();
         const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
 
         // Fetch top users by highest Elixir balance
@@ -567,6 +844,7 @@ export class UsersService {
             .sort({ elixirBalance: -1 })
             .limit(20)
             .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
+            .lean()
             .exec();
 
         return {
@@ -574,5 +852,17 @@ export class UsersService {
             totalElixir, // Pass raw Total Elixir
             recentUsers
         };
+    }
+
+    async lockUserForWithdrawal(telegramId: string): Promise<boolean> {
+        const locked = await this.userModel.findOneAndUpdate(
+            { telegramId, isWithdrawing: { $ne: true } },
+            { $set: { isWithdrawing: true } }
+        ).exec();
+        return !!locked;
+    }
+
+    async unlockUserWithdrawal(telegramId: string): Promise<void> {
+        await this.userModel.updateOne({ telegramId }, { $set: { isWithdrawing: false } }).exec();
     }
 }

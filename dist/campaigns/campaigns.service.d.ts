@@ -46,14 +46,26 @@ export declare class CampaignsService {
     } & {
         id: string;
     })[]>;
+    private activeTaskStarts;
+    startTask(telegramId: string, campaignId: string): Promise<{
+        success: boolean;
+    }>;
+    verifyTelegramMembership(telegramId: string, url: string): Promise<boolean | null>;
     completeTask(telegramId: string, campaignId: string): Promise<{
         success: boolean;
         error: string;
+        message?: undefined;
+        reward?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+        message: string;
         reward?: undefined;
     } | {
         success: boolean;
         reward: number;
         error?: undefined;
+        message?: undefined;
     }>;
     updateCampaign(campaignId: string, data: {
         title?: string;

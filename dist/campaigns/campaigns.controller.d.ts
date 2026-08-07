@@ -33,10 +33,22 @@ export declare class CampaignsController {
     } & {
         id: string;
     })[]>;
+    startTask(telegramId: string, campaignId: string): Promise<{
+        success: boolean;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
     completeTask(telegramId: string, campaignId: string): Promise<{
+        success: boolean;
+        error: string;
+        message: string;
+        reward?: undefined;
+    } | {
         success: boolean;
         reward: number;
         error?: undefined;
+        message?: undefined;
     } | {
         success: boolean;
         error: string;

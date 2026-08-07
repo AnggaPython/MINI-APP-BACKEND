@@ -31,6 +31,12 @@ export class Campaign {
 
     @Prop({ required: true, default: 'active' }) // active, paused, exhausted
     status: string;
+
+    @Prop({ required: true, default: true })
+    oneUserLifetime: boolean;
+
+    @Prop({ required: true, default: false })
+    autoRenew: boolean;
 }
 
 export const CampaignSchema = SchemaFactory.createForClass(Campaign);

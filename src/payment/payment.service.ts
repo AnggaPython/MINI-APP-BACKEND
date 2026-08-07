@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { UsersService } from '../users/users.service';
+import { UsersService, getUserVipRank } from '../users/users.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
@@ -217,125 +217,161 @@ export class PaymentService {
         const usdValue = amount * liveUsdPrice;
         const isBonusEligible = usdValue >= 0.3;
 
-        // Process Advance / On-chain split fees
-        let executionAmount = amount;
-        if (tier === 'advance') {
-            executionAmount = amount * 0.985; // 1.5% Cut
-        } else if (tier === 'onchain') {
-            const cryptoFee = 0.5 / liveUsdPrice;
-            executionAmount = amount - cryptoFee;
-            if (executionAmount <= 0) {
-                // Refund before aborting
-                await this.usersService.creditCrypto(telegramId, coin, amount);
-                return { success: false, error: 'Withdrawal size too small to cover the $0.5 flat network fee' };
-            }
-        } else if (tier === 'standard' && isBonusEligible) {
-            executionAmount = amount * 1.03; // 3% Bonus Subsidy
+        // --- VIP ENFORCEMENT WITH MUTEX LOCK ---
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (!user) return { success: false, error: 'User not found' };
+
+        const locked = await this.usersService.lockUserForWithdrawal(telegramId);
+        if (!locked) {
+            return { success: false, error: 'A withdrawal is currently processing, please wait.' };
         }
-
-        // 1. Debit exact Crypto immediately from user DB (we still debit the theoretical gross `amount` from their balance)
-        const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
-        if (!debited) return { success: false, error: 'Insufficient crypto balance' };
-
-        // Route profit margin (Tier Cut or Subsidy Deduct) to Admin Profit Pool
-        let withdrawalMarginToAdmin = amount - executionAmount;
-
-        // CCPayment strictly slices $0.25 as network toll for On-Chain, so Admin receives only the remaining margin
-        if (tier === 'onchain') {
-            const ccPaymentToll = 0.25 / liveUsdPrice;
-            withdrawalMarginToAdmin = withdrawalMarginToAdmin - ccPaymentToll;
-        }
-
-        if (withdrawalMarginToAdmin !== 0) {
-            const marginSource = withdrawalMarginToAdmin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
-            await this.adminService.addProfit(coin.toUpperCase(), withdrawalMarginToAdmin, marginSource, telegramId);
-        }
-
-        // 2. Identify the Coin ID for CCPayment V2
-        const coinId = this.coinMap[coin.toUpperCase()];
-        if (!coinId) {
-            await this.usersService.creditCrypto(telegramId, coin, amount);
-            return { success: false, error: 'Unsupported withdrawal token' };
-        }
-
-        const triggerWithdraw = async () => {
-            const timestamp = Math.floor(Date.now() / 1000).toString();
-
-            if (tier === 'onchain') {
-                const payload = {
-                    orderId: `WD_ON_${Date.now()}_${telegramId}`,
-                    address: walletAddress,
-                    amount: executionAmount.toFixed(8),
-                    coinId: coinId,
-                    chain: 'SOL' // Forcing SOL architecture due to On-chain Solana wallet bind
-                };
-                const rawBody = JSON.stringify(payload);
-                const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
-                    method: 'POST',
-                    headers: this.getHeaders(rawBody, timestamp),
-                    body: rawBody
-                });
-                return await res.json();
-            } else {
-                const payload = {
-                    orderId: `WD_${Date.now()}_${telegramId}`,
-                    cwalletUser: walletAddress,
-                    amount: executionAmount.toFixed(8),
-                    coinId: coinId
-                };
-                const rawBody = JSON.stringify(payload);
-                const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToCwallet', {
-                    method: 'POST',
-                    headers: this.getHeaders(rawBody, timestamp),
-                    body: rawBody
-                });
-                return await res.json();
-            }
-        };
 
         try {
-            let data = await triggerWithdraw();
+            const vipRank = getUserVipRank(user.exp || 0);
 
-            // Intercept Code 14000: Insufficient Balance. Execute automated USDC fallback
-            if (data.code === 14000) {
-                this.logger.warn(`Insufficient Treasury Balance (Code 14000). Triggering Auto-Swap Bridge for ${coin}...`);
-                // Use executionAmount because that's what we requested from CCPayment
-                const refilled = await this.refillTreasuryLiquidityViaSwap(coinId, executionAmount);
-                if (refilled) {
-                    this.logger.log(`Auto-Swap Bridge Successful. Re-attempting Withdrawal...`);
-                    data = await triggerWithdraw();
-                } else {
-                    this.logger.warn(`Auto-Swap Bridge failed for ${coin}.`);
-                }
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            const todaysTxs = await this.txModel.find({
+                telegramId, type: 'WITHDRAW', createdAt: { $gte: startOfDay }
+            }).exec();
+
+            // 1. Check Count Limit
+            if (todaysTxs.length >= vipRank.wdLimit) {
+                return { success: false, error: `Daily withdrawal limit of ${vipRank.wdLimit} reached for ${vipRank.name} tier.` };
             }
 
-            if (data.code === 10000) {
+            // 2. Check USD Volume Limit
+            let pastUsdVolume = 0;
+            for (const tx of todaysTxs) {
+                const p = tx.coin === 'PEPE' ? 0.0000045 : (tx.coin === 'SOL' ? 150 : (tx.coin === 'ETH' ? 3000 : 1));
+                pastUsdVolume += (tx.amount * p);
+            }
+
+            if ((pastUsdVolume + usdValue) > vipRank.maxWdUsd) {
+                return { success: false, error: `Daily limit of $${vipRank.maxWdUsd} USD reached for ${vipRank.name} tier.` };
+            }
+            // ------------------------
+
+            // Process Advance / On-chain split fees
+            let executionAmount = amount;
+            if (tier === 'advance') {
+                executionAmount = amount * 0.985; // 1.5% Cut
+            } else if (tier === 'onchain') {
+                const cryptoFee = 0.5 / liveUsdPrice;
+                executionAmount = amount - cryptoFee;
+                if (executionAmount <= 0) {
+                    return { success: false, error: 'Withdrawal size too small to cover the $0.5 flat network fee' };
+                }
+            } else if (tier === 'standard' && isBonusEligible) {
+                executionAmount = amount * 1.03; // 3% Bonus Subsidy
+            }
+
+            // 1. Debit exact Crypto immediately from user DB (we still debit the theoretical gross `amount` from their balance)
+            const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
+            if (!debited) return { success: false, error: 'Insufficient crypto balance' };
+
+            // Route profit margin (Tier Cut or Subsidy Deduct) to Admin Profit Pool
+            let withdrawalMarginToAdmin = amount - executionAmount;
+
+            // CCPayment strictly slices $0.25 as network toll for On-Chain, so Admin receives only the remaining margin
+            if (tier === 'onchain') {
+                const ccPaymentToll = 0.25 / liveUsdPrice;
+                withdrawalMarginToAdmin = withdrawalMarginToAdmin - ccPaymentToll;
+            }
+
+            if (withdrawalMarginToAdmin !== 0) {
+                const marginSource = withdrawalMarginToAdmin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
+                await this.adminService.addProfit(coin.toUpperCase(), withdrawalMarginToAdmin, marginSource, telegramId);
+            }
+
+            // 2. Identify the Coin ID for CCPayment V2
+            const coinId = this.coinMap[coin.toUpperCase()];
+            if (!coinId) {
+                await this.usersService.creditCrypto(telegramId, coin, amount);
+                return { success: false, error: 'Unsupported withdrawal token' };
+            }
+
+            const triggerWithdraw = async () => {
+                const timestamp = Math.floor(Date.now() / 1000).toString();
+
+                if (tier === 'onchain') {
+                    const payload = {
+                        orderId: `WD_ON_${Date.now()}_${telegramId}`,
+                        address: walletAddress,
+                        amount: executionAmount.toFixed(8),
+                        coinId: coinId,
+                        chain: 'SOL'
+                    };
+                    const rawBody = JSON.stringify(payload);
+                    const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
+                        method: 'POST',
+                        headers: this.getHeaders(rawBody, timestamp),
+                        body: rawBody
+                    });
+                    return await res.json();
+                } else {
+                    const payload = {
+                        orderId: `WD_${Date.now()}_${telegramId}`,
+                        cwalletUser: walletAddress,
+                        amount: executionAmount.toFixed(8),
+                        coinId: coinId
+                    };
+                    const rawBody = JSON.stringify(payload);
+                    const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToCwallet', {
+                        method: 'POST',
+                        headers: this.getHeaders(rawBody, timestamp),
+                        body: rawBody
+                    });
+                    return await res.json();
+                }
+            };
+
+            try {
+                let data = await triggerWithdraw();
+
+                // Intercept Code 14000: Insufficient Balance. Execute automated USDC fallback
+                if (data.code === 14000) {
+                    this.logger.warn(`Insufficient Treasury Balance (Code 14000). Triggering Auto-Swap Bridge for ${coin}...`);
+                    // Use executionAmount because that's what we requested from CCPayment
+                    const refilled = await this.refillTreasuryLiquidityViaSwap(coinId, executionAmount);
+                    if (refilled) {
+                        this.logger.log(`Auto-Swap Bridge Successful. Re-attempting Withdrawal...`);
+                        data = await triggerWithdraw();
+                    } else {
+                        this.logger.warn(`Auto-Swap Bridge failed for ${coin}.`);
+                    }
+                }
+
+                if (data.code === 10000) {
+                    await this.txModel.create({
+                        telegramId,
+                        type: 'WITHDRAW',
+                        coin: coin.toUpperCase(),
+                        amount: executionAmount,
+                        tier: tier.toUpperCase(),
+                        status: 'complete'
+                    });
+                    return { success: true, msg: `Withdrawal of ${amount} ${coin} to ${walletAddress} processed successfully` };
+                }
+
+                // Refund on failure
+                await this.usersService.creditCrypto(telegramId, coin, amount);
                 await this.txModel.create({
                     telegramId,
                     type: 'WITHDRAW',
                     coin: coin.toUpperCase(),
                     amount: executionAmount,
                     tier: tier.toUpperCase(),
-                    status: 'complete'
+                    status: 'reject'
                 });
-                return { success: true, msg: `Withdrawal of ${amount} ${coin} to ${walletAddress} processed successfully` };
+                return { success: false, error: data.msg || 'CCPayment V2 Gateway rejected payload' };
+            } catch (e) {
+                this.logger.error("Create Withdrawal Failed", e);
+                await this.usersService.creditCrypto(telegramId, coin, amount);
+                return { success: false, error: 'Network failure. Balance refunded.' };
             }
-
-            // Refund on failure
-            await this.usersService.creditCrypto(telegramId, coin, amount);
-            await this.txModel.create({
-                telegramId,
-                type: 'WITHDRAW',
-                coin: coin.toUpperCase(),
-                amount: executionAmount,
-                tier: tier.toUpperCase(),
-                status: 'reject'
-            });
-            return { success: false, error: data.msg || 'CCPayment V2 Gateway rejected payload' };
-        } catch (e) {
-            this.logger.error("Create Withdrawal Failed", e);
-            await this.usersService.creditCrypto(telegramId, coin, amount);
-            return { success: false, error: 'Network failure. Balance refunded.' };
+        } finally {
+            await this.usersService.unlockUserWithdrawal(telegramId);
         }
     }
 

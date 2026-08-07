@@ -21,6 +21,12 @@ export class CampaignsController {
         return this.campaignsService.getMyCampaigns(telegramId);
     }
 
+    @Post('start-task')
+    async startTask(@Body('telegramId') telegramId: string, @Body('campaignId') campaignId: string) {
+        if (!telegramId || !campaignId) return { success: false, error: 'Missing params' };
+        return this.campaignsService.startTask(telegramId, campaignId);
+    }
+
     @Post('complete-task')
     async completeTask(@Body('telegramId') telegramId: string, @Body('campaignId') campaignId: string) {
         if (!telegramId || !campaignId) return { success: false, error: 'Missing params' };

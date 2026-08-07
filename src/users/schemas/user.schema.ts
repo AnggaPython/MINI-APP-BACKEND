@@ -26,14 +26,35 @@ export class User {
   @Prop({ default: false })
   isBanned: boolean;
 
+  @Prop({ default: false })
+  isWithdrawing: boolean;
+
+  @Prop({ default: 0 })
+  exp: number;
+
+  @Prop({ type: [String], default: [] })
+  claimedVipRanks: string[];
+
   @Prop({ type: Object, default: {} })
   cryptoBalances: Record<string, number>;
 
   @Prop({ default: 0 })
   elixirBalance: number;
 
+  @Prop({ default: 0 })
+  lifetimeElixir: number;
+
   @Prop({ default: null })
   miningStartDate: Date;
+
+  @Prop({ default: false })
+  isMiningBoosted: boolean;
+
+  @Prop({ default: false })
+  isMiningNotified: boolean;
+
+  @Prop({ default: null })
+  lastFaucetRoll: Date;
 
   @Prop({ type: [String], default: [] })
   completedTasks: string[];
@@ -55,6 +76,18 @@ export class User {
 
   @Prop({ default: null })
   solanaAddress: string;
+
+  @Prop({ type: [String], default: [] })
+  claimedCodeDrops: string[];
+
+  @Prop({ default: null })
+  miningVoucherExpiry: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Database CPU Load Optimizations for high-frequency queries
+UserSchema.index({ miningStartDate: 1, isMiningNotified: 1 }); // Cron Mining Engine (Zero CPU)
+UserSchema.index({ claimedCodeDrops: 1 }); // Cron System Garbage Collector Matrix
+UserSchema.index({ elixirBalance: -1 }); // Dashboard Leaderboard Fetch Limits
+UserSchema.index({ referredBy: 1 }); // Upline Referral Counting Metrics

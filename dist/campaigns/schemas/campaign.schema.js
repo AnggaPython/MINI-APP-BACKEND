@@ -21,6 +21,8 @@ let Campaign = class Campaign {
     totalBudget;
     remainingBudget;
     status;
+    oneUserLifetime;
+    autoRenew;
 };
 exports.Campaign = Campaign;
 __decorate([
@@ -59,6 +61,14 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true, default: 'active' }),
     __metadata("design:type", String)
 ], Campaign.prototype, "status", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, default: true }),
+    __metadata("design:type", Boolean)
+], Campaign.prototype, "oneUserLifetime", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, default: false }),
+    __metadata("design:type", Boolean)
+], Campaign.prototype, "autoRenew", void 0);
 exports.Campaign = Campaign = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Campaign);

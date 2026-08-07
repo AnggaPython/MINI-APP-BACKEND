@@ -145,10 +145,12 @@ let BankService = BankService_1 = class BankService {
             if (msSinceClaim >= ONE_DAY_MS) {
                 const earned = this.calculateYield(stake);
                 if (earned > 0) {
-                    hasProcessedValid = true;
-                    totalClaim += earned;
-                    stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
-                    await stake.save();
+                    const nextClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
+                    const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate } }, { new: true }).exec();
+                    if (updatedStake) {
+                        hasProcessedValid = true;
+                        totalClaim += earned;
+                    }
                 }
             }
         }
@@ -168,8 +170,9 @@ let BankService = BankService_1 = class BankService {
         const stake = await this.stakeModel.findOne({ _id: stakeId, telegramId }).exec();
         if (!stake)
             return { error: 'Stake not found' };
-        if (stake.status !== 'active')
-            return { error: 'Stake already withdrawn' };
+        const lockedStake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: { status: 'withdrawn' } }, { new: true }).exec();
+        if (!lockedStake)
+            return { error: 'Stake already withdrawn or in processing pipeline' };
         const now = new Date();
         const isMature = now >= stake.maturityDate;
         let returnAmount = 0;
@@ -182,8 +185,6 @@ let BankService = BankService_1 = class BankService {
             returnAmount = stake.amount - penalty;
             await this.adminService.addProfit('ELIXIR', penalty, 'UNSTAKE_PENALTY', telegramId);
         }
-        stake.status = 'withdrawn';
-        await stake.save();
         await this.usersService.debitElixir(telegramId, -returnAmount);
         await new this.bankLogModel({
             telegramId,

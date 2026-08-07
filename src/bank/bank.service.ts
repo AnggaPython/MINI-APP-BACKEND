@@ -157,10 +157,18 @@ export class BankService {
             if (msSinceClaim >= ONE_DAY_MS) {
                 const earned = this.calculateYield(stake);
                 if (earned > 0) {
-                    hasProcessedValid = true;
-                    totalClaim += earned;
-                    stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
-                    await stake.save();
+                    const nextClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
+                    // Atomic Lock against parallel overlap claims by checking exact previous claim date
+                    const updatedStake = await this.stakeModel.findOneAndUpdate(
+                        { _id: stake._id, lastClaimDate: stake.lastClaimDate },
+                        { $set: { lastClaimDate: nextClaimDate } },
+                        { new: true }
+                    ).exec();
+
+                    if (updatedStake) {
+                        hasProcessedValid = true;
+                        totalClaim += earned;
+                    }
                 }
             }
         }
@@ -183,7 +191,15 @@ export class BankService {
     async unstake(telegramId: string, stakeId: string) {
         const stake = await this.stakeModel.findOne({ _id: stakeId, telegramId }).exec();
         if (!stake) return { error: 'Stake not found' };
-        if (stake.status !== 'active') return { error: 'Stake already withdrawn' };
+
+        // Ensure atomic lockdown before initiating unstake sequence
+        const lockedStake = await this.stakeModel.findOneAndUpdate(
+            { _id: stakeId, telegramId, status: 'active' },
+            { $set: { status: 'withdrawn' } },
+            { new: true }
+        ).exec();
+
+        if (!lockedStake) return { error: 'Stake already withdrawn or in processing pipeline' };
 
         const now = new Date();
         const isMature = now >= stake.maturityDate;
@@ -203,18 +219,13 @@ export class BankService {
             await this.adminService.addProfit('ELIXIR', penalty, 'UNSTAKE_PENALTY', telegramId);
         }
 
-        stake.status = 'withdrawn';
-        await stake.save();
-
         // Directly add to elixir balance (debitElixir supports negative math for credits)
         await this.usersService.debitElixir(telegramId, -returnAmount);
-
         await new this.bankLogModel({
             telegramId,
             actionType: 'Withdraw Vault',
             amount: returnAmount
         }).save();
-
         return { success: true, returnAmount, penaltyMatured: !isMature };
     }
 

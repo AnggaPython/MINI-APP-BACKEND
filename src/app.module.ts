@@ -11,6 +11,7 @@ import { AchievementsModule } from './achievements/achievements.module';
 import { PaymentModule } from './payment/payment.module';
 import { HistoryModule } from './history/history.module';
 import { AdminModule } from './admin/admin.module';
+import { BotModule } from './bot/bot.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AdminModule } from './admin/admin.module';
     PaymentModule,
     HistoryModule,
     AdminModule,
+    BotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

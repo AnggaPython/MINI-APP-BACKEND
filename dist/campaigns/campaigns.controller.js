@@ -31,6 +31,11 @@ let CampaignsController = class CampaignsController {
     async getMyCampaigns(telegramId) {
         return this.campaignsService.getMyCampaigns(telegramId);
     }
+    async startTask(telegramId, campaignId) {
+        if (!telegramId || !campaignId)
+            return { success: false, error: 'Missing params' };
+        return this.campaignsService.startTask(telegramId, campaignId);
+    }
     async completeTask(telegramId, campaignId) {
         if (!telegramId || !campaignId)
             return { success: false, error: 'Missing params' };
@@ -67,6 +72,14 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "getMyCampaigns", null);
+__decorate([
+    (0, common_1.Post)('start-task'),
+    __param(0, (0, common_1.Body)('telegramId')),
+    __param(1, (0, common_1.Body)('campaignId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], CampaignsController.prototype, "startTask", null);
 __decorate([
     (0, common_1.Post)('complete-task'),
     __param(0, (0, common_1.Body)('telegramId')),

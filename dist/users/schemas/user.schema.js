@@ -19,9 +19,16 @@ let User = class User {
     photoUrl;
     isPremium;
     isBanned;
+    isWithdrawing;
+    exp;
+    claimedVipRanks;
     cryptoBalances;
     elixirBalance;
+    lifetimeElixir;
     miningStartDate;
+    isMiningBoosted;
+    isMiningNotified;
+    lastFaucetRoll;
     completedTasks;
     referredBy;
     referralBalance;
@@ -29,6 +36,8 @@ let User = class User {
     joinedTelegram;
     cwalletUid;
     solanaAddress;
+    claimedCodeDrops;
+    miningVoucherExpiry;
 };
 exports.User = User;
 __decorate([
@@ -60,6 +69,18 @@ __decorate([
     __metadata("design:type", Boolean)
 ], User.prototype, "isBanned", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], User.prototype, "isWithdrawing", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "exp", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
+], User.prototype, "claimedVipRanks", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
     __metadata("design:type", Object)
 ], User.prototype, "cryptoBalances", void 0);
@@ -68,9 +89,25 @@ __decorate([
     __metadata("design:type", Number)
 ], User.prototype, "elixirBalance", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "lifetimeElixir", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", Date)
 ], User.prototype, "miningStartDate", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], User.prototype, "isMiningBoosted", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], User.prototype, "isMiningNotified", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: null }),
+    __metadata("design:type", Date)
+], User.prototype, "lastFaucetRoll", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: [String], default: [] }),
     __metadata("design:type", Array)
@@ -99,8 +136,20 @@ __decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", String)
 ], User.prototype, "solanaAddress", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
+], User.prototype, "claimedCodeDrops", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: null }),
+    __metadata("design:type", Date)
+], User.prototype, "miningVoucherExpiry", void 0);
 exports.User = User = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], User);
 exports.UserSchema = mongoose_1.SchemaFactory.createForClass(User);
+exports.UserSchema.index({ miningStartDate: 1, isMiningNotified: 1 });
+exports.UserSchema.index({ claimedCodeDrops: 1 });
+exports.UserSchema.index({ elixirBalance: -1 });
+exports.UserSchema.index({ referredBy: 1 });
 //# sourceMappingURL=user.schema.js.map

@@ -67,13 +67,78 @@ let CampaignsService = class CampaignsService {
     async getMyCampaigns(creatorTelegramId) {
         return this.campaignModel.find({ creatorTelegramId }).sort({ createdAt: -1 }).exec();
     }
+    activeTaskStarts = new Map();
+    async startTask(telegramId, campaignId) {
+        const key = `${telegramId}_${campaignId}`;
+        this.activeTaskStarts.set(key, Date.now());
+        return { success: true };
+    }
+    async verifyTelegramMembership(telegramId, url) {
+        if (!url)
+            return null;
+        const match = url.match(/t\.me\/([a-zA-Z0-9_]+)/i);
+        if (!match)
+            return null;
+        const username = match[1];
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (!botToken)
+            return null;
+        try {
+            const res = await fetch(`https://api.telegram.org/bot${botToken}/getChatMember?chat_id=@${username}&user_id=${telegramId}`);
+            const data = await res.json();
+            if (data.ok) {
+                const status = data.result.status;
+                if (['member', 'administrator', 'creator'].includes(status))
+                    return true;
+                return false;
+            }
+            if (data.error_code === 400 && data.description.includes('chat not found')) {
+                return null;
+            }
+            return false;
+        }
+        catch (e) {
+            return null;
+        }
+    }
     async completeTask(telegramId, campaignId) {
         const campaign = await this.campaignModel.findOne({ _id: campaignId, status: 'active' });
         if (!campaign)
             return { success: false, error: 'Campaign not found or inactive' };
+        let requires20sFallback = true;
+        if (['CHANNEL', 'GROUP'].includes(campaign.category.toUpperCase())) {
+            const isMember = await this.verifyTelegramMembership(telegramId, campaign.url);
+            if (isMember === false) {
+                return { success: false, error: 'NOT_VERIFIED', message: 'Telegram verification failed. Please ensure you joined the correct group/channel!' };
+            }
+            if (isMember === true) {
+                requires20sFallback = false;
+            }
+        }
+        if (requires20sFallback) {
+            const key = `${telegramId}_${campaignId}`;
+            const startTime = this.activeTaskStarts.get(key);
+            if (!startTime || (Date.now() - startTime) < 20000) {
+                return { success: false, error: 'COOLDOWN_ACTIVE', message: 'You must wait 20 seconds after interacting with the target before claiming the reward.' };
+            }
+            this.activeTaskStarts.delete(key);
+        }
         if (campaign.remainingBudget < campaign.rewardPerClick) {
-            await this.campaignModel.updateOne({ _id: campaignId }, { $set: { status: 'exhausted' } });
-            return { success: false, error: 'Campaign exhausted' };
+            if (campaign.autoRenew) {
+                const topUpDeducted = await this.usersService.debitElixir(campaign.creatorTelegramId, 10000);
+                if (topUpDeducted) {
+                    await this.campaignModel.updateOne({ _id: campaignId }, { $inc: { totalBudget: 10000, remainingBudget: 10000 } });
+                    campaign.remainingBudget += 10000;
+                }
+                else {
+                    await this.campaignModel.updateOne({ _id: campaignId }, { $set: { status: 'exhausted', autoRenew: false } });
+                    return { success: false, error: 'Campaign exhausted and auto-renew failed (insufficient balance)' };
+                }
+            }
+            else {
+                await this.campaignModel.updateOne({ _id: campaignId }, { $set: { status: 'exhausted' } });
+                return { success: false, error: 'Campaign exhausted' };
+            }
         }
         const deductRes = await this.campaignModel.findOneAndUpdate({ _id: campaignId, remainingBudget: { $gte: campaign.rewardPerClick } }, { $inc: { remainingBudget: -campaign.rewardPerClick } }, { returnDocument: 'after' });
         if (!deductRes) {
@@ -90,10 +155,10 @@ let CampaignsService = class CampaignsService {
         }
         const user = await this.usersService.findByTelegramId(telegramId);
         if (user && user.referredBy) {
-            const uplineCut = deductRes.rewardPerClick * 0.10;
+            const uplineCut = userCut * 0.10;
             await this.usersService.creditReferralBonus(user.referredBy, uplineCut, user.username || `USER_${user.telegramId.substring(0, 5)}...`, 'Airdrop Ad');
         }
-        const adminMargin = deductRes.rewardPerClick * (user && user.referredBy ? 0.55 : 0.65);
+        const adminMargin = deductRes.rewardPerClick * (user && user.referredBy ? 0.615 : 0.65);
         await this.adminService.addProfit('ELIXIR', adminMargin, 'CAMPAIGN_FEE', telegramId);
         await this.achievementsService.incrementProgress(telegramId, [2, 3, 4], 1);
         return { success: true, reward: userCut };

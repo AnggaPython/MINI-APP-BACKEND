@@ -22,6 +22,14 @@ export class UsersController {
         return { success: true, user: result };
     }
 
+    @Post('boost-mining')
+    async boostMining(@Body('telegramId') telegramId: string) {
+        if (!telegramId) return { error: 'Missing telegramId' };
+        const result = await this.usersService.boostMining(telegramId);
+        if (result.error) return { success: false, error: result.error };
+        return { success: true, user: result.user };
+    }
+
     @Post('claim-mining')
     async claimMining(@Body('telegramId') telegramId: string) {
         if (!telegramId) return { error: 'Missing telegramId' };
@@ -53,6 +61,30 @@ export class UsersController {
         return { success: true, user: result.user, reward: result.reward };
     }
 
+    @Post('claim-faucet')
+    async claimFaucet(@Body('telegramId') telegramId: string) {
+        if (!telegramId) return { error: 'Missing telegramId' };
+        const result = await this.usersService.claimFaucet(telegramId);
+        if (result.error) return { success: false, error: result.error };
+        return { success: true, finalNum: result.finalNum, reward: result.reward };
+    }
+
+    @Post('claim-drop')
+    async claimCodeDrop(@Body() body: { telegramId: string, code: string }) {
+        if (!body.telegramId || !body.code) return { error: 'Missing parameters' };
+        const result = await this.usersService.claimCodeDrop(body.telegramId, body.code);
+        if (result.error) return { success: false, error: result.error };
+        return { success: true, user: result.user, reward: result.reward };
+    }
+
+    @Post('claim-vip-rank')
+    async claimVipRank(@Body() body: { telegramId: string, rankName: string }) {
+        if (!body.telegramId || !body.rankName) return { error: 'Missing parameters' };
+        const result = await this.usersService.claimVipRank(body.telegramId, body.rankName);
+        if (result.error) return { success: false, error: result.error };
+        return { success: true, user: result.user, reward: result.reward };
+    }
+
     @Post('verify-telegram')
     async verifyTelegram(@Body('telegramId') telegramId: string) {
         if (!telegramId) return { error: 'Missing telegramId' };
@@ -65,7 +97,7 @@ export class UsersController {
     async getBalance(@Param('id') id: string) {
         if (!id) return { error: 'Missing id' };
         const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits };
+        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits, lifetimeElixir: result.lifetimeElixir, totalReferrals: result.totalReferrals, lastFaucetRoll: result.lastFaucetRoll };
     }
 
     @Post('bind-wallet')
