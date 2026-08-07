@@ -25,6 +25,10 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
         this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
     }
     async postDailyVoucherCode() {
+        if (process.env.NODE_ENV !== 'production') {
+            this.logger.warn('Safeguard Active: Skipping Daily Telegram Push because the server is running in Local/Dev Mode.');
+            return;
+        }
         if (!this.botToken) {
             this.logger.warn('Bot token not configured. Skipping daily telegram push.');
             return;

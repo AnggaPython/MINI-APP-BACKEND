@@ -182,9 +182,9 @@ let UsersService = class UsersService {
     }
     async startMining(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user || user.adTickets < 1)
-            return { user: null, error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
-        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId }, { $set: { miningStartDate: new Date(), isMiningBoosted: false, isMiningNotified: false }, $inc: { adTickets: -1 } }, { returnDocument: 'after' }).exec();
+        if (!user)
+            return { user: null, error: 'User not found.' };
+        const updatedUser = await this.userModel.findOneAndUpdate({ telegramId }, { $set: { miningStartDate: new Date(), isMiningBoosted: false, isMiningNotified: false } }, { returnDocument: 'after' }).exec();
         return { user: updatedUser };
     }
     async boostMining(telegramId) {

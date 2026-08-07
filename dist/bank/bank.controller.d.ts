@@ -49,12 +49,15 @@ export declare class BankController {
     } | {
         error: string;
     }>;
-    toggleAutoClaim(body: {
+    toggleStakeConfig(body: {
         telegramId: string;
-        autoClaim: boolean;
+        stakeId: string;
+        autoClaim?: boolean;
+        autoReinvest?: boolean;
     }): Promise<{
         success: boolean;
-        autoClaim: boolean;
+        stake: any;
+        error?: undefined;
     } | {
         error: string;
     }>;

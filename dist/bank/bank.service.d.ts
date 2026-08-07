@@ -51,8 +51,13 @@ export declare class BankService {
         penaltyMatured: boolean;
         error?: undefined;
     }>;
-    toggleAutoClaim(telegramId: string, autoClaim: boolean): Promise<{
+    toggleStakeConfig(telegramId: string, stakeId: string, autoClaim: boolean, autoReinvest: boolean): Promise<{
+        error: string;
+        success?: undefined;
+        stake?: undefined;
+    } | {
         success: boolean;
-        autoClaim: boolean;
+        stake: any;
+        error?: undefined;
     }>;
 }

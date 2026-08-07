@@ -48,13 +48,16 @@ let BankService = BankService_1 = class BankService {
                 const earned = this.calculateYield(stake);
                 if (earned > 0) {
                     stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
-                    await stake.save();
-                    await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
-                    await new this.bankLogModel({
-                        telegramId: stake.telegramId,
-                        actionType: 'Claim Elixir',
-                        amount: earned
-                    }).save();
+                    if (stake.autoReinvest) {
+                        stake.amount += earned;
+                        await stake.save();
+                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
+                    }
+                    else {
+                        await stake.save();
+                        await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
+                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
+                    }
                     this.logger.log(`Auto-claimed ${earned} for user ${stake.telegramId}`);
                 }
             }
@@ -92,7 +95,8 @@ let BankService = BankService_1 = class BankService {
                 stakeDate: s.stakeDate,
                 maturityDate: s.maturityDate,
                 pendingYield: currentYield,
-                autoClaim: s.autoClaim
+                autoClaim: s.autoClaim,
+                autoReinvest: s.autoReinvest
             };
         });
         const personalStaked = stakes.reduce((acc, s) => acc + s.amount, 0);
@@ -147,10 +151,17 @@ let BankService = BankService_1 = class BankService {
                 const earned = this.calculateYield(stake);
                 if (earned > 0) {
                     const nextClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
-                    const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate } }, { new: true }).exec();
-                    if (updatedStake) {
-                        hasProcessedValid = true;
-                        totalClaim += earned;
+                    if (stake.autoReinvest) {
+                        const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate }, $inc: { amount: earned } }, { new: true }).exec();
+                        if (updatedStake)
+                            hasProcessedValid = true;
+                    }
+                    else {
+                        const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate } }, { new: true }).exec();
+                        if (updatedStake) {
+                            hasProcessedValid = true;
+                            totalClaim += earned;
+                        }
                     }
                 }
             }
@@ -194,9 +205,18 @@ let BankService = BankService_1 = class BankService {
         }).save();
         return { success: true, returnAmount, penaltyMatured: !isMature };
     }
-    async toggleAutoClaim(telegramId, autoClaim) {
-        await this.stakeModel.updateMany({ telegramId, status: 'active' }, { $set: { autoClaim } }).exec();
-        return { success: true, autoClaim };
+    async toggleStakeConfig(telegramId, stakeId, autoClaim, autoReinvest) {
+        const updateDoc = {};
+        if (typeof autoClaim === 'boolean')
+            updateDoc.autoClaim = autoClaim;
+        if (typeof autoReinvest === 'boolean')
+            updateDoc.autoReinvest = autoReinvest;
+        if (Object.keys(updateDoc).length === 0)
+            return { error: 'No config provided' };
+        const stake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: updateDoc }, { new: true }).exec();
+        if (!stake)
+            return { error: 'Active stake not found' };
+        return { success: true, stake };
     }
 };
 exports.BankService = BankService;

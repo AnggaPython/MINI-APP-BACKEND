@@ -21,6 +21,7 @@ let Stake = class Stake {
     lastClaimDate;
     status;
     autoClaim;
+    autoReinvest;
 };
 exports.Stake = Stake;
 __decorate([
@@ -59,6 +60,10 @@ __decorate([
     (0, mongoose_1.Prop)({ default: false }),
     __metadata("design:type", Boolean)
 ], Stake.prototype, "autoClaim", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], Stake.prototype, "autoReinvest", void 0);
 exports.Stake = Stake = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Stake);

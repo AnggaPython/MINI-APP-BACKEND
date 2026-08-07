@@ -42,11 +42,10 @@ let BankController = class BankController {
             return { error: 'Incomplete parameters' };
         return await this.bankService.unstake(body.telegramId, body.stakeId);
     }
-    async toggleAutoClaim(body) {
-        if (!body.telegramId || typeof body.autoClaim !== 'boolean') {
-            return { error: 'Incomplete or invalid parameters' };
-        }
-        return await this.bankService.toggleAutoClaim(body.telegramId, body.autoClaim);
+    async toggleStakeConfig(body) {
+        if (!body.telegramId || !body.stakeId)
+            return { error: 'Incomplete parameters' };
+        return await this.bankService.toggleStakeConfig(body.telegramId, body.stakeId, body.autoClaim, body.autoReinvest);
     }
 };
 exports.BankController = BankController;
@@ -79,12 +78,12 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "unstake", null);
 __decorate([
-    (0, common_1.Post)('autoclaim'),
+    (0, common_1.Post)('stake/toggle'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
-], BankController.prototype, "toggleAutoClaim", null);
+], BankController.prototype, "toggleStakeConfig", null);
 exports.BankController = BankController = __decorate([
     (0, common_1.Controller)('bank'),
     __metadata("design:paramtypes", [bank_service_1.BankService])

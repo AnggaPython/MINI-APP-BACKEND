@@ -10,5 +10,6 @@ export declare class Stake {
     lastClaimDate: Date;
     status: string;
     autoClaim: boolean;
+    autoReinvest: boolean;
 }
 export declare const StakeSchema: any;

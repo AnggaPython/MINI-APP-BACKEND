@@ -31,6 +31,9 @@ export class Stake {
 
     @Prop({ default: false })
     autoClaim: boolean;
+
+    @Prop({ default: false })
+    autoReinvest: boolean;
 }
 
 export const StakeSchema = SchemaFactory.createForClass(Stake);

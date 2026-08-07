@@ -15,6 +15,11 @@ export class TelegramBotService {
     // Cron syntax '0 12 * * *' = triggers every day exactly at 12:00 PM UTC (which maps to 19:00 WIB in Indonesia)
     @Cron('0 12 * * *', { timeZone: 'UTC' })
     async postDailyVoucherCode() {
+        if (process.env.NODE_ENV !== 'production') {
+            this.logger.warn('Safeguard Active: Skipping Daily Telegram Push because the server is running in Local/Dev Mode.');
+            return;
+        }
+
         if (!this.botToken) {
             this.logger.warn('Bot token not configured. Skipping daily telegram push.');
             return;

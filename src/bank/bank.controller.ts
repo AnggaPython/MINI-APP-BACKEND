@@ -32,11 +32,9 @@ export class BankController {
         return await this.bankService.unstake(body.telegramId, body.stakeId);
     }
 
-    @Post('autoclaim')
-    async toggleAutoClaim(@Body() body: { telegramId: string; autoClaim: boolean }) {
-        if (!body.telegramId || typeof body.autoClaim !== 'boolean') {
-            return { error: 'Incomplete or invalid parameters' };
-        }
-        return await this.bankService.toggleAutoClaim(body.telegramId, body.autoClaim);
+    @Post('stake/toggle')
+    async toggleStakeConfig(@Body() body: { telegramId: string; stakeId: string; autoClaim?: boolean; autoReinvest?: boolean }) {
+        if (!body.telegramId || !body.stakeId) return { error: 'Incomplete parameters' };
+        return await this.bankService.toggleStakeConfig(body.telegramId, body.stakeId, body.autoClaim as any, body.autoReinvest as any);
     }
 }
