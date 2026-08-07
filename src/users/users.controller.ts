@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Query } from '@nestjs/common';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -15,11 +15,26 @@ export class UsersController {
         return { success: true, user: result };
     }
 
+    @Get('public/monetag-postback')
+    async monetagPostback(
+        @Query('userid') userid: string,
+        @Query('event') eventType: string,
+        @Query('reward') reward: string,
+        @Query('ymid') ymid: string,
+        @Query('payout') payout?: string
+    ) {
+        if (reward !== 'valued') return { status: 'ignored' };
+        const payoutUSD = parseFloat(payout || "0") || 0;
+        await this.usersService.registerMonetagTicket(userid, payoutUSD);
+        return { status: 'success' };
+    }
+
     @Post('start-mining')
     async startMining(@Body('telegramId') telegramId: string) {
         if (!telegramId) return { error: 'Missing telegramId' };
         const result = await this.usersService.startMining(telegramId);
-        return { success: true, user: result };
+        if (result.user) return { success: true, user: result.user };
+        else return { error: result.error || 'Verification Failed' };
     }
 
     @Post('boost-mining')

@@ -28,11 +28,21 @@ let UsersController = class UsersController {
         const result = await this.usersService.syncTelegramUser(userData, referredBy);
         return { success: true, user: result };
     }
+    async monetagPostback(userid, eventType, reward, ymid, payout) {
+        if (reward !== 'valued')
+            return { status: 'ignored' };
+        const payoutUSD = parseFloat(payout || "0") || 0;
+        await this.usersService.registerMonetagTicket(userid, payoutUSD);
+        return { status: 'success' };
+    }
     async startMining(telegramId) {
         if (!telegramId)
             return { error: 'Missing telegramId' };
         const result = await this.usersService.startMining(telegramId);
-        return { success: true, user: result };
+        if (result.user)
+            return { success: true, user: result.user };
+        else
+            return { error: result.error || 'Verification Failed' };
     }
     async boostMining(telegramId) {
         if (!telegramId)
@@ -158,6 +168,17 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "syncUser", null);
+__decorate([
+    (0, common_1.Get)('public/monetag-postback'),
+    __param(0, (0, common_1.Query)('userid')),
+    __param(1, (0, common_1.Query)('event')),
+    __param(2, (0, common_1.Query)('reward')),
+    __param(3, (0, common_1.Query)('ymid')),
+    __param(4, (0, common_1.Query)('payout')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "monetagPostback", null);
 __decorate([
     (0, common_1.Post)('start-mining'),
     __param(0, (0, common_1.Body)('telegramId')),

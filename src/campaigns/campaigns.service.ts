@@ -17,14 +17,18 @@ export class CampaignsService {
 
     async createCampaign(data: {
         creatorTelegramId: string, title: string, description: string,
-        category: string, rewardPerClick: number, totalBudget: number, url?: string
+        category: string, rewardPerClick: number, totalBudget: number, url?: string, oneUserLifetime?: boolean, autoRenew?: boolean
     }) {
         if (data.totalBudget < 10000) {
             throw new BadRequestException('Minimum budget is 10,000 ELIXIR');
         }
 
         const isWeb = data.category.toUpperCase().includes('WEB');
-        const minReward = isWeb ? 30 : 50;
+        let minReward = isWeb ? 30 : 50;
+
+        if (data.oneUserLifetime) {
+            minReward = Math.ceil(minReward * 1.5);
+        }
 
         if (data.rewardPerClick < minReward) {
             throw new BadRequestException(`Minimum Cost Per Action for this category is ${minReward} ELIXIR`);

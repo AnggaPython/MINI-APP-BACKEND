@@ -36,6 +36,8 @@ let User = class User {
     joinedTelegram;
     cwalletUid;
     solanaAddress;
+    adTickets;
+    totalAdRevenueGeneratedUSD;
     claimedCodeDrops;
     miningVoucherExpiry;
 };
@@ -136,6 +138,14 @@ __decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", String)
 ], User.prototype, "solanaAddress", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "adTickets", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "totalAdRevenueGeneratedUSD", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: [String], default: [] }),
     __metadata("design:type", Array)

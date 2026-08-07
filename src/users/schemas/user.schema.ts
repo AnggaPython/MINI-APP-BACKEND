@@ -77,6 +77,12 @@ export class User {
   @Prop({ default: null })
   solanaAddress: string;
 
+  @Prop({ default: 0 })
+  adTickets: number;
+
+  @Prop({ default: 0 })
+  totalAdRevenueGeneratedUSD: number;
+
   @Prop({ type: [String], default: [] })
   claimedCodeDrops: string[];
 

@@ -160,12 +160,16 @@ export class UsersService {
         return user;
     }
 
-    async startMining(telegramId: string): Promise<User | null> {
-        return this.userModel.findOneAndUpdate(
+    async startMining(telegramId: string): Promise<{ user: User | null; error?: string }> {
+        const user = await this.userModel.findOne({ telegramId }).exec();
+        if (!user || user.adTickets < 1) return { user: null, error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+
+        const updatedUser = await this.userModel.findOneAndUpdate(
             { telegramId },
-            { $set: { miningStartDate: new Date(), isMiningBoosted: false, isMiningNotified: false } },
+            { $set: { miningStartDate: new Date(), isMiningBoosted: false, isMiningNotified: false }, $inc: { adTickets: -1 } },
             { returnDocument: 'after' }
         ).exec();
+        return { user: updatedUser };
     }
 
     async boostMining(telegramId: string): Promise<{ user: User | null; error?: string }> {
@@ -186,6 +190,7 @@ export class UsersService {
     async claimMining(telegramId: string): Promise<{ user: User | null; claimedAmount: number; error?: string }> {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { user: null, claimedAmount: 0, error: 'User not found' };
+        if (user.adTickets < 1) return { user: null, claimedAmount: 0, error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
         if (!user.miningStartDate) return { user, claimedAmount: 0, error: 'Mining not started' };
 
         const now = new Date();
@@ -210,7 +215,7 @@ export class UsersService {
         const updatedUser = await this.userModel.findOneAndUpdate(
             { telegramId, miningStartDate: { $ne: null } },
             {
-                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 },
+                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1, adTickets: -1 },
                 $set: { miningStartDate: null, isMiningBoosted: false, isMiningNotified: false }
             },
             { returnDocument: 'after' }
@@ -323,6 +328,11 @@ export class UsersService {
     }
 
     async claimDailyLogin(telegramId: string) {
+        const userCheck = await this.userModel.findOne({ telegramId }).exec();
+        if (!userCheck || userCheck.adTickets < 1) {
+            return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+        }
+
         const now = new Date();
         const updatedUser = await this.userModel.findOneAndUpdate(
             {
@@ -334,7 +344,7 @@ export class UsersService {
             },
             {
                 $set: { lastDailyLogin: now },
-                $inc: { elixirBalance: 5, lifetimeElixir: 5 }
+                $inc: { elixirBalance: 5, lifetimeElixir: 5, adTickets: -1 }
             },
             { returnDocument: 'after' }
         ).exec();
@@ -347,6 +357,7 @@ export class UsersService {
     async claimVipRank(telegramId: string, rankName: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
+        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
 
         const rank = VIP_RANKS.find(r => r.name === rankName.toUpperCase());
         if (!rank) return { error: 'Invalid rank' };
@@ -358,7 +369,7 @@ export class UsersService {
         const updatedUser = await this.userModel.findOneAndUpdate(
             { telegramId, claimedVipRanks: { $ne: rank.name } },
             {
-                $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward },
+                $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward, adTickets: -1 },
                 $addToSet: { claimedVipRanks: rank.name }
             },
             { returnDocument: 'after' }
@@ -369,8 +380,21 @@ export class UsersService {
         return { success: true, user: updatedUser, reward: rank.reward };
     }
 
+    async registerMonetagTicket(telegramId: string, payoutUSD: number = 0) {
+        if (!telegramId) return;
+        // Native S2S Trigger: Monetag validated the ad view. Give them the ticket!
+        await this.userModel.updateOne({ telegramId }, { $inc: { adTickets: 1, totalAdRevenueGeneratedUSD: payoutUSD } }).exec();
+    }
+
     async claimFaucet(telegramId: string) {
         const now = new Date();
+
+        // Phase 50: S2S Anti-Cheat Verification Lock
+        const userCheck = await this.userModel.findOne({ telegramId }).exec();
+        if (!userCheck) return { error: 'User not found' };
+        if (userCheck.adTickets < 1) {
+            return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers. Please ensure you do not use AdBlockers and watch the popup completely.' };
+        }
 
         // Rigged Logic: Max roll is strictly 980,000 so the user gets 10 Elixir at most
         const finalNum = Math.floor(Math.random() * 980001);
@@ -379,6 +403,7 @@ export class UsersService {
         if (finalNum >= 950001) reward = 10;
         else if (finalNum >= 800001) reward = 5;
 
+        // Atomically securely deduct ticket while rolling
         const updatedUser = await this.userModel.findOneAndUpdate(
             {
                 telegramId,
@@ -389,7 +414,7 @@ export class UsersService {
             },
             {
                 $set: { lastFaucetRoll: now },
-                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 }
+                $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1, adTickets: -1 }
             },
             { returnDocument: 'after' }
         ).exec();
@@ -425,6 +450,7 @@ export class UsersService {
 
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
+        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
 
         if (user.claimedCodeDrops && user.claimedCodeDrops.includes(code.toUpperCase())) {
             return { error: 'Anda sudah mengklaim Drop Code ini!' };
@@ -437,7 +463,7 @@ export class UsersService {
             {
                 $addToSet: { claimedCodeDrops: code.toUpperCase() },
                 $set: { miningVoucherExpiry: voucherExpiry },
-                $inc: { elixirBalance: 2.5, lifetimeElixir: 2.5, exp: 1 }
+                $inc: { elixirBalance: 2.5, lifetimeElixir: 2.5, exp: 1, adTickets: -1 }
             },
             { returnDocument: 'after' }
         ).exec();
@@ -450,6 +476,7 @@ export class UsersService {
     async verifyTelegramChannel(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
+        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
         if (user.joinedTelegram) return { error: 'Already claimed' };
 
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -457,7 +484,7 @@ export class UsersService {
             // Mock mode if no token is available
             const updatedUser = await this.userModel.findOneAndUpdate(
                 { telegramId, joinedTelegram: { $ne: true } },
-                { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100 } },
+                { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100, adTickets: -1 } },
                 { returnDocument: 'after' }
             ).exec();
             if (!updatedUser) return { error: 'Already claimed' };
@@ -471,7 +498,7 @@ export class UsersService {
             if (data.ok && ['member', 'administrator', 'creator'].includes(data.result.status)) {
                 const updatedUser = await this.userModel.findOneAndUpdate(
                     { telegramId, joinedTelegram: { $ne: true } },
-                    { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100 } },
+                    { $set: { joinedTelegram: true }, $inc: { elixirBalance: 100, lifetimeElixir: 100, adTickets: -1 } },
                     { returnDocument: 'after' }
                 ).exec();
                 if (!updatedUser) return { error: 'Already claimed' };
@@ -836,8 +863,9 @@ export class UsersService {
         const totalUsers = await this.userModel.countDocuments().exec();
 
         // Return total raw ELIXIR across all users (Lean parsing drops memory load heavily)
-        const users = await this.userModel.find({}, { elixirBalance: 1 }).lean().exec();
+        const users = await this.userModel.find({}, { elixirBalance: 1, totalAdRevenueGeneratedUSD: 1 }).lean().exec();
         const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
+        const totalAdRevenueUSD = users.reduce((sum, u) => sum + (u.totalAdRevenueGeneratedUSD || 0), 0);
 
         // Fetch top users by highest Elixir balance
         const recentUsers = await this.userModel.find()
@@ -850,6 +878,7 @@ export class UsersService {
         return {
             totalUsers,
             totalElixir, // Pass raw Total Elixir
+            totalAdRevenueUSD,
             recentUsers
         };
     }
