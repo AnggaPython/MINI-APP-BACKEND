@@ -1,15 +1,79 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { DAILY_DROP_TEMPLATES, DAILY_DROP_ANIMATIONS } from './messages.constant';
 
 @Injectable()
-export class TelegramBotService {
+export class TelegramBotService implements OnModuleInit {
     private readonly logger = new Logger(TelegramBotService.name);
     private botToken: string;
+    private lastUpdateId = 0;
 
     constructor(private configService: ConfigService) {
         this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') || '';
+    }
+
+    onModuleInit() {
+        if (this.botToken) {
+            this.startPolling();
+        }
+    }
+
+    private async startPolling() {
+        this.logger.log('Native Telegram Long-Polling engine ignited for Deep Links...');
+
+        // Recursive polling daemon
+        const poll = async () => {
+            try {
+                const res = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates?offset=${this.lastUpdateId}&timeout=30`);
+                const data = await res.json();
+                if (data.ok && data.result.length > 0) {
+                    for (const update of data.result) {
+                        this.lastUpdateId = update.update_id + 1;
+                        this.handleIncomingMessage(update);
+                    }
+                }
+            } catch (e) {
+                // Ignore silent timeouts
+            }
+            // Loop cleanly
+            setTimeout(poll, 1000);
+        };
+        poll();
+    }
+
+    private async handleIncomingMessage(update: any) {
+        if (!update.message || !update.message.text) return;
+
+        const text = update.message.text.trim();
+        const chatId = update.message.chat.id;
+
+        if (text.startsWith('/start') || text.startsWith('/play')) {
+            const parts = text.split(' ');
+            let referralParam = '';
+            if (parts.length > 1 && text.startsWith('/start')) {
+                referralParam = '?startapp=' + parts[1];
+            }
+
+            const welcomeMsg = `<b>👋 Welcome to the Elixir Network! 💧</b>\n\nTap the button below to launch the Mini App window, farm Elixir natively from Telegram, and bind your crypto wallet!`;
+
+            const payload = {
+                chat_id: chatId,
+                text: welcomeMsg,
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "🚀 PLAY ELIXIR NOW", url: `https://t.me/ElixirAds_bot/app${referralParam}` }]
+                    ]
+                }
+            };
+
+            await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).catch(() => { });
+        }
     }
 
     // Cron syntax '0 12 * * *' = triggers every day exactly at 12:00 PM UTC (which maps to 19:00 WIB in Indonesia)
