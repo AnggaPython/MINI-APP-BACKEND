@@ -98,7 +98,7 @@ export class CampaignsService {
             }
 
             if (data.error_code === 400 && data.description.includes('chat not found')) {
-                // Target chat bot not acting as admin. Fallback.
+                // Feature explicitly disabled or bot is not admin. Graceful proxy.
                 return null;
             }
             return false;
@@ -116,12 +116,17 @@ export class CampaignsService {
         if (['CHANNEL', 'GROUP'].includes(campaign.category.toUpperCase())) {
             const isMember = await this.verifyTelegramMembership(telegramId, campaign.url);
             if (isMember === false) {
-                return { success: false, error: 'NOT_VERIFIED', message: 'Telegram verification failed. Please ensure you joined the correct group/channel!' };
+                // Strictly rejected: User explicitly left or didn't join!
+                return { success: false, error: 'NOT_VERIFIED', message: `please follow ${campaign.category.toLowerCase()} for received your elixir reward` };
             }
             if (isMember === true) {
+                // Strictly Valided! Bypass cooldown instantly!
                 requires20sFallback = false;
             }
+            // If isMember === null (Not Admin), it drops into requires20sFallback peacefully.
         }
+
+        // Note: 'BOT' Category inherently ignores API verification and relies safely on the 20s Cooldown Proxy!
 
         if (requires20sFallback) {
             const key = `${telegramId}_${campaignId}`;

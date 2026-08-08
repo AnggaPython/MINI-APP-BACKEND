@@ -190,7 +190,7 @@ export class UsersService {
     async claimMining(telegramId: string): Promise<{ user: User | null; claimedAmount: number; error?: string }> {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { user: null, claimedAmount: 0, error: 'User not found' };
-        if (user.adTickets < 1) return { user: null, claimedAmount: 0, error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+        if (user.adTickets < 1) return { user: null, claimedAmount: 0, error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
         if (!user.miningStartDate) return { user, claimedAmount: 0, error: 'Mining not started' };
 
         const now = new Date();
@@ -330,7 +330,7 @@ export class UsersService {
     async claimDailyLogin(telegramId: string) {
         const userCheck = await this.userModel.findOne({ telegramId }).exec();
         if (!userCheck || userCheck.adTickets < 1) {
-            return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+            return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
         }
 
         const now = new Date();
@@ -357,7 +357,7 @@ export class UsersService {
     async claimVipRank(telegramId: string, rankName: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
-        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
 
         const rank = VIP_RANKS.find(r => r.name === rankName.toUpperCase());
         if (!rank) return { error: 'Invalid rank' };
@@ -393,7 +393,7 @@ export class UsersService {
         const userCheck = await this.userModel.findOne({ telegramId }).exec();
         if (!userCheck) return { error: 'User not found' };
         if (userCheck.adTickets < 1) {
-            return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers. Please ensure you do not use AdBlockers and watch the popup completely.' };
+            return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
         }
 
         // Rigged Logic: Max roll is strictly 980,000 so the user gets 10 Elixir at most
@@ -450,7 +450,7 @@ export class UsersService {
 
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
-        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
 
         if (user.claimedCodeDrops && user.claimedCodeDrops.includes(code.toUpperCase())) {
             return { error: 'Anda sudah mengklaim Drop Code ini!' };
@@ -476,7 +476,7 @@ export class UsersService {
     async verifyTelegramChannel(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
-        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: Your ad claim was rejected by Monetag Servers.' };
+        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
         if (user.joinedTelegram) return { error: 'Already claimed' };
 
         const botToken = process.env.TELEGRAM_BOT_TOKEN;

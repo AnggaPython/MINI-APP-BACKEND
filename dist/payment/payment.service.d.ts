@@ -1,6 +1,6 @@
 import { UsersService } from '../users/users.service';
 import { Model } from 'mongoose';
-import { TransactionDocument } from './schemas/transaction.schema';
+import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { AdminService } from '../admin/admin.service';
 export declare class PaymentService {
     private usersService;
@@ -53,6 +53,12 @@ export declare class PaymentService {
     }>;
     getTransactions(telegramId: string): Promise<{
         success: boolean;
-        transactions: any;
+        transactions: (import("mongoose").Document<unknown, {}, TransactionDocument, {}, import("mongoose").DefaultSchemaOptions> & Transaction & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        })[];
     }>;
 }
