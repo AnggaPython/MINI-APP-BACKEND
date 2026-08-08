@@ -37,4 +37,9 @@ export class BankController {
         if (!body.telegramId || !body.stakeId) return { error: 'Incomplete parameters' };
         return await this.bankService.toggleStakeConfig(body.telegramId, body.stakeId, body.autoClaim as any, body.autoReinvest as any);
     }
+
+    @Post('stake/toggle-global')
+    async toggleGlobalStakeConfig(@Body() body: { telegramId: string, field: 'autoClaim' | 'autoReinvest', state: boolean }) {
+        return this.bankService.toggleGlobalConfig(body.telegramId, body.field, body.state);
+    }
 }

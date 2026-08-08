@@ -1,7 +1,7 @@
 import { OnModuleInit } from '@nestjs/common';
 import { Model } from 'mongoose';
 import { AdminDocument } from './schemas/admin.schema';
-import { ProfitLog, ProfitLogDocument } from './schemas/profit-log.schema';
+import { ProfitLogDocument } from './schemas/profit-log.schema';
 export declare class AdminService implements OnModuleInit {
     private adminModel;
     private profitLogModel;
@@ -14,19 +14,13 @@ export declare class AdminService implements OnModuleInit {
         role?: undefined;
     } | {
         success: boolean;
-        token: string;
-        role: string;
+        token: any;
+        role: any;
         error?: undefined;
     }>;
     addProfit(coin: string, amount: number, source: string, telegramId: string): Promise<void>;
-    getProfitBalances(): Promise<Record<string, number>>;
-    getProfitLogs(coin?: string): Promise<(import("mongoose").Document<unknown, {}, ProfitLogDocument, {}, import("mongoose").DefaultSchemaOptions> & ProfitLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-        _id: import("mongoose").Types.ObjectId;
-    }> & {
-        __v: number;
-    } & {
-        id: string;
-    })[]>;
+    getProfitBalances(): Promise<any>;
+    getProfitLogs(coin?: string): Promise<any>;
     getWithdrawLimits(): Promise<Record<string, number>>;
     updateWithdrawLimit(coin: string, limit: number): Promise<Record<string, number>>;
 }

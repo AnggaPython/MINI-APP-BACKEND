@@ -47,6 +47,9 @@ let BankController = class BankController {
             return { error: 'Incomplete parameters' };
         return await this.bankService.toggleStakeConfig(body.telegramId, body.stakeId, body.autoClaim, body.autoReinvest);
     }
+    async toggleGlobalStakeConfig(body) {
+        return this.bankService.toggleGlobalConfig(body.telegramId, body.field, body.state);
+    }
 };
 exports.BankController = BankController;
 __decorate([
@@ -84,6 +87,13 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "toggleStakeConfig", null);
+__decorate([
+    (0, common_1.Post)('stake/toggle-global'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], BankController.prototype, "toggleGlobalStakeConfig", null);
 exports.BankController = BankController = __decorate([
     (0, common_1.Controller)('bank'),
     __metadata("design:paramtypes", [bank_service_1.BankService])

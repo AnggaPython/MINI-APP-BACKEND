@@ -23,6 +23,8 @@ export class CampaignsService {
             throw new BadRequestException('Minimum budget is 10,000 ELIXIR');
         }
 
+        this.validateCampaignUrl(data.url, data.category);
+
         const isWeb = data.category.toUpperCase().includes('WEB');
         let minReward = isWeb ? 30 : 50;
 
@@ -68,6 +70,34 @@ export class CampaignsService {
 
     async getMyCampaigns(creatorTelegramId: string) {
         return this.campaignModel.find({ creatorTelegramId }).sort({ createdAt: -1 }).exec();
+    }
+
+    private validateCampaignUrl(urlString: string | undefined, category: string) {
+        if (!urlString) throw new BadRequestException('Target URL is strictly required.');
+        const cat = category.toUpperCase();
+
+        try {
+            let urlToParse = urlString.trim();
+            if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
+                urlToParse = 'https://' + urlToParse;
+            }
+            const parsedUrl = new URL(urlToParse);
+
+            if (cat === 'WEB') {
+                if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+                    throw new BadRequestException('Web URL must use HTTP/HTTPS protocol.');
+                }
+            } else if (['CHANNEL', 'GROUP', 'BOT'].includes(cat)) {
+                if (!['t.me', 'telegram.me'].includes(parsedUrl.hostname.toLowerCase())) {
+                    throw new BadRequestException(`Invalid Telegram Link. You must use a valid t.me link for ${cat} campaigns!`);
+                }
+                if (parsedUrl.pathname.length < 2) {
+                    throw new BadRequestException(`Telegram Username or ID is missing from the URL.`);
+                }
+            }
+        } catch (e: any) {
+            throw new BadRequestException(e.message.includes('Invalid') ? 'Malformed URL formulation detected.' : e.message);
+        }
     }
 
     private activeTaskStarts = new Map<string, number>();
@@ -210,6 +240,17 @@ export class CampaignsService {
     }
 
     async updateCampaign(campaignId: string, data: { title?: string, description?: string, url?: string }) {
+        const existing = await this.campaignModel.findById(campaignId);
+        if (!existing) return { success: false, error: 'Campaign not found' };
+
+        if (data.url) {
+            try {
+                this.validateCampaignUrl(data.url, existing.category);
+            } catch (e: any) {
+                return { success: false, error: e.message };
+            }
+        }
+
         const updated = await this.campaignModel.findByIdAndUpdate(campaignId, { $set: data }, { returnDocument: 'after' });
         if (!updated) return { success: false, error: 'Campaign not found' };
         return { success: true, campaign: updated };

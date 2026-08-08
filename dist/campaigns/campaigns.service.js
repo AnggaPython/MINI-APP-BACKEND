@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CampaignsService = void 0;
 const common_1 = require("@nestjs/common");
@@ -35,6 +36,7 @@ let CampaignsService = class CampaignsService {
         if (data.totalBudget < 10000) {
             throw new common_1.BadRequestException('Minimum budget is 10,000 ELIXIR');
         }
+        this.validateCampaignUrl(data.url, data.category);
         const isWeb = data.category.toUpperCase().includes('WEB');
         let minReward = isWeb ? 30 : 50;
         if (data.oneUserLifetime) {
@@ -69,6 +71,34 @@ let CampaignsService = class CampaignsService {
     }
     async getMyCampaigns(creatorTelegramId) {
         return this.campaignModel.find({ creatorTelegramId }).sort({ createdAt: -1 }).exec();
+    }
+    validateCampaignUrl(urlString, category) {
+        if (!urlString)
+            throw new common_1.BadRequestException('Target URL is strictly required.');
+        const cat = category.toUpperCase();
+        try {
+            let urlToParse = urlString.trim();
+            if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
+                urlToParse = 'https://' + urlToParse;
+            }
+            const parsedUrl = new URL(urlToParse);
+            if (cat === 'WEB') {
+                if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+                    throw new common_1.BadRequestException('Web URL must use HTTP/HTTPS protocol.');
+                }
+            }
+            else if (['CHANNEL', 'GROUP', 'BOT'].includes(cat)) {
+                if (!['t.me', 'telegram.me'].includes(parsedUrl.hostname.toLowerCase())) {
+                    throw new common_1.BadRequestException(`Invalid Telegram Link. You must use a valid t.me link for ${cat} campaigns!`);
+                }
+                if (parsedUrl.pathname.length < 2) {
+                    throw new common_1.BadRequestException(`Telegram Username or ID is missing from the URL.`);
+                }
+            }
+        }
+        catch (e) {
+            throw new common_1.BadRequestException(e.message.includes('Invalid') ? 'Malformed URL formulation detected.' : e.message);
+        }
     }
     activeTaskStarts = new Map();
     async startTask(telegramId, campaignId) {
@@ -112,7 +142,7 @@ let CampaignsService = class CampaignsService {
         if (['CHANNEL', 'GROUP'].includes(campaign.category.toUpperCase())) {
             const isMember = await this.verifyTelegramMembership(telegramId, campaign.url);
             if (isMember === false) {
-                return { success: false, error: 'NOT_VERIFIED', message: 'Telegram verification failed. Please ensure you joined the correct group/channel!' };
+                return { success: false, error: 'NOT_VERIFIED', message: `please follow ${campaign.category.toLowerCase()} for received your elixir reward` };
             }
             if (isMember === true) {
                 requires20sFallback = false;
@@ -167,6 +197,17 @@ let CampaignsService = class CampaignsService {
         return { success: true, reward: userCut };
     }
     async updateCampaign(campaignId, data) {
+        const existing = await this.campaignModel.findById(campaignId);
+        if (!existing)
+            return { success: false, error: 'Campaign not found' };
+        if (data.url) {
+            try {
+                this.validateCampaignUrl(data.url, existing.category);
+            }
+            catch (e) {
+                return { success: false, error: e.message };
+            }
+        }
         const updated = await this.campaignModel.findByIdAndUpdate(campaignId, { $set: data }, { returnDocument: 'after' });
         if (!updated)
             return { success: false, error: 'Campaign not found' };
@@ -197,8 +238,7 @@ exports.CampaignsService = CampaignsService = __decorate([
     __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        users_service_1.UsersService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, users_service_1.UsersService,
         achievements_service_1.AchievementsService,
         admin_service_1.AdminService])
 ], CampaignsService);

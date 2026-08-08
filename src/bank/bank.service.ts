@@ -197,6 +197,16 @@ export class BankService {
         return { success: true, claimedAmount: totalClaim };
     }
 
+    async toggleGlobalConfig(telegramId: string, field: 'autoClaim' | 'autoReinvest', state: boolean) {
+        try {
+            const updateProps = field === 'autoClaim' ? { autoClaim: state } : { autoReinvest: state };
+            await this.stakeModel.updateMany({ telegramId, status: 'active' }, { $set: updateProps }).exec();
+            return { success: true };
+        } catch (e: any) {
+            return { success: false, error: 'Database error applying global config' };
+        }
+    }
+
     async unstake(telegramId: string, stakeId: string) {
         const stake = await this.stakeModel.findOne({ _id: stakeId, telegramId }).exec();
         if (!stake) return { error: 'Stake not found' };
