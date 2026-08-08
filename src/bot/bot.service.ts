@@ -63,7 +63,7 @@ export class TelegramBotService implements OnModuleInit {
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "🚀 PLAY ELIXIR NOW", url: `https://t.me/ElixirAds_bot/app${referralParam}` }]
+                        [{ text: "🚀 PLAY ELIXIR NOW", url: `https://t.me/ElixirAds_bot/ElixirNetwork${referralParam}` }]
                     ]
                 }
             };
@@ -172,7 +172,7 @@ export class TelegramBotService implements OnModuleInit {
                     parse_mode: 'HTML',
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: "🚀 OPEN APP & REDEEM DROP", url: "https://t.me/ElixirAds_bot/app?startapp=bonus" }]
+                            [{ text: "🚀 OPEN APP & REDEEM DROP", url: "https://t.me/ElixirAds_bot/ElixirNetwork?startapp=bonus" }]
                         ]
                     }
                 };
