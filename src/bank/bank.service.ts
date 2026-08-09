@@ -20,6 +20,9 @@ export class BankService {
         private adminService: AdminService
     ) { }
 
+    /** 5% operational platform tax applied on ALL yield payouts */
+    private readonly PLATFORM_TAX = 0.05;
+
     @Cron(CronExpression.EVERY_MINUTE)
     async handleAutoClaim() {
         // Runs every minute to evaluate chronological maturity of all stakes
@@ -50,9 +53,14 @@ export class BankService {
                     if (earned > 0) {
                         stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
                         if (stake.autoReinvest) {
+                            // Auto-reinvest: compound full earned into principal (no tax on reinvested amount)
                             stake.amount += earned;
                         } else {
-                            await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
+                            // Apply 5% platform tax on yield payout
+                            const tax = earned * this.PLATFORM_TAX;
+                            const netEarned = earned - tax;
+                            await this.usersService.creditRewardAndLogTask(stake.telegramId, netEarned, 'Yield (Auto)');
+                            await this.adminService.addProfit('ELIXIR', tax, 'YIELD_TAX', stake.telegramId);
                         }
                         await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
                         stakeUpdated = true;
@@ -166,6 +174,7 @@ export class BankService {
         if (stakes.length === 0) return { error: 'No active stakes found' };
 
         let totalClaim = 0;
+        let totalTax = 0;
         const now = new Date();
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -179,6 +188,7 @@ export class BankService {
                     const nextClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
                     // Atomic Lock against parallel overlap claims by checking exact previous claim date
                     if (stake.autoReinvest) {
+                        // Auto-reinvest: compound full earned into principal (no tax)
                         const updatedStake = await this.stakeModel.findOneAndUpdate(
                             { _id: stake._id, lastClaimDate: stake.lastClaimDate },
                             { $set: { lastClaimDate: nextClaimDate }, $inc: { amount: earned } },
@@ -193,7 +203,11 @@ export class BankService {
                         ).exec();
                         if (updatedStake) {
                             hasProcessedValid = true;
-                            totalClaim += earned;
+                            // Apply 5% platform tax — accrue net amount only
+                            const tax = earned * this.PLATFORM_TAX;
+                            const netEarned = earned - tax;
+                            totalClaim += netEarned;
+                            totalTax += tax;
                         }
                     }
                 }
@@ -203,7 +217,13 @@ export class BankService {
         if (!hasProcessedValid) return { error: 'You can only claim yields once every 24 hours.' };
         if (totalClaim <= 0) return { error: 'No earnings to claim yet' };
 
-        await this.usersService.creditRewardAndLogTask(telegramId, totalClaim, 'Yield'); // Adjusting to just add to balance generically
+        // Credit net yield (after 5% tax)
+        await this.usersService.creditRewardAndLogTask(telegramId, totalClaim, 'Yield');
+
+        // Route collected tax to admin profit pool
+        if (totalTax > 0) {
+            await this.adminService.addProfit('ELIXIR', totalTax, 'YIELD_TAX', telegramId);
+        }
 
         // Create log
         await new this.bankLogModel({
@@ -244,9 +264,14 @@ export class BankService {
         let returnAmount = 0;
 
         if (isMature) {
-            // Only calculate yield if mature
+            // Apply 5% platform tax on uncollected yield at mature unstake
             const uncollectedYield = this.calculateYield(stake);
-            returnAmount = stake.amount + uncollectedYield;
+            const yieldTax = uncollectedYield * this.PLATFORM_TAX;
+            const netYield = uncollectedYield - yieldTax;
+            returnAmount = stake.amount + netYield;
+            if (yieldTax > 0) {
+                await this.adminService.addProfit('ELIXIR', yieldTax, 'YIELD_TAX', telegramId);
+            }
         } else {
             // Premature Unstake => 10% penalty on principal AND forfeit all pending APR yield
             const penalty = stake.amount * 0.10;
