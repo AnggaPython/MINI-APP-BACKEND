@@ -6,26 +6,36 @@ export declare class AdminController {
     constructor(adminService: AdminService, usersService: UsersService);
     login(body: any, req: any): Promise<{
         success: boolean;
-        token: any;
-        role: any;
+        token: string;
+        role: string;
         error?: undefined;
     } | {
         error: string;
     }>;
     getFeed(): Promise<{
-        totalUsers: any;
-        totalElixir: any;
-        totalAdRevenueUSD: any;
-        recentUsers: any;
+        totalUsers: number;
+        totalElixir: number;
+        totalAdRevenueUSD: number;
+        recentUsers: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         success: boolean;
     }>;
     getProfitBalances(): Promise<{
         success: boolean;
-        profitBalances: any;
+        profitBalances: Record<string, number>;
     }>;
     getProfitLogs(coin: string): Promise<{
         success: boolean;
-        logs: any;
+        logs: (import("mongoose").Document<unknown, {}, import("./schemas/profit-log.schema").ProfitLogDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/profit-log.schema").ProfitLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        })[];
     }>;
     getWithdrawLimits(): Promise<{
         success: boolean;

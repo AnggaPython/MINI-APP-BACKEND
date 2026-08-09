@@ -22,30 +22,48 @@ export class BankService {
 
     @Cron(CronExpression.EVERY_MINUTE)
     async handleAutoClaim() {
-        // Runs every minute to evaluate if any autoClaim stakes exceed 24H since last claim
-        const activeStakes = await this.stakeModel.find({ status: 'active', autoClaim: true }).exec();
+        // Runs every minute to evaluate chronological maturity of all stakes
+        const activeStakes = await this.stakeModel.find({ status: 'active' }).exec();
         const now = new Date();
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
         for (const stake of activeStakes) {
-            const msSinceClaim = now.getTime() - stake.lastClaimDate.getTime();
-            if (msSinceClaim >= ONE_DAY_MS) {
-                const earned = this.calculateYield(stake);
-                if (earned > 0) {
-                    stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
-                    if (stake.autoReinvest) {
-                        stake.amount += earned;
-                        await stake.save();
-                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
-                    } else {
-                        await stake.save();
-                        await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
-                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
-                    }
+            let stakeUpdated = false;
 
-                    this.logger.log(`Auto-claimed ${earned} for user ${stake.telegramId}`);
+            // 1. Check for 7-Day XP Vesting Maturity (Requires 7 full days of uninterrupted locking)
+            const MS_7_DAYS = 7 * 24 * 60 * 60 * 1000;
+            const msSinceStake = now.getTime() - stake.stakeDate.getTime();
+            if (!stake.isXpClaimed && msSinceStake >= MS_7_DAYS) {
+                const xpReward = Math.floor(stake.amount / 1000) * 10;
+                if (xpReward > 0) {
+                    await this.usersService.addExp(stake.telegramId, xpReward);
+                }
+                stake.isXpClaimed = true;
+                stakeUpdated = true;
+            }
+
+            // 2. Process Auto-Claim / Auto-Reinvest yields ONLY if autoClaim is enabled
+            if (stake.autoClaim || stake.autoReinvest) {
+                const msSinceClaim = now.getTime() - stake.lastClaimDate.getTime();
+                if (msSinceClaim >= ONE_DAY_MS) {
+                    const earned = this.calculateYield(stake);
+                    if (earned > 0) {
+                        stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
+                        if (stake.autoReinvest) {
+                            stake.amount += earned;
+                        } else {
+                            await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
+                        }
+                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
+                        stakeUpdated = true;
+                    }
                 }
             }
+
+            if (stakeUpdated) {
+                await stake.save();
+            }
+
         }
     }
 
@@ -164,14 +182,14 @@ export class BankService {
                         const updatedStake = await this.stakeModel.findOneAndUpdate(
                             { _id: stake._id, lastClaimDate: stake.lastClaimDate },
                             { $set: { lastClaimDate: nextClaimDate }, $inc: { amount: earned } },
-                            { new: true }
+                            { returnDocument: 'after' }
                         ).exec();
                         if (updatedStake) hasProcessedValid = true;
                     } else {
                         const updatedStake = await this.stakeModel.findOneAndUpdate(
                             { _id: stake._id, lastClaimDate: stake.lastClaimDate },
                             { $set: { lastClaimDate: nextClaimDate } },
-                            { new: true }
+                            { returnDocument: 'after' }
                         ).exec();
                         if (updatedStake) {
                             hasProcessedValid = true;
@@ -215,7 +233,7 @@ export class BankService {
         const lockedStake = await this.stakeModel.findOneAndUpdate(
             { _id: stakeId, telegramId, status: 'active' },
             { $set: { status: 'withdrawn' } },
-            { new: true }
+            { returnDocument: 'after' }
         ).exec();
 
         if (!lockedStake) return { error: 'Stake already withdrawn or in processing pipeline' };
@@ -254,7 +272,7 @@ export class BankService {
         if (typeof autoReinvest === 'boolean') updateDoc.autoReinvest = autoReinvest;
         if (Object.keys(updateDoc).length === 0) return { error: 'No config provided' };
 
-        const stake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: updateDoc }, { new: true }).exec();
+        const stake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: updateDoc }, { returnDocument: 'after' }).exec();
         if (!stake) return { error: 'Active stake not found' };
         return { success: true, stake };
     }

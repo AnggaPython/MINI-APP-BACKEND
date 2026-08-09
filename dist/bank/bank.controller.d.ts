@@ -9,12 +9,28 @@ export declare class BankController {
     } | {
         success: boolean;
         stats: {
-            activeStakes: any;
-            history: any;
+            activeStakes: {
+                id: import("mongoose").Types.ObjectId;
+                amount: number;
+                aprLabel: string;
+                rate: number;
+                stakeDate: Date;
+                maturityDate: Date;
+                pendingYield: number;
+                autoClaim: boolean;
+                autoReinvest: boolean;
+            }[];
+            history: (import("mongoose").Document<unknown, {}, import("./schemas/bank-log.schema").BankLogDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/bank-log.schema").BankLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+                _id: import("mongoose").Types.ObjectId;
+            }> & {
+                __v: number;
+            } & {
+                id: string;
+            })[];
             totalUnclaimedEarning: number;
             totalLiquidityPool: any;
             networkStaked: any;
-            personalStaked: any;
+            personalStaked: number;
         };
         error?: undefined;
     }>;
@@ -26,7 +42,13 @@ export declare class BankController {
         autoClaim?: boolean;
     }): Promise<{
         success: boolean;
-        stake: any;
+        stake: import("mongoose").Document<unknown, {}, import("./schemas/stake.schema").StakeDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/stake.schema").Stake & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
         error?: undefined;
     } | {
         error: string;
@@ -56,7 +78,13 @@ export declare class BankController {
         autoReinvest?: boolean;
     }): Promise<{
         success: boolean;
-        stake: any;
+        stake: import("mongoose").Document<unknown, {}, import("./schemas/stake.schema").StakeDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/stake.schema").Stake & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
         error?: undefined;
     } | {
         error: string;

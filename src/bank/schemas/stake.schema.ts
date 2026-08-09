@@ -34,6 +34,9 @@ export class Stake {
 
     @Prop({ default: false })
     autoReinvest: boolean;
+
+    @Prop({ default: false })
+    isXpClaimed: boolean;
 }
 
 export const StakeSchema = SchemaFactory.createForClass(Stake);

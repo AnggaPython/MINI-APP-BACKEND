@@ -523,7 +523,8 @@ export class UsersService {
             withdrawLimits,
             lifetimeElixir: user?.lifetimeElixir || 0,
             lastFaucetRoll: user?.lastFaucetRoll || null,
-            totalReferrals
+            totalReferrals,
+            exp: user?.exp || 0
         };
     }
 
@@ -726,7 +727,7 @@ export class UsersService {
         const user = await this.userModel.findOneAndUpdate(
             { telegramId, elixirBalance: { $gte: betAmount } },
             { $inc: { elixirBalance: -betAmount } },
-            { new: true }
+            { returnDocument: 'after' }
         ).exec();
 
         if (!user) {
@@ -796,7 +797,7 @@ export class UsersService {
             const winUser = await this.userModel.findOneAndUpdate(
                 { telegramId },
                 { $inc: { elixirBalance: reward, lifetimeElixir: reward } },
-                { new: true }
+                { returnDocument: 'after' }
             ).exec();
             finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
         }
@@ -893,5 +894,9 @@ export class UsersService {
 
     async unlockUserWithdrawal(telegramId: string): Promise<void> {
         await this.userModel.updateOne({ telegramId }, { $set: { isWithdrawing: false } }).exec();
+    }
+
+    async addExp(telegramId: string, amount: number): Promise<void> {
+        await this.userModel.updateOne({ telegramId }, { $inc: { exp: amount } }).exec();
     }
 }

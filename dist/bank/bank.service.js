@@ -12,7 +12,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var BankService_1;
-var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BankService = void 0;
 const common_1 = require("@nestjs/common");
@@ -39,27 +38,40 @@ let BankService = BankService_1 = class BankService {
         this.adminService = adminService;
     }
     async handleAutoClaim() {
-        const activeStakes = await this.stakeModel.find({ status: 'active', autoClaim: true }).exec();
+        const activeStakes = await this.stakeModel.find({ status: 'active' }).exec();
         const now = new Date();
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
         for (const stake of activeStakes) {
-            const msSinceClaim = now.getTime() - stake.lastClaimDate.getTime();
-            if (msSinceClaim >= ONE_DAY_MS) {
-                const earned = this.calculateYield(stake);
-                if (earned > 0) {
-                    stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
-                    if (stake.autoReinvest) {
-                        stake.amount += earned;
-                        await stake.save();
-                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
-                    }
-                    else {
-                        await stake.save();
-                        await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
-                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
-                    }
-                    this.logger.log(`Auto-claimed ${earned} for user ${stake.telegramId}`);
+            let stakeUpdated = false;
+            const MS_7_DAYS = 7 * 24 * 60 * 60 * 1000;
+            const msSinceStake = now.getTime() - stake.stakeDate.getTime();
+            if (!stake.isXpClaimed && msSinceStake >= MS_7_DAYS) {
+                const xpReward = Math.floor(stake.amount / 1000) * 10;
+                if (xpReward > 0) {
+                    await this.usersService.addExp(stake.telegramId, xpReward);
                 }
+                stake.isXpClaimed = true;
+                stakeUpdated = true;
+            }
+            if (stake.autoClaim || stake.autoReinvest) {
+                const msSinceClaim = now.getTime() - stake.lastClaimDate.getTime();
+                if (msSinceClaim >= ONE_DAY_MS) {
+                    const earned = this.calculateYield(stake);
+                    if (earned > 0) {
+                        stake.lastClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
+                        if (stake.autoReinvest) {
+                            stake.amount += earned;
+                        }
+                        else {
+                            await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
+                        }
+                        await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
+                        stakeUpdated = true;
+                    }
+                }
+            }
+            if (stakeUpdated) {
+                await stake.save();
             }
         }
     }
@@ -152,12 +164,12 @@ let BankService = BankService_1 = class BankService {
                 if (earned > 0) {
                     const nextClaimDate = now > stake.maturityDate ? stake.maturityDate : now;
                     if (stake.autoReinvest) {
-                        const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate }, $inc: { amount: earned } }, { new: true }).exec();
+                        const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate }, $inc: { amount: earned } }, { returnDocument: 'after' }).exec();
                         if (updatedStake)
                             hasProcessedValid = true;
                     }
                     else {
-                        const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate } }, { new: true }).exec();
+                        const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate } }, { returnDocument: 'after' }).exec();
                         if (updatedStake) {
                             hasProcessedValid = true;
                             totalClaim += earned;
@@ -192,7 +204,7 @@ let BankService = BankService_1 = class BankService {
         const stake = await this.stakeModel.findOne({ _id: stakeId, telegramId }).exec();
         if (!stake)
             return { error: 'Stake not found' };
-        const lockedStake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: { status: 'withdrawn' } }, { new: true }).exec();
+        const lockedStake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: { status: 'withdrawn' } }, { returnDocument: 'after' }).exec();
         if (!lockedStake)
             return { error: 'Stake already withdrawn or in processing pipeline' };
         const now = new Date();
@@ -223,7 +235,7 @@ let BankService = BankService_1 = class BankService {
             updateDoc.autoReinvest = autoReinvest;
         if (Object.keys(updateDoc).length === 0)
             return { error: 'No config provided' };
-        const stake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: updateDoc }, { new: true }).exec();
+        const stake = await this.stakeModel.findOneAndUpdate({ _id: stakeId, telegramId, status: 'active' }, { $set: updateDoc }, { returnDocument: 'after' }).exec();
         if (!stake)
             return { error: 'Active stake not found' };
         return { success: true, stake };
@@ -242,7 +254,9 @@ exports.BankService = BankService = BankService_1 = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(bank_log_schema_1.BankLog.name)),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService,
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
+        users_service_1.UsersService,
         achievements_service_1.AchievementsService,
         admin_service_1.AdminService])
 ], BankService);
