@@ -23,15 +23,37 @@ export class UsersController {
     @Public()
     @Get('public/monetag-postback')
     async monetagPostback(
-        @Query('userid') userid: string,
-        @Query('event') eventType: string,
-        @Query('reward') reward: string,
-        @Query('payout') payout?: string
+        @Query('userid') userid?: string,
+        @Query('event') eventLegacy?: string,
+        @Query('reward') rewardLegacy?: string,
+        @Query('payout') payoutLegacy?: string,
+        @Query('ymid') ymid?: string,
+        @Query('event_type') eventType?: string,
+        @Query('reward_event_type') rewardEventType?: string,
+        @Query('estimated_price') estimatedPrice?: string,
+        @Query('telegram_id') telegramId?: string
     ) {
-        if (reward !== 'valued') return { status: 'ignored' };
-        const payoutUSD = parseFloat(payout || '0') || 0;
-        await this.usersService.registerMonetagTicket(userid, payoutUSD);
-        return { status: 'success' };
+        const resolvedUserId = telegramId ?? userid ?? ymid;
+        const resolvedReward = rewardEventType ?? rewardLegacy;
+        const resolvedPayout = estimatedPrice ?? payoutLegacy;
+        const resolvedEvent = eventType ?? eventLegacy;
+
+        console.log(`[Monetag S2S] Incoming postback: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, reward=${resolvedReward}, event=${resolvedEvent}, payout=${resolvedPayout}`);
+
+        if (!resolvedUserId) {
+            console.log(`[Monetag S2S] IGNORED: No user ID resolved from query params`);
+            return { status: 'ignored', reason: 'missing_user_id' };
+        }
+        if (resolvedReward !== 'valued') {
+            console.log(`[Monetag S2S] IGNORED: reward="${resolvedReward}" !== "valued" for user ${resolvedUserId}`);
+            return { status: 'ignored', reason: 'reward_not_valued' };
+        }
+
+        const payoutUSD = parseFloat(resolvedPayout || '0') || 0;
+        await this.usersService.registerMonetagTicket(resolvedUserId, payoutUSD);
+
+        console.log(`[Monetag S2S] SUCCESS: Ticket registered for user ${resolvedUserId}, payout=$${payoutUSD}`);
+        return { status: 'success', user: resolvedUserId, payout: payoutUSD };
     }
 
     @Post('start-mining')

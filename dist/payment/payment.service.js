@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var PaymentService_1;
+var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const common_1 = require("@nestjs/common");
@@ -69,11 +70,10 @@ let PaymentService = PaymentService_1 = class PaymentService {
     async createDepositCharge(telegramId, amountElixir) {
         const usdAmount = amountElixir / 10000;
         const payload = {
-            orderId: `DEP_${Date.now()}_${telegramId}`,
+            orderId: `DEP_${telegramId}_${Date.now()}`,
             price: usdAmount.toFixed(2),
-            name: `${amountElixir} ELIXIR Deposit`,
+            product: `${amountElixir} ELIXIR Deposit`,
             priceFiatId: 1033,
-            customValue: telegramId.toString(),
             returnUrl: "https://mini-app-nine-mu.vercel.app/add-elixir",
             notifyUrl: "https://mini-app-backend-production-30ea.up.railway.app/payment/webhook"
         };
@@ -112,6 +112,21 @@ let PaymentService = PaymentService_1 = class PaymentService {
         'ARB': 1296,
         'USDC': 1282,
         'LINK': 1207
+    };
+    chainMap = {
+        'USDT': 'SOL',
+        'PEPE': 'ETH',
+        'ETH': 'ETH',
+        'SOL': 'SOL',
+        'MATIC': 'POL',
+        'ARB': 'ARB',
+        'USDC': 'SOL',
+        'LINK': 'ETH',
+        'TIA': 'CELESTIA',
+        'INJ': 'INJECTIVE',
+        'DYM': 'ROLLUX',
+        'DOT': 'POLKADOT',
+        'CRO': 'CRONOS'
     };
     getHeaders(rawBody, timestamp) {
         const signatureText = this.appId + timestamp + rawBody;
@@ -298,12 +313,15 @@ let PaymentService = PaymentService_1 = class PaymentService {
             const triggerWithdraw = async () => {
                 const timestamp = Math.floor(Date.now() / 1000).toString();
                 if (tier === 'onchain') {
+                    const withdrawChain = this.chainMap[coin.toUpperCase()] || 'SOL';
                     const payload = {
-                        orderId: `WD_ON_${Date.now()}_${telegramId}`,
+                        orderId: `WD_ON_${telegramId}_${Date.now()}`,
                         address: walletAddress,
                         amount: executionAmount.toFixed(8),
                         coinId: coinId,
-                        chain: 'SOL'
+                        chain: withdrawChain,
+                        merchantPayNetworkFee: false,
+                        notifyUrl: "https://mini-app-backend-production-30ea.up.railway.app/payment/webhook"
                     };
                     const rawBody = JSON.stringify(payload);
                     const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
@@ -315,7 +333,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 }
                 else {
                     const payload = {
-                        orderId: `WD_${Date.now()}_${telegramId}`,
+                        orderId: `WD_${telegramId}_${Date.now()}`,
                         cwalletUser: walletAddress,
                         amount: executionAmount.toFixed(8),
                         coinId: coinId
@@ -393,39 +411,67 @@ let PaymentService = PaymentService_1 = class PaymentService {
         return false;
     }
     async handleWebhook(event) {
-        this.logger.log('Receiving Webhook Event from CCPayment: ', event);
+        this.logger.log('Receiving Webhook Event from CCPayment: ', JSON.stringify(event));
         if (event.type === 'ActivateWebhookURL') {
             this.logger.log('CCPayment Webhook Activated successfully');
             return { success: true, processed: true, activation: true };
         }
-        if (event.status !== 'Successful' && event.status !== 2) {
-            return { success: true, processed: false, reason: 'Status is not paid' };
+        const payload = event.msg ? event.msg : event;
+        const eventType = event.type || '';
+        const status = payload.status;
+        if (status !== 'Success' && status !== 2 && status !== 'Successful') {
+            this.logger.log(`CCPayment Webhook skipped (not success): status=${status}, type=${eventType}`);
+            return { success: true, processed: false, reason: `Status ${status} is not paid/success` };
         }
-        const telegramId = event.customValue;
-        if (!telegramId)
+        let telegramId = event.customValue || payload.customValue;
+        const orderId = payload.orderId || event.orderId || '';
+        if (!telegramId) {
+            const depMatch = orderId.match(/^DEP_(\d+?)_/);
+            if (depMatch && depMatch[1]) {
+                telegramId = depMatch[1];
+                this.logger.log(`[Webhook] Resolved telegramId ${telegramId} from orderId pattern: ${orderId}`);
+            }
+            else if (eventType === 'ApiWithdrawal' || orderId.startsWith('WD_')) {
+                this.logger.log(`[Webhook] Withdrawal status update ${orderId} = ${status}, no credit needed.`);
+                return { success: true, processed: true, activation: false, withdrawal: true };
+            }
+        }
+        if (!telegramId) {
+            this.logger.warn(`[Webhook] No telegramId could be resolved from orderId=${orderId}, customValue=${event.customValue || payload.customValue || 'N/A'}`);
             return { success: true, processed: false, reason: 'No identifier attached' };
+        }
         let elixirAmount = 0;
-        if (event.productName) {
-            const match = event.productName.match(/^([0-9\.]+)\s+ELIXIR/);
+        const productField = payload.product || payload.productName || event.product || event.productName || '';
+        if (productField) {
+            const match = productField.match(/^([0-9\.]+)\s+ELIXIR/);
             if (match && match[1]) {
                 elixirAmount = parseFloat(match[1]);
             }
         }
+        if (elixirAmount <= 0 && orderId.startsWith('DEP_')) {
+            const priceFiat = parseFloat(payload.price || event.price || '0');
+            if (priceFiat > 0) {
+                elixirAmount = Math.round(priceFiat * 10000);
+                this.logger.log(`[Webhook] Fallback: Derived ${elixirAmount} ELIXIR from USD price ${priceFiat}`);
+            }
+        }
         if (elixirAmount <= 0) {
+            this.logger.warn(`[Webhook] Invalid/zero ELIXIR payload for user ${telegramId}. product="${productField}", orderId=${orderId}`);
             return { success: true, processed: false, reason: 'Invalid or zero ELIXIR payload' };
         }
-        await this.usersService.creditRewardAndLogTask(telegramId, elixirAmount, `DEP_CCPAYMENT_${event.orderId || Date.now()}`);
-        const cryptoSymbol = event.coinSymbol || event.crypto || 'USDT';
-        const cryptoAmountStr = event.amount || event.cryptoAmount || '0';
+        await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, `DEP_CCPAYMENT_${orderId || Date.now()}`);
+        const cryptoSymbol = payload.coinSymbol || event.coinSymbol || payload.crypto || event.crypto || 'USDT';
+        const cryptoAmountStr = payload.amount || event.amount || payload.cryptoAmount || event.cryptoAmount || '0';
         await this.txModel.create({
-            telegramId,
+            telegramId: telegramId.toString(),
             type: 'DEPOSIT',
             coin: cryptoSymbol.toUpperCase(),
             amount: parseFloat(cryptoAmountStr) || elixirAmount,
             tier: 'STANDARD',
             status: 'complete'
         });
-        return { success: true, processed: true, credited: elixirAmount };
+        this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId})`);
+        return { success: true, processed: true, credited: elixirAmount, user: telegramId };
     }
     async getTransactions(telegramId) {
         const txs = await this.txModel.find({ telegramId }).sort({ createdAt: -1 }).limit(100).exec();
@@ -438,8 +484,6 @@ exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     __param(0, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
-    __metadata("design:paramtypes", [users_service_1.UsersService,
-        mongoose_2.Model,
-        admin_service_1.AdminService])
+    __metadata("design:paramtypes", [users_service_1.UsersService, typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, admin_service_1.AdminService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map

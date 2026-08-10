@@ -25,11 +25,10 @@ export class PaymentService {
         const usdAmount = amountElixir / 10000;
 
         const payload = {
-            orderId: `DEP_${Date.now()}_${telegramId}`,
+            orderId: `DEP_${telegramId}_${Date.now()}`,
             price: usdAmount.toFixed(2), // V2 strictly expects max 2 decimals for FIAT
-            name: `${amountElixir} ELIXIR Deposit`,
-            priceFiatId: 1033, // CCPayment V2 explicit uint64 identifier for USD
-            customValue: telegramId.toString(),
+            product: `${amountElixir} ELIXIR Deposit`,
+            priceFiatId: 1033, // CCPayment V2 explicit uint64 identifier for USD (pass either priceFiatId XOR priceCoinId, NOT both)
             returnUrl: "https://mini-app-nine-mu.vercel.app/add-elixir", // Redirects user back to Mini-App Interface
             notifyUrl: "https://mini-app-backend-production-30ea.up.railway.app/payment/webhook" // CCPayment Server-to-Server hit
         };
@@ -64,7 +63,7 @@ export class PaymentService {
         }
     }
 
-    // CCPayment V2 Explicit Coin IDs (Extracted via API getCoinList)
+    // CCPayment V2 Explicit Coin IDs + Matching default On-Chain Withdraw Chain Symbols
     private readonly coinMap: Record<string, number> = {
         'USDT': 1280,
         'PEPE': 1877,
@@ -74,6 +73,23 @@ export class PaymentService {
         'ARB': 1296,
         'USDC': 1282,
         'LINK': 1207
+    };
+
+    // Default primary network for On-Chain withdrawals (per coin) — keep aligned with merchant token list
+    private readonly chainMap: Record<string, string> = {
+        'USDT': 'SOL',
+        'PEPE': 'ETH',
+        'ETH': 'ETH',
+        'SOL': 'SOL',
+        'MATIC': 'POL',
+        'ARB': 'ARB',
+        'USDC': 'SOL',
+        'LINK': 'ETH',
+        'TIA': 'CELESTIA',
+        'INJ': 'INJECTIVE',
+        'DYM': 'ROLLUX',
+        'DOT': 'POLKADOT',
+        'CRO': 'CRONOS'
     };
 
     private getHeaders(rawBody: string, timestamp: string) {
@@ -295,12 +311,15 @@ export class PaymentService {
                 const timestamp = Math.floor(Date.now() / 1000).toString();
 
                 if (tier === 'onchain') {
+                    const withdrawChain = this.chainMap[coin.toUpperCase()] || 'SOL';
                     const payload = {
-                        orderId: `WD_ON_${Date.now()}_${telegramId}`,
+                        orderId: `WD_ON_${telegramId}_${Date.now()}`,
                         address: walletAddress,
                         amount: executionAmount.toFixed(8),
                         coinId: coinId,
-                        chain: 'SOL'
+                        chain: withdrawChain,
+                        merchantPayNetworkFee: false, // User pays network fee from their withdrawal amount
+                        notifyUrl: "https://mini-app-backend-production-30ea.up.railway.app/payment/webhook"
                     };
                     const rawBody = JSON.stringify(payload);
                     const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
@@ -311,7 +330,7 @@ export class PaymentService {
                     return await res.json();
                 } else {
                     const payload = {
-                        orderId: `WD_${Date.now()}_${telegramId}`,
+                        orderId: `WD_${telegramId}_${Date.now()}`,
                         cwalletUser: walletAddress,
                         amount: executionAmount.toFixed(8),
                         coinId: coinId
@@ -400,7 +419,7 @@ export class PaymentService {
     }
 
     async handleWebhook(event: any) {
-        this.logger.log('Receiving Webhook Event from CCPayment: ', event);
+        this.logger.log('Receiving Webhook Event from CCPayment: ', JSON.stringify(event));
 
         // Required by CCPayment setup tester
         if (event.type === 'ActivateWebhookURL') {
@@ -408,45 +427,78 @@ export class PaymentService {
             return { success: true, processed: true, activation: true };
         }
 
-        // Status 2 is typically "Successful Payment" in CCPayment
-        if (event.status !== 'Successful' && event.status !== 2) {
-            return { success: true, processed: false, reason: 'Status is not paid' };
+        // Unwrap nested V2 webhook payload: { type, msg: {...} } or flat { status, orderId, ... }
+        const payload = event.msg ? event.msg : event;
+        const eventType = event.type || '';
+
+        // Official V2 statuses: WaitingApproval / Rejected / Processing / Success / Failed — plus legacy 2 = Success
+        const status = payload.status;
+        if (status !== 'Success' && status !== 2 && status !== 'Successful') {
+            this.logger.log(`CCPayment Webhook skipped (not success): status=${status}, type=${eventType}`);
+            return { success: true, processed: false, reason: `Status ${status} is not paid/success` };
         }
 
-        const telegramId = event.customValue;
-        if (!telegramId) return { success: true, processed: false, reason: 'No identifier attached' };
+        // Resolve telegramId: V2 customValue MAY not exist — always fallback to orderId pattern DEP_<telegramId>_<timestamp>
+        let telegramId = event.customValue || payload.customValue;
+        const orderId = payload.orderId || event.orderId || '';
+        if (!telegramId) {
+            const depMatch = orderId.match(/^DEP_(\d+?)_/);
+            if (depMatch && depMatch[1]) {
+                telegramId = depMatch[1];
+                this.logger.log(`[Webhook] Resolved telegramId ${telegramId} from orderId pattern: ${orderId}`);
+            } else if (eventType === 'ApiWithdrawal' || orderId.startsWith('WD_')) {
+                this.logger.log(`[Webhook] Withdrawal status update ${orderId} = ${status}, no credit needed.`);
+                return { success: true, processed: true, activation: false, withdrawal: true };
+            }
+        }
 
-        // We deduce ELIXIR quantity logic backward from USD
-        // Or if we know the order string e.g. "500 ELIXIR Deposit"
+        if (!telegramId) {
+            this.logger.warn(`[Webhook] No telegramId could be resolved from orderId=${orderId}, customValue=${event.customValue || payload.customValue || 'N/A'}`);
+            return { success: true, processed: false, reason: 'No identifier attached' };
+        }
+
+        // We deduce ELIXIR quantity logic backward from product string: "500 ELIXIR Deposit"
+        // V2 createInvoiceUrl maps to the `product` field on the webhook payload.
         let elixirAmount = 0;
 
-        // Match string: "500 ELIXIR Deposit"
-        if (event.productName) {
-            const match = event.productName.match(/^([0-9\.]+)\s+ELIXIR/);
+        const productField = payload.product || payload.productName || event.product || event.productName || '';
+        if (productField) {
+            const match = productField.match(/^([0-9\.]+)\s+ELIXIR/);
             if (match && match[1]) {
                 elixirAmount = parseFloat(match[1]);
             }
         }
 
+        if (elixirAmount <= 0 && orderId.startsWith('DEP_')) {
+            // Fallback: try to parse from direct amount if it was USD (priceFiatId=1033 USD, so credit = 10000 * usd_amount)
+            const priceFiat = parseFloat(payload.price || event.price || '0');
+            if (priceFiat > 0) {
+                elixirAmount = Math.round(priceFiat * 10000);
+                this.logger.log(`[Webhook] Fallback: Derived ${elixirAmount} ELIXIR from USD price ${priceFiat}`);
+            }
+        }
+
         if (elixirAmount <= 0) {
+            this.logger.warn(`[Webhook] Invalid/zero ELIXIR payload for user ${telegramId}. product="${productField}", orderId=${orderId}`);
             return { success: true, processed: false, reason: 'Invalid or zero ELIXIR payload' };
         }
 
         // Top up user's Elixir Balance
-        await this.usersService.creditRewardAndLogTask(telegramId, elixirAmount, `DEP_CCPAYMENT_${event.orderId || Date.now()}`);
+        await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, `DEP_CCPAYMENT_${orderId || Date.now()}`);
 
-        const cryptoSymbol = event.coinSymbol || event.crypto || 'USDT';
-        const cryptoAmountStr = event.amount || event.cryptoAmount || '0';
+        const cryptoSymbol = payload.coinSymbol || event.coinSymbol || payload.crypto || event.crypto || 'USDT';
+        const cryptoAmountStr = payload.amount || event.amount || payload.cryptoAmount || event.cryptoAmount || '0';
         await this.txModel.create({
-            telegramId,
+            telegramId: telegramId.toString(),
             type: 'DEPOSIT',
-            coin: cryptoSymbol.toUpperCase(),
-            amount: parseFloat(cryptoAmountStr) || elixirAmount,
+            coin: (cryptoSymbol as string).toUpperCase(),
+            amount: parseFloat(cryptoAmountStr as string) || elixirAmount,
             tier: 'STANDARD',
             status: 'complete'
         });
 
-        return { success: true, processed: true, credited: elixirAmount };
+        this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId})`);
+        return { success: true, processed: true, credited: elixirAmount, user: telegramId };
     }
 
     async getTransactions(telegramId: string) {

@@ -1,6 +1,6 @@
 import { UsersService } from '../users/users.service';
 import { Model } from 'mongoose';
-import { Transaction, TransactionDocument } from './schemas/transaction.schema';
+import { TransactionDocument } from './schemas/transaction.schema';
 import { AdminService } from '../admin/admin.service';
 export declare class PaymentService {
     private usersService;
@@ -20,6 +20,7 @@ export declare class PaymentService {
         paymentUrl?: undefined;
     }>;
     private readonly coinMap;
+    private readonly chainMap;
     private getHeaders;
     private refillTreasuryLiquidityViaSwap;
     createWithdrawRequest(telegramId: string, coin: string, amount: number, walletAddress: string, tier?: string): Promise<{
@@ -37,28 +38,36 @@ export declare class PaymentService {
         processed: boolean;
         activation: boolean;
         reason?: undefined;
+        withdrawal?: undefined;
         credited?: undefined;
+        user?: undefined;
     } | {
         success: boolean;
         processed: boolean;
         reason: string;
         activation?: undefined;
+        withdrawal?: undefined;
         credited?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        processed: boolean;
+        activation: boolean;
+        withdrawal: boolean;
+        reason?: undefined;
+        credited?: undefined;
+        user?: undefined;
     } | {
         success: boolean;
         processed: boolean;
         credited: number;
+        user: any;
         activation?: undefined;
         reason?: undefined;
+        withdrawal?: undefined;
     }>;
     getTransactions(telegramId: string): Promise<{
         success: boolean;
-        transactions: (import("mongoose").Document<unknown, {}, TransactionDocument, {}, import("mongoose").DefaultSchemaOptions> & Transaction & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        })[];
+        transactions: any;
     }>;
 }

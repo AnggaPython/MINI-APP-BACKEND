@@ -15,147 +15,149 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersController = void 0;
 const common_1 = require("@nestjs/common");
 const users_service_1 = require("./users.service");
+const telegram_guard_1 = require("../auth/telegram.guard");
+const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let UsersController = class UsersController {
     usersService;
     constructor(usersService) {
         this.usersService = usersService;
     }
-    async syncUser(userData) {
+    async syncUser(userData, telegramId) {
         if (!userData || !userData.id) {
-            return { error: 'Invalid user payload' };
+            return { success: false, error: 'Invalid user payload' };
         }
         const referredBy = userData.start_param;
         const result = await this.usersService.syncTelegramUser(userData, referredBy);
         return { success: true, user: result };
     }
-    async monetagPostback(userid, eventType, reward, ymid, payout) {
-        if (reward !== 'valued')
-            return { status: 'ignored' };
-        const payoutUSD = parseFloat(payout || "0") || 0;
-        await this.usersService.registerMonetagTicket(userid, payoutUSD);
-        return { status: 'success' };
+    async monetagPostback(userid, eventLegacy, rewardLegacy, payoutLegacy, ymid, eventType, rewardEventType, estimatedPrice, telegramId) {
+        const resolvedUserId = telegramId ?? userid ?? ymid;
+        const resolvedReward = rewardEventType ?? rewardLegacy;
+        const resolvedPayout = estimatedPrice ?? payoutLegacy;
+        const resolvedEvent = eventType ?? eventLegacy;
+        console.log(`[Monetag S2S] Incoming postback: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, reward=${resolvedReward}, event=${resolvedEvent}, payout=${resolvedPayout}`);
+        if (!resolvedUserId) {
+            console.log(`[Monetag S2S] IGNORED: No user ID resolved from query params`);
+            return { status: 'ignored', reason: 'missing_user_id' };
+        }
+        if (resolvedReward !== 'valued') {
+            console.log(`[Monetag S2S] IGNORED: reward="${resolvedReward}" !== "valued" for user ${resolvedUserId}`);
+            return { status: 'ignored', reason: 'reward_not_valued' };
+        }
+        const payoutUSD = parseFloat(resolvedPayout || '0') || 0;
+        await this.usersService.registerMonetagTicket(resolvedUserId, payoutUSD);
+        console.log(`[Monetag S2S] SUCCESS: Ticket registered for user ${resolvedUserId}, payout=$${payoutUSD}`);
+        return { status: 'success', user: resolvedUserId, payout: payoutUSD };
     }
     async startMining(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.startMining(telegramId);
-        if (result.user)
-            return { success: true, user: result.user };
-        else
-            return { error: result.error || 'Verification Failed' };
+        if (result.error)
+            return { success: false, error: result.error };
+        return { success: true, user: result.user };
     }
     async boostMining(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.boostMining(telegramId);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user };
     }
     async claimMining(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.claimMining(telegramId);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user, claimedAmount: result.claimedAmount };
     }
     async getReferralStats(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const stats = await this.usersService.getReferralStats(telegramId);
         return { success: true, stats };
     }
     async claimReferral(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.claimReferralVault(telegramId);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user, claimedAmount: result.claimedAmount };
     }
     async claimDaily(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.claimDailyLogin(telegramId);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user, reward: result.reward };
     }
     async claimFaucet(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.claimFaucet(telegramId);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, finalNum: result.finalNum, reward: result.reward };
     }
-    async claimCodeDrop(body) {
-        if (!body.telegramId || !body.code)
-            return { error: 'Missing parameters' };
-        const result = await this.usersService.claimCodeDrop(body.telegramId, body.code);
+    async claimCodeDrop(telegramId, code) {
+        if (!code)
+            return { success: false, error: 'Missing code parameter' };
+        const result = await this.usersService.claimCodeDrop(telegramId, code);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user, reward: result.reward };
     }
-    async claimVipRank(body) {
-        if (!body.telegramId || !body.rankName)
-            return { error: 'Missing parameters' };
-        const result = await this.usersService.claimVipRank(body.telegramId, body.rankName);
+    async claimVipRank(telegramId, rankName) {
+        if (!rankName)
+            return { success: false, error: 'Missing rankName parameter' };
+        const result = await this.usersService.claimVipRank(telegramId, rankName);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user, reward: result.reward };
     }
     async verifyTelegram(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const result = await this.usersService.verifyTelegramChannel(telegramId);
         if (result.error)
             return { success: false, error: result.error };
         return { success: true, user: result.user, reward: result.reward };
     }
-    async getBalance(id) {
-        if (!id)
-            return { error: 'Missing id' };
-        const result = await this.usersService.getBalance(id);
-        return { success: true, balance: result.elixirBalance, cryptoBalances: result.cryptoBalances, cwalletUid: result.cwalletUid, solanaAddress: result.solanaAddress, withdrawLimits: result.withdrawLimits, lifetimeElixir: result.lifetimeElixir, totalReferrals: result.totalReferrals, lastFaucetRoll: result.lastFaucetRoll };
+    async getBalance(telegramId) {
+        const result = await this.usersService.getBalance(telegramId);
+        return {
+            success: true,
+            balance: result.elixirBalance,
+            cryptoBalances: result.cryptoBalances,
+            cwalletUid: result.cwalletUid,
+            solanaAddress: result.solanaAddress,
+            withdrawLimits: result.withdrawLimits,
+            lifetimeElixir: result.lifetimeElixir,
+            totalReferrals: result.totalReferrals,
+            lastFaucetRoll: result.lastFaucetRoll,
+            exp: result.exp
+        };
     }
-    async bindWallet(body) {
-        if (!body.telegramId || !body.cwalletUid)
-            return { error: 'Missing parameters' };
-        return await this.usersService.bindCwalletUid(body.telegramId, body.cwalletUid);
+    async bindWallet(telegramId, cwalletUid) {
+        if (!cwalletUid)
+            return { success: false, error: 'Missing cwalletUid parameter' };
+        return await this.usersService.bindCwalletUid(telegramId, cwalletUid);
     }
-    async bindSolana(body) {
-        if (!body.telegramId || !body.solanaAddress)
-            return { error: 'Missing parameters' };
-        return await this.usersService.bindSolanaAddress(body.telegramId, body.solanaAddress);
+    async bindSolana(telegramId, solanaAddress) {
+        if (!solanaAddress)
+            return { success: false, error: 'Missing solanaAddress parameter' };
+        return await this.usersService.bindSolanaAddress(telegramId, solanaAddress);
     }
-    async convertDust(body) {
-        if (!body.telegramId || !body.coins || !body.coins.length) {
-            return { error: 'Missing parameters: telegramId or coins array' };
+    async convertDust(telegramId, coins) {
+        if (!coins || !coins.length)
+            return { success: false, error: 'Missing coins array' };
+        return await this.usersService.convertDustToElixir(telegramId, coins);
+    }
+    async swapElixir(telegramId, amount, targetCoin) {
+        if (!amount || !targetCoin)
+            return { success: false, error: 'Missing swap parameters' };
+        return await this.usersService.swapTokens(telegramId, amount, targetCoin);
+    }
+    async executeHiLoBet(telegramId, betAmount, multiplier, type) {
+        if (!betAmount || !multiplier || !type) {
+            return { success: false, error: 'Missing required betting parameters' };
         }
-        return await this.usersService.convertDustToElixir(body.telegramId, body.coins);
-    }
-    async swapElixir(body) {
-        if (!body.telegramId || !body.amount || !body.targetCoin) {
-            return { error: 'Missing swap parameters' };
-        }
-        return await this.usersService.swapTokens(body.telegramId, body.amount, body.targetCoin);
-    }
-    async executeHiLoBet(body) {
-        if (!body.telegramId || !body.betAmount || !body.multiplier || !body.type) {
-            return { error: 'Missing required betting parameters' };
-        }
-        const strictBet = Number(body.betAmount);
-        const strictMultiplier = Number(body.multiplier);
+        const strictBet = Number(betAmount);
+        const strictMultiplier = Number(multiplier);
         if (isNaN(strictBet) || isNaN(strictMultiplier) || strictBet <= 0) {
-            return { error: 'Malicious payload detected: Numeric type coercion failed' };
+            return { success: false, error: 'Malicious payload detected: Numeric type coercion failed' };
         }
-        return await this.usersService.executeHiLoBet(body.telegramId, strictBet, strictMultiplier, body.type);
+        return await this.usersService.executeHiLoBet(telegramId, strictBet, strictMultiplier, type);
     }
     async getHiLoHistory(telegramId) {
-        if (!telegramId)
-            return { error: 'Missing telegramId' };
         const history = await this.usersService.getHiLoHistory(telegramId);
         return { success: true, history };
     }
@@ -164,142 +166,159 @@ exports.UsersController = UsersController;
 __decorate([
     (0, common_1.Post)('sync'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "syncUser", null);
 __decorate([
+    (0, telegram_user_decorator_1.Public)(),
     (0, common_1.Get)('public/monetag-postback'),
     __param(0, (0, common_1.Query)('userid')),
     __param(1, (0, common_1.Query)('event')),
     __param(2, (0, common_1.Query)('reward')),
-    __param(3, (0, common_1.Query)('ymid')),
-    __param(4, (0, common_1.Query)('payout')),
+    __param(3, (0, common_1.Query)('payout')),
+    __param(4, (0, common_1.Query)('ymid')),
+    __param(5, (0, common_1.Query)('event_type')),
+    __param(6, (0, common_1.Query)('reward_event_type')),
+    __param(7, (0, common_1.Query)('estimated_price')),
+    __param(8, (0, common_1.Query)('telegram_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "monetagPostback", null);
 __decorate([
     (0, common_1.Post)('start-mining'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "startMining", null);
 __decorate([
     (0, common_1.Post)('boost-mining'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "boostMining", null);
 __decorate([
     (0, common_1.Post)('claim-mining'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimMining", null);
 __decorate([
-    (0, common_1.Post)('referral-stats'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    (0, common_1.Get)('referral-stats'),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getReferralStats", null);
 __decorate([
     (0, common_1.Post)('claim-referral'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimReferral", null);
 __decorate([
     (0, common_1.Post)('claim-daily'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimDaily", null);
 __decorate([
     (0, common_1.Post)('claim-faucet'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimFaucet", null);
 __decorate([
     (0, common_1.Post)('claim-drop'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('code')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimCodeDrop", null);
 __decorate([
     (0, common_1.Post)('claim-vip-rank'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('rankName')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimVipRank", null);
 __decorate([
     (0, common_1.Post)('verify-telegram'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "verifyTelegram", null);
 __decorate([
-    (0, common_1.Get)('balance/:id'),
-    __param(0, (0, common_1.Param)('id')),
+    (0, common_1.Get)('me/balance'),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getBalance", null);
 __decorate([
     (0, common_1.Post)('bind-wallet'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('cwalletUid')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "bindWallet", null);
 __decorate([
     (0, common_1.Post)('bind-solana'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('solanaAddress')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "bindSolana", null);
 __decorate([
     (0, common_1.Post)('convert-dust'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('coins')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Array]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "convertDust", null);
 __decorate([
     (0, common_1.Post)('swap'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('amount')),
+    __param(2, (0, common_1.Body)('targetCoin')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Number, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "swapElixir", null);
 __decorate([
     (0, common_1.Post)('hilo-bet'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)('betAmount')),
+    __param(2, (0, common_1.Body)('multiplier')),
+    __param(3, (0, common_1.Body)('type')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Object, Object, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "executeHiLoBet", null);
 __decorate([
-    (0, common_1.Post)('hilo-history'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    (0, common_1.Get)('hilo-history'),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getHiLoHistory", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('users'),
+    (0, common_1.UseGuards)(telegram_guard_1.TelegramAuthGuard),
     __metadata("design:paramtypes", [users_service_1.UsersService])
 ], UsersController);
 //# sourceMappingURL=users.controller.js.map

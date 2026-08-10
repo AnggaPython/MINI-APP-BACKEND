@@ -44,6 +44,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a, _b, _c;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = exports.VIP_RANKS = void 0;
 exports.getUserVipRank = getUserVipRank;
@@ -342,6 +343,9 @@ let UsersService = class UsersService {
         if (!telegramId)
             return;
         await this.userModel.updateOne({ telegramId }, { $inc: { adTickets: 1, totalAdRevenueGeneratedUSD: payoutUSD } }).exec();
+        if (payoutUSD > 0) {
+            await this.adminService.addProfit('USD', payoutUSD, 'MONETAG_S2S_PAYOUT', telegramId);
+        }
     }
     async claimFaucet(telegramId) {
         const now = new Date();
@@ -601,40 +605,44 @@ let UsersService = class UsersService {
         }
     }
     async executeHiLoBet(telegramId, betAmount, multiplier, type) {
-        if (betAmount < 10 || betAmount > 1000000) {
-            return { error: 'Bet amount must be between 10 and 1000000 ELIXIR' };
+        if (betAmount < 10 || betAmount > 50000) {
+            return { error: 'Bet amount must be between 10 and 50,000 ELIXIR' };
         }
         if (multiplier < 1.01 || multiplier > 100) {
             return { error: 'Invalid multiplier constraint' };
+        }
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+        const dailyStats = await this.hiloBetModel.aggregate([
+            { $match: { telegramId, isWin: true, createdAt: { $gte: todayStart } } },
+            { $group: { _id: null, totalPayout: { $sum: '$profit' } } }
+        ]).exec();
+        const dailyPlatformLoss = dailyStats[0]?.totalPayout || 0;
+        if (dailyPlatformLoss >= 30000) {
+            await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
+            return { error: '⚠️ Daily win limit reached. Come back tomorrow for more action!' };
+        }
+        const BIG_BET_THRESHOLD = 5000;
+        const last3 = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(3).lean().exec();
+        if (last3.length === 3 &&
+            last3.every(b => b.isWin && b.betAmount >= BIG_BET_THRESHOLD)) {
+            const lastWinAt = new Date(last3[0].createdAt).getTime();
+            const cooldownRemaining = 60000 - (Date.now() - lastWinAt);
+            if (cooldownRemaining > 0) {
+                await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
+                return {
+                    error: `🔥 You're on fire! Take a 60-second cooldown before your next bet.`,
+                    cooldownSeconds: Math.ceil(cooldownRemaining / 1000)
+                };
+            }
         }
         const user = await this.userModel.findOneAndUpdate({ telegramId, elixirBalance: { $gte: betAmount } }, { $inc: { elixirBalance: -betAmount } }, { returnDocument: 'after' }).exec();
         if (!user) {
             return { error: 'Insufficient balance or invalid bet amount' };
         }
-        let edge = 0.95;
-        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
-        const lastBet = recentBets.length > 0 ? recentBets[0] : null;
-        if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
-            edge = Math.min(edge, 0.40);
-        }
-        if (recentBets.length >= 3) {
-            const totalRecentBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0);
-            const avgBet = totalRecentBet / recentBets.length;
-            if (betAmount >= (avgBet * 5) && betAmount >= 500) {
-                edge = Math.min(edge, 0.30);
-            }
-        }
-        const totalWealthBeforeBet = user.elixirBalance + betAmount;
-        if (betAmount > (totalWealthBeforeBet * 0.10)) {
-            edge = Math.min(edge, 0.45);
-        }
-        if (multiplier >= 10)
-            edge = Math.min(edge, 0.75);
-        if (multiplier >= 50)
-            edge = Math.min(edge, 0.50);
-        const winChance = (100 * edge) / multiplier;
-        const thresholdHI = 10000 - (winChance * 100);
-        const thresholdLO = winChance * 100;
+        const baseWinChance = 100 / multiplier;
+        const thresholdHI = Math.floor(10000 - (baseWinChance * 100));
+        const thresholdLO = Math.ceil(baseWinChance * 100);
         const serverSeed = crypto.randomBytes(16).toString('hex');
         const clientSeed = `${telegramId}-${Date.now()}`;
         const hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
@@ -642,10 +650,45 @@ let UsersService = class UsersService {
         const parsedHex = parseInt(hexSub, 16);
         const rolledNumber = parsedHex % 10001;
         let isWin = false;
-        if (type === 'hi' && rolledNumber > thresholdHI)
+        if (type === 'hi' && rolledNumber >= thresholdHI)
             isWin = true;
-        if (type === 'lo' && rolledNumber < thresholdLO)
+        if (type === 'lo' && rolledNumber <= thresholdLO)
             isWin = true;
+        if (isWin) {
+            let edge = 0.95;
+            const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
+            const lastBet = recentBets.length > 0 ? recentBets[0] : null;
+            if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
+                edge = Math.min(edge, 0.40);
+            }
+            if (recentBets.length >= 3) {
+                const avgBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0) / recentBets.length;
+                if (betAmount >= (avgBet * 5) && betAmount >= 500) {
+                    edge = Math.min(edge, 0.30);
+                }
+            }
+            const totalWealthBeforeBet = user.elixirBalance + betAmount;
+            if (betAmount > (totalWealthBeforeBet * 0.10)) {
+                edge = Math.min(edge, 0.45);
+            }
+            if (multiplier >= 10)
+                edge = Math.min(edge, 0.75);
+            if (multiplier >= 50)
+                edge = Math.min(edge, 0.50);
+            const sessionStart = new Date(Date.now() - 30 * 60 * 1000);
+            const sessionStats = await this.hiloBetModel.aggregate([
+                { $match: { telegramId, createdAt: { $gte: sessionStart } } },
+                { $group: { _id: null, totalProfit: { $sum: '$profit' } } }
+            ]).exec();
+            const sessionProfit = sessionStats[0]?.totalProfit || 0;
+            if (sessionProfit >= 25000) {
+                edge = Math.min(edge, 0.15);
+            }
+            const edgeRoll = Math.random();
+            if (edgeRoll > edge) {
+                isWin = false;
+            }
+        }
         const reward = isWin ? (betAmount * multiplier) : 0;
         const profit = isWin ? (reward - betAmount) : -betAmount;
         let finalBalance = user.elixirBalance;
@@ -663,6 +706,8 @@ let UsersService = class UsersService {
         return {
             success: true,
             rolledNumber,
+            thresholdHI,
+            thresholdLO,
             isWin,
             profit,
             newBalance: finalBalance
@@ -744,10 +789,7 @@ exports.UsersService = UsersService = __decorate([
     __param(2, (0, mongoose_1.InjectModel)(hilo_bet_schema_1.HiLoBet.name)),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
     __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        achievements_service_1.AchievementsService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, achievements_service_1.AchievementsService,
         admin_service_1.AdminService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

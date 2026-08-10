@@ -2,32 +2,36 @@ import { UsersService } from './users.service';
 export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
-    syncUser(userData: any): Promise<{
+    syncUser(userData: any, telegramId: string): Promise<{
+        success: boolean;
         error: string;
-        success?: undefined;
         user?: undefined;
     } | {
         success: boolean;
         user: import("./schemas/user.schema").User;
         error?: undefined;
     }>;
-    monetagPostback(userid: string, eventType: string, reward: string, ymid: string, payout?: string): Promise<{
+    monetagPostback(userid?: string, eventLegacy?: string, rewardLegacy?: string, payoutLegacy?: string, ymid?: string, eventType?: string, rewardEventType?: string, estimatedPrice?: string, telegramId?: string): Promise<{
         status: string;
+        reason: string;
+        user?: undefined;
+        payout?: undefined;
+    } | {
+        status: string;
+        user: string;
+        payout: number;
+        reason?: undefined;
     }>;
     startMining(telegramId: string): Promise<{
+        success: boolean;
         error: string;
-        success?: undefined;
         user?: undefined;
     } | {
         success: boolean;
-        user: import("./schemas/user.schema").User;
+        user: import("./schemas/user.schema").User | null;
         error?: undefined;
     }>;
     boostMining(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-    } | {
         success: boolean;
         error: string;
         user?: undefined;
@@ -37,11 +41,6 @@ export declare class UsersController {
         error?: undefined;
     }>;
     claimMining(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-        claimedAmount?: undefined;
-    } | {
         success: boolean;
         error: string;
         user?: undefined;
@@ -53,72 +52,36 @@ export declare class UsersController {
         error?: undefined;
     }>;
     getReferralStats(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        stats?: undefined;
-    } | {
         success: boolean;
         stats: {
-            referralBalance: number;
-            totalReferrals: number;
-            history: (import("./schemas/referral-log.schema").ReferralLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-                _id: import("mongoose").Types.ObjectId;
-            }> & {
-                __v: number;
-            })[];
+            referralBalance: any;
+            totalReferrals: any;
+            history: any;
         };
-        error?: undefined;
     }>;
     claimReferral(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-        claimedAmount?: undefined;
-    } | {
         success: boolean;
         error: string;
         user?: undefined;
         claimedAmount?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | undefined;
-        claimedAmount: number | undefined;
+        user: any;
+        claimedAmount: any;
         error?: undefined;
     }>;
     claimDaily(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-        reward?: undefined;
-    } | {
         success: boolean;
         error: string;
         user?: undefined;
         reward?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | undefined;
+        user: any;
         reward: number | undefined;
         error?: undefined;
     }>;
     claimFaucet(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        finalNum?: undefined;
-        reward?: undefined;
-    } | {
         success: boolean;
         error: string;
         finalNum?: undefined;
@@ -129,191 +92,145 @@ export declare class UsersController {
         reward: number | undefined;
         error?: undefined;
     }>;
-    claimCodeDrop(body: {
-        telegramId: string;
-        code: string;
-    }): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-        reward?: undefined;
-    } | {
+    claimCodeDrop(telegramId: string, code: string): Promise<{
         success: boolean;
         error: string;
         user?: undefined;
         reward?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | undefined;
+        user: any;
         reward: number | undefined;
         error?: undefined;
     }>;
-    claimVipRank(body: {
-        telegramId: string;
-        rankName: string;
-    }): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-        reward?: undefined;
-    } | {
+    claimVipRank(telegramId: string, rankName: string): Promise<{
         success: boolean;
         error: string;
         user?: undefined;
         reward?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | undefined;
+        user: any;
         reward: number | undefined;
         error?: undefined;
     }>;
     verifyTelegram(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        user?: undefined;
-        reward?: undefined;
-    } | {
         success: boolean;
         error: string;
         user?: undefined;
         reward?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | undefined;
+        user: any;
         reward: number | undefined;
         error?: undefined;
     }>;
-    getBalance(id: string): Promise<{
+    getBalance(telegramId: string): Promise<{
+        success: boolean;
+        balance: any;
+        cryptoBalances: any;
+        cwalletUid: any;
+        solanaAddress: any;
+        withdrawLimits: Record<string, number>;
+        lifetimeElixir: any;
+        totalReferrals: any;
+        lastFaucetRoll: any;
+        exp: any;
+    }>;
+    bindWallet(telegramId: string, cwalletUid: string): Promise<{
         error: string;
         success?: undefined;
-        balance?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        user: any;
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    bindSolana(telegramId: string, solanaAddress: string): Promise<{
+        error: string;
+        success?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        user: any;
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    convertDust(telegramId: string, coins: string[]): Promise<{
+        error: string;
+        success?: undefined;
+        elixirGained?: undefined;
+        newElixirBalance?: undefined;
         cryptoBalances?: undefined;
-        cwalletUid?: undefined;
-        solanaAddress?: undefined;
-        withdrawLimits?: undefined;
-        lifetimeElixir?: undefined;
-        totalReferrals?: undefined;
-        lastFaucetRoll?: undefined;
     } | {
-        success: boolean;
-        balance: number;
-        cryptoBalances: Record<string, number>;
-        cwalletUid: string | null;
-        solanaAddress: string | null;
-        withdrawLimits: Record<string, number>;
-        lifetimeElixir: number;
-        totalReferrals: number;
-        lastFaucetRoll: Date | null;
-        error?: undefined;
-    }>;
-    bindWallet(body: {
-        telegramId: string;
-        cwalletUid: string;
-    }): Promise<{
-        success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | null;
-        error?: undefined;
-    } | {
-        error: string;
-    }>;
-    bindSolana(body: {
-        telegramId: string;
-        solanaAddress: string;
-    }): Promise<{
-        success: boolean;
-        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | null;
-        error?: undefined;
-    } | {
-        error: string;
-    }>;
-    convertDust(body: {
-        telegramId: string;
-        coins: string[];
-    }): Promise<{
         success: boolean;
         elixirGained: number;
-        newElixirBalance: number;
-        cryptoBalances: Record<string, number>;
+        newElixirBalance: any;
+        cryptoBalances: any;
         error?: undefined;
     } | {
+        success: boolean;
         error: string;
     }>;
-    swapElixir(body: {
-        telegramId: string;
-        amount: number;
-        targetCoin: string;
-    }): Promise<{
+    swapElixir(telegramId: string, amount: number, targetCoin: string): Promise<{
+        error: string;
+        success?: undefined;
+        user?: undefined;
+        received?: undefined;
+        gross?: undefined;
+        spread?: undefined;
+    } | {
         success: boolean;
-        user: import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         received: number;
         gross: number;
         spread: number;
         error?: undefined;
     } | {
+        success: boolean;
         error: string;
     }>;
-    executeHiLoBet(body: {
-        telegramId: string;
-        betAmount: any;
-        multiplier: any;
-        type: 'hi' | 'lo';
-    }): Promise<{
+    executeHiLoBet(telegramId: string, betAmount: any, multiplier: any, type: 'hi' | 'lo'): Promise<{
+        error: string;
+        cooldownSeconds?: undefined;
+        success?: undefined;
+        rolledNumber?: undefined;
+        thresholdHI?: undefined;
+        thresholdLO?: undefined;
+        isWin?: undefined;
+        profit?: undefined;
+        newBalance?: undefined;
+    } | {
+        error: string;
+        cooldownSeconds: number;
+        success?: undefined;
+        rolledNumber?: undefined;
+        thresholdHI?: undefined;
+        thresholdLO?: undefined;
+        isWin?: undefined;
+        profit?: undefined;
+        newBalance?: undefined;
+    } | {
         success: boolean;
         rolledNumber: number;
+        thresholdHI: number;
+        thresholdLO: number;
         isWin: boolean;
         profit: number;
-        newBalance: number;
+        newBalance: any;
         error?: undefined;
+        cooldownSeconds?: undefined;
     } | {
+        success: boolean;
         error: string;
     }>;
     getHiLoHistory(telegramId: string): Promise<{
-        error: string;
-        success?: undefined;
-        history?: undefined;
-    } | {
         success: boolean;
-        history: (import("./schemas/hilo-bet.schema").HiLoBet & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
-        error?: undefined;
+        history: any;
     }>;
 }

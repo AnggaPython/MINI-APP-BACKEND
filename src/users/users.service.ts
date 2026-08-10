@@ -384,6 +384,10 @@ export class UsersService {
         if (!telegramId) return;
         // Native S2S Trigger: Monetag validated the ad view. Give them the ticket!
         await this.userModel.updateOne({ telegramId }, { $inc: { adTickets: 1, totalAdRevenueGeneratedUSD: payoutUSD } }).exec();
+        // Route ad revenue to Admin Profit Hub for platform sustainability auditing
+        if (payoutUSD > 0) {
+            await this.adminService.addProfit('USD', payoutUSD, 'MONETAG_S2S_PAYOUT', telegramId);
+        }
     }
 
     async claimFaucet(telegramId: string) {
