@@ -38,7 +38,9 @@ export class UsersController {
         const resolvedPayout = estimatedPrice ?? payoutLegacy;
         const resolvedEvent = eventType ?? eventLegacy;
 
-        console.log(`[Monetag S2S] Incoming postback: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, reward=${resolvedReward}, event=${resolvedEvent}, payout=${resolvedPayout}`);
+        console.log(`[Monetag S2S] === Incoming postback START ===`);
+        console.log(`[Monetag S2S] FULL RAW: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, event_type=${eventType}, eventLegacy=${eventLegacy}, reward_event_type=${rewardEventType}, rewardLegacy=${rewardLegacy}, estimated_price=${estimatedPrice}, payoutLegacy=${payoutLegacy}`);
+        console.log(`[Monetag S2S] Resolved: userId=${resolvedUserId}, reward=${resolvedReward}, payout=$${resolvedPayout}, event=${resolvedEvent}`);
 
         if (!resolvedUserId) {
             console.log(`[Monetag S2S] IGNORED: No user ID resolved from query params`);
