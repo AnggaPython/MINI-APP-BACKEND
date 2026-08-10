@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
@@ -7,6 +8,7 @@ import { ReferralLog, ReferralLogSchema } from './schemas/referral-log.schema';
 import { HiLoBet, HiLoBetSchema } from './schemas/hilo-bet.schema';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { AdminModule } from '../admin/admin.module';
+import { TelegramAuthGuard } from '../auth/telegram.guard';
 
 @Module({
   imports: [
@@ -19,7 +21,15 @@ import { AdminModule } from '../admin/admin.module';
     forwardRef(() => AdminModule)
   ],
   controllers: [UsersController],
-  providers: [UsersService],
+  providers: [
+    UsersService,
+    TelegramAuthGuard,
+    // Register as APP_GUARD so NestJS DI can provide Reflector automatically
+    {
+      provide: APP_GUARD,
+      useClass: TelegramAuthGuard,
+    },
+  ],
   exports: [UsersService]
 })
 export class UsersModule { }

@@ -37,6 +37,7 @@ let BankService = BankService_1 = class BankService {
         this.achievementsService = achievementsService;
         this.adminService = adminService;
     }
+    PLATFORM_TAX = 0.05;
     async handleAutoClaim() {
         const activeStakes = await this.stakeModel.find({ status: 'active' }).exec();
         const now = new Date();
@@ -63,7 +64,10 @@ let BankService = BankService_1 = class BankService {
                             stake.amount += earned;
                         }
                         else {
-                            await this.usersService.creditRewardAndLogTask(stake.telegramId, earned, 'Yield (Auto)');
+                            const tax = earned * this.PLATFORM_TAX;
+                            const netEarned = earned - tax;
+                            await this.usersService.creditRewardAndLogTask(stake.telegramId, netEarned, 'Yield (Auto)');
+                            await this.adminService.addProfit('ELIXIR', tax, 'YIELD_TAX', stake.telegramId);
                         }
                         await new this.bankLogModel({ telegramId: stake.telegramId, actionType: 'Claim Elixir', amount: earned }).save();
                         stakeUpdated = true;
@@ -154,6 +158,7 @@ let BankService = BankService_1 = class BankService {
         if (stakes.length === 0)
             return { error: 'No active stakes found' };
         let totalClaim = 0;
+        let totalTax = 0;
         const now = new Date();
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
         let hasProcessedValid = false;
@@ -172,7 +177,10 @@ let BankService = BankService_1 = class BankService {
                         const updatedStake = await this.stakeModel.findOneAndUpdate({ _id: stake._id, lastClaimDate: stake.lastClaimDate }, { $set: { lastClaimDate: nextClaimDate } }, { returnDocument: 'after' }).exec();
                         if (updatedStake) {
                             hasProcessedValid = true;
-                            totalClaim += earned;
+                            const tax = earned * this.PLATFORM_TAX;
+                            const netEarned = earned - tax;
+                            totalClaim += netEarned;
+                            totalTax += tax;
                         }
                     }
                 }
@@ -183,6 +191,9 @@ let BankService = BankService_1 = class BankService {
         if (totalClaim <= 0)
             return { error: 'No earnings to claim yet' };
         await this.usersService.creditRewardAndLogTask(telegramId, totalClaim, 'Yield');
+        if (totalTax > 0) {
+            await this.adminService.addProfit('ELIXIR', totalTax, 'YIELD_TAX', telegramId);
+        }
         await new this.bankLogModel({
             telegramId,
             actionType: 'Claim Elixir',
@@ -212,7 +223,12 @@ let BankService = BankService_1 = class BankService {
         let returnAmount = 0;
         if (isMature) {
             const uncollectedYield = this.calculateYield(stake);
-            returnAmount = stake.amount + uncollectedYield;
+            const yieldTax = uncollectedYield * this.PLATFORM_TAX;
+            const netYield = uncollectedYield - yieldTax;
+            returnAmount = stake.amount + netYield;
+            if (yieldTax > 0) {
+                await this.adminService.addProfit('ELIXIR', yieldTax, 'YIELD_TAX', telegramId);
+            }
         }
         else {
             const penalty = stake.amount * 0.10;

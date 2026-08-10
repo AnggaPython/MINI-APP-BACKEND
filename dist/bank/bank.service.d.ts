@@ -12,6 +12,7 @@ export declare class BankService {
     private adminService;
     private readonly logger;
     constructor(stakeModel: Model<StakeDocument>, bankLogModel: Model<BankLogDocument>, usersService: UsersService, achievementsService: AchievementsService, adminService: AdminService);
+    private readonly PLATFORM_TAX;
     handleAutoClaim(): Promise<void>;
     calculateYield(stake: StakeDocument): number;
     getStats(telegramId: string): Promise<{

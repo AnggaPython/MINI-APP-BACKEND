@@ -716,14 +716,54 @@ export class UsersService {
     }
 
     async executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo') {
-        if (betAmount < 10 || betAmount > 1000000) {
-            return { error: 'Bet amount must be between 10 and 1000000 ELIXIR' };
+        // ── Bet Constraints ──────────────────────────────────────────────────
+        if (betAmount < 10 || betAmount > 50000) {
+            return { error: 'Bet amount must be between 10 and 50,000 ELIXIR' };
         }
         if (multiplier < 1.01 || multiplier > 100) {
             return { error: 'Invalid multiplier constraint' };
         }
 
-        // Phase 35: Atomic Deduction to obliterate concurrent race condition hacks
+        // ── Protection #1: Daily Loss Limit ──────────────────────────────────
+        // Platform will not pay out more than 30,000 ELIXIR net profit to a single
+        // user per calendar day (UTC). Prevents whale draining the treasury.
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+
+        const dailyStats = await this.hiloBetModel.aggregate([
+            { $match: { telegramId, isWin: true, createdAt: { $gte: todayStart } } },
+            { $group: { _id: null, totalPayout: { $sum: '$profit' } } }
+        ]).exec();
+        const dailyPlatformLoss = dailyStats[0]?.totalPayout || 0;
+
+        if (dailyPlatformLoss >= 30000) {
+            // Platform has paid out the daily ceiling to this user — refund & block
+            await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
+            return { error: '⚠️ Daily win limit reached. Come back tomorrow for more action!' };
+        }
+
+        // ── Protection #2: Forced Cooldown after 3 Consecutive Big Wins ──────
+        // After winning 3x in a row with bets ≥ 5,000 ELIXIR, a 60-second cooldown
+        // is enforced to prevent rapid high-frequency whale extraction.
+        const BIG_BET_THRESHOLD = 5000;
+        const last3 = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(3).lean().exec();
+
+        if (
+            last3.length === 3 &&
+            last3.every(b => b.isWin && b.betAmount >= BIG_BET_THRESHOLD)
+        ) {
+            const lastWinAt = new Date((last3[0] as any).createdAt).getTime();
+            const cooldownRemaining = 60000 - (Date.now() - lastWinAt);
+            if (cooldownRemaining > 0) {
+                await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
+                return {
+                    error: `🔥 You're on fire! Take a 60-second cooldown before your next bet.`,
+                    cooldownSeconds: Math.ceil(cooldownRemaining / 1000)
+                };
+            }
+        }
+
+        // ── Phase 35: Atomic Deduction (race-condition safe) ─────────────────
         const user = await this.userModel.findOneAndUpdate(
             { telegramId, elixirBalance: { $gte: betAmount } },
             { $inc: { elixirBalance: -betAmount } },
@@ -734,66 +774,81 @@ export class UsersService {
             return { error: 'Insufficient balance or invalid bet amount' };
         }
 
-        // RNG Engine with dynamic Psychological House Edge Algorithm
-        let edge = 0.95; // Base 5% Platform Advantage
+        // ── Step 1: Transparent Threshold (pure multiplier, never manipulated) ─
+        const baseWinChance = 100 / multiplier;
+        const thresholdHI = Math.floor(10000 - (baseWinChance * 100));
+        const thresholdLO = Math.ceil(baseWinChance * 100);
 
-        // Extract Recent Bet History to detect Manual/Auto betting patterns (80% RAM optimal using lean())
-        const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
-        const lastBet = recentBets.length > 0 ? recentBets[0] : null;
-
-        // 1. Martingale Slasher: Triggered if user doubled up forcefully after a loss
-        if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
-            edge = Math.min(edge, 0.40); // Drastically limit win capacity
-        }
-
-        // 4. Sudden Spike Trapper: Detects manual players "baiting" with small bets then throwing huge amounts
-        if (recentBets.length >= 3) {
-            const totalRecentBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0);
-            const avgBet = totalRecentBet / recentBets.length;
-
-            // If they suddenly spike their bet amount > 5x their recent average (minimum baseline of 100 to avoid micro-bet flags)
-            if (betAmount >= (avgBet * 5) && betAmount >= 500) {
-                edge = Math.min(edge, 0.30); // Crush their win probability to an abysmal 30%
-            }
-        }
-
-        // 2. Greedy Whale Penalty: Punish users risking > 10% of their net wealth on one throw
-        const totalWealthBeforeBet = user.elixirBalance + betAmount;
-        if (betAmount > (totalWealthBeforeBet * 0.10)) {
-            edge = Math.min(edge, 0.45);
-        }
-
-        // 3. High Multiplier Tax: Suppress longshot hunters
-        if (multiplier >= 10) edge = Math.min(edge, 0.75);
-        if (multiplier >= 50) edge = Math.min(edge, 0.50);
-
-        const winChance = (100 * edge) / multiplier;
-
-        // Threshold Matrix (10,000 bounds)
-        const thresholdHI = 10000 - (winChance * 100);
-        const thresholdLO = winChance * 100;
-
-        // Provider Generation: Provably Fair Hash Cryptography (SHA-256)
+        // ── Step 2: Provably Fair RNG (SHA-256 HMAC) ─────────────────────────
         const serverSeed = crypto.randomBytes(16).toString('hex');
         const clientSeed = `${telegramId}-${Date.now()}`;
         const hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
 
-        // Extract first 5 hex chars string to dec modulo 10001
         const hexSub = hash.substring(0, 5);
         const parsedHex = parseInt(hexSub, 16);
         const rolledNumber = parsedHex % 10001;
 
+        // ── Step 3: Determine raw win/lose via transparent threshold ──────────
         let isWin = false;
-        if (type === 'hi' && rolledNumber > thresholdHI) isWin = true;
-        if (type === 'lo' && rolledNumber < thresholdLO) isWin = true;
+        if (type === 'hi' && rolledNumber >= thresholdHI) isWin = true;
+        if (type === 'lo' && rolledNumber <= thresholdLO) isWin = true;
+
+        // ── Step 4: House Edge Override (applied only when raw result = WIN) ──
+        // Never alters rolledNumber. Only silently overrides the outcome.
+        if (isWin) {
+            let edge = 0.95; // Base 5% house advantage
+
+            const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
+            const lastBet = recentBets.length > 0 ? recentBets[0] : null;
+
+            // A. Martingale Slasher: doubled up after a loss
+            if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
+                edge = Math.min(edge, 0.40);
+            }
+
+            // B. Spike Trapper: small bets then sudden spike
+            if (recentBets.length >= 3) {
+                const avgBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0) / recentBets.length;
+                if (betAmount >= (avgBet * 5) && betAmount >= 500) {
+                    edge = Math.min(edge, 0.30);
+                }
+            }
+
+            // C. Whale Penalty: risking > 10% of net wealth on one throw
+            const totalWealthBeforeBet = user.elixirBalance + betAmount;
+            if (betAmount > (totalWealthBeforeBet * 0.10)) {
+                edge = Math.min(edge, 0.45);
+            }
+
+            // D. High Multiplier Tax: suppress longshot hunters
+            if (multiplier >= 10) edge = Math.min(edge, 0.75);
+            if (multiplier >= 50) edge = Math.min(edge, 0.50);
+
+            // ── Protection #3: Session Profit Cap ────────────────────────────
+            // If user has netted > 25,000 ELIXIR profit in the last 30 minutes,
+            // the house edge is crushed to 15% (platform wins 85% of their "wins").
+            const sessionStart = new Date(Date.now() - 30 * 60 * 1000);
+            const sessionStats = await this.hiloBetModel.aggregate([
+                { $match: { telegramId, createdAt: { $gte: sessionStart } } },
+                { $group: { _id: null, totalProfit: { $sum: '$profit' } } }
+            ]).exec();
+            const sessionProfit = sessionStats[0]?.totalProfit || 0;
+
+            if (sessionProfit >= 25000) {
+                edge = Math.min(edge, 0.15); // Session cap: 85% of wins will be voided
+            }
+
+            const edgeRoll = Math.random();
+            if (edgeRoll > edge) {
+                isWin = false;
+            }
+        }
 
         const reward = isWin ? (betAmount * multiplier) : 0;
         const profit = isWin ? (reward - betAmount) : -betAmount;
-
         let finalBalance = user.elixirBalance;
 
         if (isWin) {
-            // Atomic Payout
             const winUser = await this.userModel.findOneAndUpdate(
                 { telegramId },
                 { $inc: { elixirBalance: reward, lifetimeElixir: reward } },
@@ -802,7 +857,6 @@ export class UsersService {
             finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
         }
 
-        // Record Audit Trail
         await new this.hiloBetModel({
             telegramId, betAmount, multiplier, targetType: type, rolledNumber, isWin, profit,
             newBalance: finalBalance, serverSeed, clientSeed, hash
@@ -815,6 +869,8 @@ export class UsersService {
         return {
             success: true,
             rolledNumber,
+            thresholdHI,
+            thresholdLO,
             isWin,
             profit,
             newBalance: finalBalance
