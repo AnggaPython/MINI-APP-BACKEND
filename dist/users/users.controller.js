@@ -35,7 +35,9 @@ let UsersController = class UsersController {
         const resolvedReward = rewardEventType ?? rewardLegacy;
         const resolvedPayout = estimatedPrice ?? payoutLegacy;
         const resolvedEvent = eventType ?? eventLegacy;
-        console.log(`[Monetag S2S] Incoming postback: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, reward=${resolvedReward}, event=${resolvedEvent}, payout=${resolvedPayout}`);
+        console.log(`[Monetag S2S] === Incoming postback START ===`);
+        console.log(`[Monetag S2S] FULL RAW: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, event_type=${eventType}, eventLegacy=${eventLegacy}, reward_event_type=${rewardEventType}, rewardLegacy=${rewardLegacy}, estimated_price=${estimatedPrice}, payoutLegacy=${payoutLegacy}`);
+        console.log(`[Monetag S2S] Resolved: userId=${resolvedUserId}, reward=${resolvedReward}, payout=$${resolvedPayout}, event=${resolvedEvent}`);
         if (!resolvedUserId) {
             console.log(`[Monetag S2S] IGNORED: No user ID resolved from query params`);
             return { status: 'ignored', reason: 'missing_user_id' };
@@ -48,6 +50,9 @@ let UsersController = class UsersController {
         await this.usersService.registerMonetagTicket(resolvedUserId, payoutUSD);
         console.log(`[Monetag S2S] SUCCESS: Ticket registered for user ${resolvedUserId}, payout=$${payoutUSD}`);
         return { status: 'success', user: resolvedUserId, payout: payoutUSD };
+    }
+    async devPublicLogin(username, password) {
+        return await this.usersService.devLoginUsernamePassword(username, password);
     }
     async startMining(telegramId) {
         const result = await this.usersService.startMining(telegramId);
@@ -123,7 +128,8 @@ let UsersController = class UsersController {
             lifetimeElixir: result.lifetimeElixir,
             totalReferrals: result.totalReferrals,
             lastFaucetRoll: result.lastFaucetRoll,
-            exp: result.exp
+            exp: result.exp,
+            isBanned: Boolean(result.isBanned),
         };
     }
     async bindWallet(telegramId, cwalletUid) {
@@ -187,6 +193,15 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "monetagPostback", null);
+__decorate([
+    (0, telegram_user_decorator_1.Public)(),
+    (0, common_1.Post)('public/login'),
+    __param(0, (0, common_1.Body)('username')),
+    __param(1, (0, common_1.Body)('password')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "devPublicLogin", null);
 __decorate([
     (0, common_1.Post)('start-mining'),
     __param(0, (0, telegram_user_decorator_1.User)('telegramId')),

@@ -40,6 +40,9 @@ let User = class User {
     totalAdRevenueGeneratedUSD;
     claimedCodeDrops;
     miningVoucherExpiry;
+    authPasswordHash;
+    sessionToken;
+    tokenExpiresAt;
 };
 exports.User = User;
 __decorate([
@@ -154,6 +157,18 @@ __decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", Date)
 ], User.prototype, "miningVoucherExpiry", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: String, default: null }),
+    __metadata("design:type", Object)
+], User.prototype, "authPasswordHash", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: String, default: null }),
+    __metadata("design:type", Object)
+], User.prototype, "sessionToken", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Date, default: null }),
+    __metadata("design:type", Object)
+], User.prototype, "tokenExpiresAt", void 0);
 exports.User = User = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], User);

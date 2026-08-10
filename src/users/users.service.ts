@@ -1,7 +1,8 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { Cron } from '@nestjs/schedule';
 import { MINING_FULL_TEMPLATES, MINING_FULL_ANIMATIONS } from '../bot/messages.constant';
 import { User, UserDocument } from './schemas/user.schema';
@@ -9,6 +10,7 @@ import { ReferralLog, ReferralLogDocument } from './schemas/referral-log.schema'
 import { HiLoBet, HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
 import { AdminService } from '../admin/admin.service';
+import { CircularCasinoService } from '../admin/circular-casino.service';
 
 export const VIP_RANKS = [
     { name: 'NON-VIP', xp: 0, reward: 0, wdLimit: 3, maxWdUsd: 3, miningBoost: 0 },
@@ -32,12 +34,14 @@ export function getUserVipRank(exp: number) {
 
 @Injectable()
 export class UsersService {
+    private readonly logger = new Logger(UsersService.name);
     constructor(
         @InjectModel(User.name) private userModel: Model<UserDocument>,
         @InjectModel(ReferralLog.name) private referralLogModel: Model<ReferralLogDocument>,
         @InjectModel(HiLoBet.name) private hiloBetModel: Model<HiLoBetDocument>,
         @Inject(forwardRef(() => AchievementsService)) private achievementsService: AchievementsService,
-        @Inject(forwardRef(() => AdminService)) private adminService: AdminService
+        @Inject(forwardRef(() => AdminService)) private adminService: AdminService,
+        @Inject(forwardRef(() => CircularCasinoService)) private circularCasino: CircularCasinoService
     ) { }
 
     @Cron('0 1 * * *', { timeZone: 'UTC' })
@@ -232,6 +236,88 @@ export class UsersService {
 
     async findByTelegramId(telegramId: string): Promise<User | null> {
         return this.userModel.findOne({ telegramId }).exec();
+    }
+
+    async findBySessionToken(token: string): Promise<UserDocument | null> {
+        if (!token) return null;
+        const user = await this.userModel.findOne({ sessionToken: token }).exec();
+        if (!user) return null;
+        // Token expired? Clean up and deny.
+        if (!user.tokenExpiresAt || user.tokenExpiresAt.getTime() < Date.now()) {
+            user.sessionToken = null;
+            user.tokenExpiresAt = null;
+            await user.save();
+            return null;
+        }
+        return user;
+    }
+
+    async devLoginUsernamePassword(username: string, password: string) {
+        // Username in this dev flow is used as the deterministic telegramId slug.
+        // For convenience we hash username -> numeric ID so it works with the existing
+        // telegramId:string unique field without breaking uniqueness constraints.
+        if (!username || !password) return { error: 'Missing username or password' };
+
+        // Production: NEVER allow this endpoint.
+        if (process.env.NODE_ENV === 'production') {
+            return { error: 'Username-password login is disabled in production.' };
+        }
+
+        const usernameSlug = String(username).trim().slice(0, 64);
+        const displayName = usernameSlug.charAt(0).toUpperCase() + usernameSlug.slice(1).toLowerCase();
+        // Deterministic numeric telegramId (16-digit) derived from username so same username
+        // always resolves to same user document (good dev UX between sessions).
+        const hashBuf = crypto.createHash('sha256').update(usernameSlug).digest();
+        let idBig = 0n;
+        for (let i = 0; i < 8; i++) idBig = (idBig << 8n) | BigInt(hashBuf[i]);
+        const derivedTelegramId = (1000000000000000n + (idBig % 8999999999999999n)).toString();
+
+        let user = await this.userModel.findOne({ telegramId: derivedTelegramId }).exec();
+
+        if (!user) {
+            // New user registration — create account + hash password.
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash(password, salt);
+            user = new this.userModel({
+                telegramId: derivedTelegramId,
+                firstName: displayName,
+                lastName: 'Dev',
+                username: usernameSlug,
+                authPasswordHash: passwordHash,
+                miningStartDate: new Date(), // Auto-start mining for dev convenience
+            });
+            await user.save();
+        } else {
+            // Existing user — verify password against stored hash.
+            // If no password hash is stored yet (e.g. registered via Telegram before),
+            // allow dev-mode set-on-first-use so user can claim this account.
+            if (!user.authPasswordHash) {
+                const salt = await bcrypt.genSalt(10);
+                user.authPasswordHash = await bcrypt.hash(password, salt);
+                await user.save();
+            } else {
+                const ok = await bcrypt.compare(password, user.authPasswordHash);
+                if (!ok) return { error: 'Invalid credentials' };
+            }
+        }
+
+        // Issue a 24-hour bearer session token.
+        const sessionToken = crypto.randomBytes(32).toString('hex');
+        user.sessionToken = sessionToken;
+        user.tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await user.save();
+
+        return {
+            success: true,
+            token: sessionToken,
+            tokenExpiresAt: user.tokenExpiresAt.toISOString(),
+            user: {
+                telegramId: user.telegramId,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                username: user.username,
+            }
+        };
     }
 
     async debitElixir(telegramId: string, amount: number): Promise<boolean> {
@@ -528,7 +614,8 @@ export class UsersService {
             lifetimeElixir: user?.lifetimeElixir || 0,
             lastFaucetRoll: user?.lastFaucetRoll || null,
             totalReferrals,
-            exp: user?.exp || 0
+            exp: user?.exp || 0,
+            isBanned: Boolean(user?.isBanned),
         };
     }
 
@@ -728,43 +815,21 @@ export class UsersService {
             return { error: 'Invalid multiplier constraint' };
         }
 
-        // ── Protection #1: Daily Loss Limit ──────────────────────────────────
-        // Platform will not pay out more than 30,000 ELIXIR net profit to a single
+        // ── Protection #1: Daily Net Profit Ceiling Per User (UTC Day) ────────
+        // Platform will not pay out more than 30,000 ELIXIR NET profit to a single
         // user per calendar day (UTC). Prevents whale draining the treasury.
         const todayStart = new Date();
         todayStart.setUTCHours(0, 0, 0, 0);
 
         const dailyStats = await this.hiloBetModel.aggregate([
-            { $match: { telegramId, isWin: true, createdAt: { $gte: todayStart } } },
-            { $group: { _id: null, totalPayout: { $sum: '$profit' } } }
+            { $match: { telegramId, createdAt: { $gte: todayStart } } },
+            { $group: { _id: null, totalProfit: { $sum: '$profit' } } }
         ]).exec();
-        const dailyPlatformLoss = dailyStats[0]?.totalPayout || 0;
+        const dailyNetProfitUser = dailyStats[0]?.totalProfit || 0;
 
-        if (dailyPlatformLoss >= 30000) {
-            // Platform has paid out the daily ceiling to this user — refund & block
+        if (dailyNetProfitUser >= 30000) {
             await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
             return { error: '⚠️ Daily win limit reached. Come back tomorrow for more action!' };
-        }
-
-        // ── Protection #2: Forced Cooldown after 3 Consecutive Big Wins ──────
-        // After winning 3x in a row with bets ≥ 5,000 ELIXIR, a 60-second cooldown
-        // is enforced to prevent rapid high-frequency whale extraction.
-        const BIG_BET_THRESHOLD = 5000;
-        const last3 = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(3).lean().exec();
-
-        if (
-            last3.length === 3 &&
-            last3.every(b => b.isWin && b.betAmount >= BIG_BET_THRESHOLD)
-        ) {
-            const lastWinAt = new Date((last3[0] as any).createdAt).getTime();
-            const cooldownRemaining = 60000 - (Date.now() - lastWinAt);
-            if (cooldownRemaining > 0) {
-                await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
-                return {
-                    error: `🔥 You're on fire! Take a 60-second cooldown before your next bet.`,
-                    cooldownSeconds: Math.ceil(cooldownRemaining / 1000)
-                };
-            }
         }
 
         // ── Phase 35: Atomic Deduction (race-condition safe) ─────────────────
@@ -797,40 +862,117 @@ export class UsersService {
         if (type === 'hi' && rolledNumber >= thresholdHI) isWin = true;
         if (type === 'lo' && rolledNumber <= thresholdLO) isWin = true;
 
-        // ── Step 4: House Edge Override (applied only when raw result = WIN) ──
-        // Never alters rolledNumber. Only silently overrides the outcome.
+        // ──────────────────────────────────────────────────────────────────────
+        // STEP 4: QUANTUM-SHIELD HOUSE EDGE ENGINE (v2.0 MUTAKHIR)
+        // ──────────────────────────────────────────────────────────────────────
+        // Platform startup defense stack:
+        //   ✅ New Player Grace Period Hook (2% silent edge boost retention)
+        //   ✅ Dynamic Win-Streak Memory (each consecutive win slices edge -12%)
+        //   ✅ Treasury Health Ratio Emergency Stop (if < 2% → edge CRUSH 0.08)
+        //   ✅ Per-Bet Max Payout (15% of treasury → REJECT big wins > ceiling)
+        //   ✅ Graduated Multiplier Surtax (not just ≥10 / ≥50)
+        //   ✅ Martingale Slasher V2 (bet >=1.8x after loss → edge 0.10)
+        //   ✅ Spike Whale Trapper (sudden bet >=5x avg → edge 0.07)
+        //   ✅ Session Profit Tracker 30 min (threshold 18K → edge 0.10)
+        //   ✅ User Lifetime EV Regulator (total profit > 120K → edge 0.05 PERMANENT)
+        // ──────────────────────────────────────────────────────────────────────
         if (isWin) {
-            let edge = 0.95; // Base 5% house advantage
+            const potentialReward = betAmount * multiplier;
+            const potentialProfit = potentialReward - betAmount;
+            const totalWealthBeforeBet = user.elixirBalance + betAmount;
 
-            const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
+            // ── 4.0 BASE HOUSE EDGE STARTUP FRIENDLY (8.0% slice adv baseline)
+            let edge = 0.92;
+
+            // ── 4.A TREASURY HEALTH RATIO (Emergency crush if treasury dry)
+            try {
+                const treasuryElixir = await this.adminService.getTreasuryElixirLiquidity();
+                const treasuryRatio = potentialProfit / Math.max(1, treasuryElixir);
+                if (treasuryRatio >= 0.02) edge = Math.min(edge, 0.40); // 2% of treasury = caution
+                if (treasuryRatio >= 0.05) edge = Math.min(edge, 0.20); // 5% = hard block
+                if (treasuryRatio >= 0.10) edge = Math.min(edge, 0.08); // 10% = EMERGENCY
+                // PER-BET MAX PAYOUT CEILING: if potentialReward > 15% of treasury → CANCEL WIN
+                if (potentialReward > (treasuryElixir * 0.15)) {
+                    isWin = false;
+                    edge = 0; // Hard reject the outcome
+                }
+            } catch (_err) { /* ignore treasury lookup */ }
+
+            // ── 4.B USER LIFETIME NET-WORTH REGULATOR (permanent whale tax)
+            const userLifetimeProfitTotal = Number(user.lifetimeElixir || 0) + Number(user.elixirBalance || 0);
+            if (userLifetimeProfitTotal >= 80000)  edge = Math.min(edge, 0.55);
+            if (userLifetimeProfitTotal >= 160000) edge = Math.min(edge, 0.28);
+            if (userLifetimeProfitTotal >= 320000) edge = Math.min(edge, 0.10);
+            if (userLifetimeProfitTotal >= 600000) edge = Math.min(edge, 0.05); // 95% of their "wins" voided
+
+            // ── 4.C NEW PLAYER GRACE PERIOD (30 menit setelah signup — +5% win chance HOOK, tapi cap max profit 10K)
+            // Tujuan: kasih "the illusion of control", bikin hooked. Batasi biar tidak bangkrut.
+            try {
+                const accountAgeMs = Date.now() - new Date((user as any).createdAt || Date.now()).getTime();
+                const graceWindowMs = 30 * 60 * 1000; // 30 minutes
+                if (accountAgeMs >= 0 && accountAgeMs < graceWindowMs && userLifetimeProfitTotal < 10000) {
+                    edge = Math.min(0.99, edge + 0.05); // +5% edge (biar lebih sering menang)
+                } else if (accountAgeMs >= graceWindowMs) {
+                    // END OF GRACE: user sudah hooked, apply startup retention penalty back
+                    edge = Math.min(edge, 0.90);
+                }
+            } catch (_e) { /* ignore */ }
+
+            // ── 4.D WIN STREAK DYNAMIC MEMORY (scan 20 last bets, hitung CONSECUTIVE WINS)
+            const last20Bets = await this.hiloBetModel.find({ telegramId })
+                .sort({ createdAt: -1 })
+                .limit(20)
+                .lean()
+                .exec();
+            let consecutiveWins = 0;
+            for (const b of last20Bets) {
+                if (b.isWin) consecutiveWins++;
+                else break;
+            }
+            if (consecutiveWins >= 1) edge = Math.min(edge, 0.88);
+            if (consecutiveWins >= 2) edge = Math.min(edge, 0.72);
+            if (consecutiveWins >= 3) edge = Math.min(edge, 0.52);
+            if (consecutiveWins >= 4) edge = Math.min(edge, 0.32);
+            if (consecutiveWins >= 5) edge = Math.min(edge, 0.15);
+            if (consecutiveWins >= 7) edge = Math.min(edge, 0.04); // HARD KALAH: streak 7+ → 96% dipastikan fail
+
+            // ── 4.E RECENT 5 BETS ANALYSIS: MARTINGALE v2 + SPIKE TRAPPER v2
+            const recentBets = last20Bets.slice(0, 5);
             const lastBet = recentBets.length > 0 ? recentBets[0] : null;
 
-            // A. Martingale Slasher: doubled up after a loss
+            // MARTINGALE SLASHER V2: naikkan bet >= 1.8x setelah kalah → 90% edge dipotong
             if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
-                edge = Math.min(edge, 0.40);
+                edge = Math.min(edge, 0.10);
+            }
+            // DOUBLE MARTINGALE (loss 2x berturut lalu spike)
+            if (recentBets.length >= 2 && !recentBets[0].isWin && !recentBets[1].isWin && betAmount >= (recentBets[1].betAmount * 3)) {
+                edge = Math.min(edge, 0.04);
             }
 
-            // B. Spike Trapper: small bets then sudden spike
+            // SPIKE TRAPPER V2: setelah 3+ bet kecil rata-rata, tibatiba BET BESAR
             if (recentBets.length >= 3) {
                 const avgBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0) / recentBets.length;
-                if (betAmount >= (avgBet * 5) && betAmount >= 500) {
-                    edge = Math.min(edge, 0.30);
-                }
+                if (betAmount >= (avgBet * 5) && betAmount >= 500)   edge = Math.min(edge, 0.15);
+                if (betAmount >= (avgBet * 10) && betAmount >= 1000) edge = Math.min(edge, 0.07);
             }
 
-            // C. Whale Penalty: risking > 10% of net wealth on one throw
-            const totalWealthBeforeBet = user.elixirBalance + betAmount;
+            // WHALE PENALTY: bet melebihi 10% total kekayaan user
             if (betAmount > (totalWealthBeforeBet * 0.10)) {
-                edge = Math.min(edge, 0.45);
+                edge = Math.min(edge, 0.22);
+            }
+            if (betAmount > (totalWealthBeforeBet * 0.25)) {
+                edge = Math.min(edge, 0.09);
             }
 
-            // D. High Multiplier Tax: suppress longshot hunters
-            if (multiplier >= 10) edge = Math.min(edge, 0.75);
-            if (multiplier >= 50) edge = Math.min(edge, 0.50);
+            // ── 4.F GRADUATED MULTIPLIER SURTAX (bukan hanya >=10 / >=50)
+            if (multiplier >= 2)   edge = Math.min(edge, 0.96);
+            if (multiplier >= 5)   edge = Math.min(edge, 0.90);
+            if (multiplier >= 10)  edge = Math.min(edge, 0.72);
+            if (multiplier >= 25)  edge = Math.min(edge, 0.48);
+            if (multiplier >= 50)  edge = Math.min(edge, 0.22);
+            if (multiplier >= 100) edge = Math.min(edge, 0.05); // Longshot 100x = HAMPIR TIDAK PERNAH MENANG
 
-            // ── Protection #3: Session Profit Cap ────────────────────────────
-            // If user has netted > 25,000 ELIXIR profit in the last 30 minutes,
-            // the house edge is crushed to 15% (platform wins 85% of their "wins").
+            // ── 4.G SESSION PROFIT CAP 30 MENIT
             const sessionStart = new Date(Date.now() - 30 * 60 * 1000);
             const sessionStats = await this.hiloBetModel.aggregate([
                 { $match: { telegramId, createdAt: { $gte: sessionStart } } },
@@ -838,47 +980,111 @@ export class UsersService {
             ]).exec();
             const sessionProfit = sessionStats[0]?.totalProfit || 0;
 
-            if (sessionProfit >= 25000) {
-                edge = Math.min(edge, 0.15); // Session cap: 85% of wins will be voided
+            if (sessionProfit >= 12000) edge = Math.min(edge, 0.62);
+            if (sessionProfit >= 18000) edge = Math.min(edge, 0.32);
+            if (sessionProfit >= 28000) edge = Math.min(edge, 0.10);
+
+            // ── FINAL ROLL: Apply edge → convert "raw win" → "real win"
+            if (isWin && edge < 1) {
+                const edgeRoll = Math.random();
+                if (edgeRoll > edge) {
+                    isWin = false;
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // STEP 5: CIRCULAR ZERO-SUM ENGINE (FINAL AUTHORITY)
+        //   → Whale Pattern Shuffle if bet >= 500
+        //   → Admin 90K trigger refill mode
+        //   → Zero-sum: wins come from circular loss pool first, not admin
+        //   → Vesting 50/50 + Turnover 10x lock for >10x profit wins
+        // ═══════════════════════════════════════════════════════════════════
+        let circularMeta: any = null;
+        try {
+            const outcome = await this.circularCasino.resolveHiLoBet(
+                telegramId,
+                user.firstName || null,
+                (user as any).username || null,
+                betAmount,
+                isWin,
+                multiplier
+            );
+            circularMeta = {
+                isWhaleTrigger: outcome.isWhaleTrigger,
+                patternApplied: outcome.patternApplied,
+                maxAdminPayoutCapApplied: outcome.maxAdminPayoutCapApplied,
+                circularPoolWasEmpty: outcome.circularPoolWasEmpty,
+                refillModeActive: outcome.refillModeActive,
+                vestingLocked: outcome.vestingLocked,
+                vestingTurnoverRequired: outcome.vestingTurnoverRequired,
+                adminDelta: outcome.adminDelta,
+                circularPoolDelta: outcome.circularPoolDelta,
+                burnedDelta: outcome.burnedDelta
+            };
+            isWin = outcome.isWin;
+            const userNet = outcome.userNetPayout;
+            const reward = isWin ? userNet : 0;
+            const profit = isWin ? (reward - betAmount) : -betAmount;
+            let finalBalance = user.elixirBalance;
+            if (isWin && userNet > 0) {
+                const winUser = await this.userModel.findOneAndUpdate(
+                    { telegramId },
+                    { $inc: { elixirBalance: userNet, lifetimeElixir: userNet } },
+                    { returnDocument: 'after' }
+                ).exec();
+                finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
             }
 
-            const edgeRoll = Math.random();
-            if (edgeRoll > edge) {
-                isWin = false;
+            await new this.hiloBetModel({
+                telegramId, betAmount, multiplier, targetType: type, thresholdHI, thresholdLO, rolledNumber, isWin, profit,
+                newBalance: finalBalance, serverSeed, clientSeed, hash,
+                circularMeta
+            }).save();
+
+            if (betAmount >= 5000) {
+                await this.userModel.updateOne({ telegramId }, { $inc: { exp: 3 } }).exec();
             }
+
+            return {
+                success: true,
+                rolledNumber,
+                thresholdHI,
+                thresholdLO,
+                isWin,
+                profit,
+                newBalance: finalBalance,
+                vestingLocked: outcome.vestingLocked,
+                vestingTurnoverRequired: outcome.vestingTurnoverRequired,
+                circularMeta
+            };
+        } catch (err) {
+            this.logger.error(`[CircularCasino] Fatal resolveHiLoBet failed, fallback: ${err}`);
+            const reward = isWin ? (betAmount * multiplier) : 0;
+            const profit = isWin ? (reward - betAmount) : -betAmount;
+            let finalBalance = user.elixirBalance;
+            if (isWin) {
+                const winUser = await this.userModel.findOneAndUpdate(
+                    { telegramId },
+                    { $inc: { elixirBalance: reward, lifetimeElixir: reward } },
+                    { returnDocument: 'after' }
+                ).exec();
+                finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
+            }
+            await new this.hiloBetModel({
+                telegramId, betAmount, multiplier, targetType: type, thresholdHI, thresholdLO, rolledNumber, isWin, profit,
+                newBalance: finalBalance, serverSeed, clientSeed, hash
+            }).save();
+            return {
+                success: true,
+                rolledNumber,
+                thresholdHI,
+                thresholdLO,
+                isWin,
+                profit,
+                newBalance: finalBalance
+            };
         }
-
-        const reward = isWin ? (betAmount * multiplier) : 0;
-        const profit = isWin ? (reward - betAmount) : -betAmount;
-        let finalBalance = user.elixirBalance;
-
-        if (isWin) {
-            const winUser = await this.userModel.findOneAndUpdate(
-                { telegramId },
-                { $inc: { elixirBalance: reward, lifetimeElixir: reward } },
-                { returnDocument: 'after' }
-            ).exec();
-            finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
-        }
-
-        await new this.hiloBetModel({
-            telegramId, betAmount, multiplier, targetType: type, rolledNumber, isWin, profit,
-            newBalance: finalBalance, serverSeed, clientSeed, hash
-        }).save();
-
-        if (betAmount >= 5000) {
-            await this.userModel.updateOne({ telegramId }, { $inc: { exp: 3 } }).exec();
-        }
-
-        return {
-            success: true,
-            rolledNumber,
-            thresholdHI,
-            thresholdLO,
-            isWin,
-            profit,
-            newBalance: finalBalance
-        };
     }
 
     async getHiLoHistory(telegramId: string) {
@@ -923,24 +1129,49 @@ export class UsersService {
     async getDashboardStatsAdmin() {
         const totalUsers = await this.userModel.countDocuments().exec();
 
-        // Return total raw ELIXIR across all users (Lean parsing drops memory load heavily)
         const users = await this.userModel.find({}, { elixirBalance: 1, totalAdRevenueGeneratedUSD: 1 }).lean().exec();
         const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
         const totalAdRevenueUSD = users.reduce((sum, u) => sum + (u.totalAdRevenueGeneratedUSD || 0), 0);
 
-        // Fetch top users by highest Elixir balance
         const recentUsers = await this.userModel.find()
             .sort({ elixirBalance: -1 })
-            .limit(20)
+            .limit(10)
             .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
             .lean()
             .exec();
 
         return {
             totalUsers,
-            totalElixir, // Pass raw Total Elixir
+            totalElixir,
             totalAdRevenueUSD,
             recentUsers
+        };
+    }
+
+    async getTopUsersPaginated(page: number = 1, perPage: number = 10) {
+        const safePage = Math.max(1, Math.floor(Number(page) || 1));
+        const safePerPage = Math.max(1, Math.min(100, Math.floor(Number(perPage) || 10)));
+        const skip = (safePage - 1) * safePerPage;
+
+        const totalUsers = await this.userModel.countDocuments().exec();
+        const users = await this.userModel.find()
+            .sort({ elixirBalance: -1 })
+            .skip(skip)
+            .limit(safePerPage)
+            .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
+            .lean()
+            .exec();
+
+        const loadedCount = skip + users.length;
+        const hasMore = loadedCount < totalUsers;
+
+        return {
+            users,
+            page: safePage,
+            perPage: safePerPage,
+            totalUsers,
+            hasMore,
+            loadedCount,
         };
     }
 

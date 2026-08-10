@@ -11,8 +11,13 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const admin_controller_1 = require("./admin.controller");
 const admin_service_1 = require("./admin.service");
+const circular_casino_service_1 = require("./circular-casino.service");
 const admin_schema_1 = require("./schemas/admin.schema");
 const profit_log_schema_1 = require("./schemas/profit-log.schema");
+const circular_treasury_schema_1 = require("./schemas/circular-treasury.schema");
+const user_net_equity_schema_1 = require("./schemas/user-net-equity.schema");
+const monthly_book_cycle_schema_1 = require("./schemas/monthly-book-cycle.schema");
+const user_schema_1 = require("../users/schemas/user.schema");
 const users_module_1 = require("../users/users.module");
 let AdminModule = class AdminModule {
 };
@@ -22,13 +27,17 @@ exports.AdminModule = AdminModule = __decorate([
         imports: [
             mongoose_1.MongooseModule.forFeature([
                 { name: admin_schema_1.Admin.name, schema: admin_schema_1.AdminSchema },
-                { name: profit_log_schema_1.ProfitLog.name, schema: profit_log_schema_1.ProfitLogSchema }
+                { name: profit_log_schema_1.ProfitLog.name, schema: profit_log_schema_1.ProfitLogSchema },
+                { name: circular_treasury_schema_1.CircularTreasury.name, schema: circular_treasury_schema_1.CircularTreasurySchema },
+                { name: user_net_equity_schema_1.UserNetEquity.name, schema: user_net_equity_schema_1.UserNetEquitySchema },
+                { name: monthly_book_cycle_schema_1.MonthlyBookCycle.name, schema: monthly_book_cycle_schema_1.MonthlyBookCycleSchema },
+                { name: user_schema_1.User.name, schema: user_schema_1.UserSchema }
             ]),
             (0, common_1.forwardRef)(() => users_module_1.UsersModule)
         ],
         controllers: [admin_controller_1.AdminController],
-        providers: [admin_service_1.AdminService],
-        exports: [admin_service_1.AdminService]
+        providers: [admin_service_1.AdminService, circular_casino_service_1.CircularCasinoService],
+        exports: [admin_service_1.AdminService, circular_casino_service_1.CircularCasinoService]
     })
 ], AdminModule);
 //# sourceMappingURL=admin.module.js.map

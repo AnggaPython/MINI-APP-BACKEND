@@ -5,6 +5,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { AdminService } from '../admin/admin.service';
+import { CircularCasinoService } from '../admin/circular-casino.service';
 
 @Injectable()
 export class PaymentService {
@@ -16,7 +17,8 @@ export class PaymentService {
     constructor(
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
         @InjectModel(Transaction.name) private txModel: Model<TransactionDocument>,
-        @Inject(forwardRef(() => AdminService)) private adminService: AdminService
+        @Inject(forwardRef(() => AdminService)) private adminService: AdminService,
+        @Inject(forwardRef(() => CircularCasinoService)) private circularCasino: CircularCasinoService
     ) { }
 
     // Creates an invoice URL for Elixir top-up
@@ -215,6 +217,12 @@ export class PaymentService {
         if (amount <= 0) return { success: false, error: 'Invalid amount' };
         if (coin.toUpperCase() === 'PEPE' && amount < 1500) return { success: false, error: 'Minimum withdrawal for PEPE is 1500' };
 
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (!user) return { success: false, error: 'User not found' };
+        if (user.isBanned) {
+            return { success: false, error: 'Your account has been blocked. Please contact support to appeal.', banned: true };
+        }
+
         // Fetch live USD value strictly to authenticate subsidiary eligibility
         let liveUsdPrice = coin.toUpperCase() === 'PEPE' ? 0.0000045 : 1;
         const geckoIds: Record<string, string> = { 'PEPE': 'pepe', 'MATIC': 'matic-network', 'ETH': 'ethereum', 'USDT': 'tether', 'USDC': 'usd-coin', 'SOL': 'solana' };
@@ -233,10 +241,24 @@ export class PaymentService {
         const usdValue = amount * liveUsdPrice;
         const isBonusEligible = usdValue >= 0.3;
 
-        // --- VIP ENFORCEMENT WITH MUTEX LOCK ---
-        const user = await this.usersService.findByTelegramId(telegramId);
-        if (!user) return { success: false, error: 'User not found' };
+        // --- NET EQUITY TRACKING + STANDARD FEE (Anti Whale Pattern di ZERO-SUM ENGINE LAYER 1, friction withdraw longgar disini) ---
+        let whaleFeePct = 0;
+        let whaleFeeReason = 'normal';
+        try {
+            const eq = await this.circularCasino.getUserEquity(
+                telegramId,
+                user.firstName || null,
+                (user as any).username || null
+            );
+            const fee = this.circularCasino.computeWithdrawFeePercent(eq);
+            whaleFeePct = fee.feePct;
+            whaleFeeReason = fee.reason;
+            eq.totalDepositedElixir = (eq.totalDepositedElixir || 0);
+            eq.lastActiveAt = new Date();
+            await eq.save();
+        } catch (_e) { /* ignore circular if unavailable */ }
 
+        // --- VIP ENFORCEMENT WITH MUTEX LOCK ---
         const locked = await this.usersService.lockUserForWithdrawal(telegramId);
         if (!locked) {
             return { success: false, error: 'A withdrawal is currently processing, please wait.' };
@@ -282,6 +304,13 @@ export class PaymentService {
                 executionAmount = amount * 1.03; // 3% Bonus Subsidy
             }
 
+            // Apply Anti-Whale Gradient Withdraw Tax (stacked on top of tier fees)
+            let whaleTaxCrypto = 0;
+            if (whaleFeePct > 0 && executionAmount > 0) {
+                whaleTaxCrypto = Math.floor(executionAmount * whaleFeePct * 1e8) / 1e8;
+                executionAmount = Math.max(0, executionAmount - whaleTaxCrypto);
+            }
+
             // 1. Debit exact Crypto immediately from user DB (we still debit the theoretical gross `amount` from their balance)
             const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
             if (!debited) return { success: false, error: 'Insufficient crypto balance' };
@@ -299,6 +328,34 @@ export class PaymentService {
                 const marginSource = withdrawalMarginToAdmin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
                 await this.adminService.addProfit(coin.toUpperCase(), withdrawalMarginToAdmin, marginSource, telegramId);
             }
+
+            // Also register margin to CIRCULAR treasury for dashboard stats
+            try {
+                if (withdrawalMarginToAdmin > 0) {
+                    const marginUsdValue = withdrawalMarginToAdmin * liveUsdPrice;
+                    const elixirEquivalentFee = Math.floor(marginUsdValue * 10000);
+                    if (elixirEquivalentFee > 0) await this.circularCasino.addWithdrawalFee(elixirEquivalentFee);
+                }
+                // Also record whale tax separately to circular admin pool + equity
+                if (whaleTaxCrypto > 0) {
+                    const whaleTaxUsdValue = whaleTaxCrypto * liveUsdPrice;
+                    const elixirTax = Math.floor(whaleTaxUsdValue * 10000);
+                    if (elixirTax > 0) await this.circularCasino.addWithdrawalFee(elixirTax);
+                    const eq2 = await this.circularCasino.getUserEquity(telegramId);
+                    this.circularCasino.onUserWithdrawSuccess(eq2,
+                        Math.floor((executionAmount * liveUsdPrice) * 10000),
+                        Math.floor(withdrawalMarginToAdmin * liveUsdPrice * 10000) + elixirTax
+                    );
+                    await eq2.save();
+                } else {
+                    const eq2 = await this.circularCasino.getUserEquity(telegramId);
+                    this.circularCasino.onUserWithdrawSuccess(eq2,
+                        Math.floor((executionAmount * liveUsdPrice) * 10000),
+                        Math.floor(withdrawalMarginToAdmin * liveUsdPrice * 10000)
+                    );
+                    await eq2.save();
+                }
+            } catch (_e2) { /* ignore circular secondary */ }
 
             // 2. Identify the Coin ID for CCPayment V2
             const coinId = this.coinMap[coin.toUpperCase()];

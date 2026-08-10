@@ -2,14 +2,16 @@ import { UsersService } from '../users/users.service';
 import { Model } from 'mongoose';
 import { TransactionDocument } from './schemas/transaction.schema';
 import { AdminService } from '../admin/admin.service';
+import { CircularCasinoService } from '../admin/circular-casino.service';
 export declare class PaymentService {
     private usersService;
     private txModel;
     private adminService;
+    private circularCasino;
     private readonly logger;
     private readonly appId;
     private readonly appSecret;
-    constructor(usersService: UsersService, txModel: Model<TransactionDocument>, adminService: AdminService);
+    constructor(usersService: UsersService, txModel: Model<TransactionDocument>, adminService: AdminService, circularCasino: CircularCasinoService);
     createDepositCharge(telegramId: string, amountElixir: number): Promise<{
         success: boolean;
         paymentUrl: any;
@@ -25,11 +27,18 @@ export declare class PaymentService {
     private refillTreasuryLiquidityViaSwap;
     createWithdrawRequest(telegramId: string, coin: string, amount: number, walletAddress: string, tier?: string): Promise<{
         success: boolean;
+        error: string;
+        banned: boolean;
+        msg?: undefined;
+    } | {
+        success: boolean;
         msg: string;
         error?: undefined;
+        banned?: undefined;
     } | {
         success: boolean;
         error: any;
+        banned?: undefined;
         msg?: undefined;
     }>;
     verifyWebhookSignature(headers: any, rawBody: string): boolean;

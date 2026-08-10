@@ -88,6 +88,16 @@ export class User {
 
   @Prop({ default: null })
   miningVoucherExpiry: Date;
+
+  // Dev-mode username-password session auth + future native login support
+  @Prop({ type: String, default: null })
+  authPasswordHash: string | null;
+
+  @Prop({ type: String, default: null })
+  sessionToken: string | null;
+
+  @Prop({ type: Date, default: null })
+  tokenExpiresAt: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

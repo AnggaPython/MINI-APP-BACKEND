@@ -47,11 +47,39 @@ exports.TelegramAuthGuard = exports.IS_PUBLIC_KEY = void 0;
 const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const crypto = __importStar(require("crypto"));
+const users_service_1 = require("../users/users.service");
 exports.IS_PUBLIC_KEY = 'isPublic';
+let devBootBannerShown = false;
+function showDevBannerOnce() {
+    if (devBootBannerShown)
+        return;
+    devBootBannerShown = true;
+    const fallbackId = process.env.DEV_FALLBACK_TELEGRAM_ID || '123456789';
+    const prod = process.env.NODE_ENV === 'production';
+    console.log('');
+    console.log('╔══════════════════════════════════════════════════════════════╗');
+    console.log('║ [TelegramAuthGuard] Boot Summary                             ║');
+    console.log('╠══════════════════════════════════════════════════════════════╣');
+    console.log(`║  NODE_ENV              : ${process.env.NODE_ENV || 'development'.padEnd(33)}║`);
+    if (!prod) {
+        console.log(`║  Dev fallback user ID  : ${fallbackId.padEnd(33)}║`);
+        console.log(`║  Dev login endpoint    : POST /users/public/login           ║`);
+        console.log(`║  ⚠️  WARNING: username/password + silent fallback are      ║`);
+        console.log(`║     ONLY ACTIVE in NODE_ENV != production.                  ║`);
+    }
+    else {
+        console.log(`║  PRODUCTION MODE: Strict HMAC only. No fallbacks.           ║`);
+    }
+    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log('');
+}
 let TelegramAuthGuard = class TelegramAuthGuard {
     reflector;
-    constructor(reflector) {
+    usersService;
+    constructor(reflector, usersService) {
         this.reflector = reflector;
+        this.usersService = usersService;
+        showDevBannerOnce();
     }
     canActivate(context) {
         const isPublic = this.reflector.getAllAndOverride(exports.IS_PUBLIC_KEY, [
@@ -61,10 +89,50 @@ let TelegramAuthGuard = class TelegramAuthGuard {
         if (isPublic)
             return true;
         const request = context.switchToHttp().getRequest();
-        const rawInitData = request.headers['authorization'];
-        if (!rawInitData) {
-            throw new common_1.UnauthorizedException('Missing Authorization header');
+        const url = (request.url || request.originalUrl || '');
+        if (url.startsWith('/admin')) {
+            return true;
         }
+        const authHeader = request.headers['authorization'] || '';
+        const isDevMode = process.env.NODE_ENV !== 'production';
+        if (authHeader.startsWith('Bearer ')) {
+            const token = authHeader.slice(7).trim();
+            if (token.length >= 32) {
+                return this.authenticateViaSessionToken(request, token);
+            }
+        }
+        if (authHeader && !authHeader.startsWith('Bearer ')) {
+            this.authenticateViaTelegramInitData(request, authHeader);
+            return true;
+        }
+        if (isDevMode && !authHeader) {
+            const fallbackTelegramId = process.env.DEV_FALLBACK_TELEGRAM_ID || '123456789';
+            request.user = {
+                telegramId: fallbackTelegramId,
+                firstName: 'Dev',
+                lastName: 'User',
+                username: 'devuser',
+                isPremium: false,
+            };
+            return true;
+        }
+        throw new common_1.UnauthorizedException('Missing Authorization header');
+    }
+    async authenticateViaSessionToken(request, token) {
+        const user = await this.usersService.findBySessionToken(token);
+        if (!user) {
+            throw new common_1.UnauthorizedException('Invalid or expired session token');
+        }
+        request.user = {
+            telegramId: user.telegramId,
+            firstName: user.firstName || 'Dev',
+            lastName: user.lastName || 'User',
+            username: user.username || undefined,
+            isPremium: user.isPremium || false,
+        };
+        return true;
+    }
+    authenticateViaTelegramInitData(request, rawInitData) {
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
         if (!botToken) {
             const parsed = this.parseInitData(rawInitData);
@@ -72,7 +140,7 @@ let TelegramAuthGuard = class TelegramAuthGuard {
                 throw new common_1.UnauthorizedException('Invalid initData: no user field');
             const user = JSON.parse(parsed.user);
             request.user = { telegramId: user.id?.toString() };
-            return true;
+            return;
         }
         const parsed = this.parseInitData(rawInitData);
         const receivedHash = parsed.hash;
@@ -109,7 +177,6 @@ let TelegramAuthGuard = class TelegramAuthGuard {
             username: user.username,
             isPremium: user.is_premium === true,
         };
-        return true;
     }
     parseInitData(raw) {
         const result = {};
@@ -126,6 +193,6 @@ let TelegramAuthGuard = class TelegramAuthGuard {
 exports.TelegramAuthGuard = TelegramAuthGuard;
 exports.TelegramAuthGuard = TelegramAuthGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [typeof (_a = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _a : Object])
+    __metadata("design:paramtypes", [typeof (_a = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _a : Object, users_service_1.UsersService])
 ], TelegramAuthGuard);
 //# sourceMappingURL=telegram.guard.js.map

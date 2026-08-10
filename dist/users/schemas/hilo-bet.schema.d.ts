@@ -5,6 +5,8 @@ export declare class HiLoBet {
     betAmount: number;
     multiplier: number;
     targetType: string;
+    thresholdHI: number;
+    thresholdLO: number;
     rolledNumber: number;
     isWin: boolean;
     profit: number;

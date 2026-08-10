@@ -29,5 +29,8 @@ export declare class User {
     totalAdRevenueGeneratedUSD: number;
     claimedCodeDrops: string[];
     miningVoucherExpiry: Date;
+    authPasswordHash: string | null;
+    sessionToken: string | null;
+    tokenExpiresAt: Date | null;
 }
 export declare const UserSchema: any;

@@ -14,17 +14,23 @@ export class Admin {
     @Prop({ default: 'SUPER_ADMIN' })
     role: string;
 
-    @Prop({ default: null })
-    lastLogin: Date;
+    @Prop({ type: Date, default: null })
+    lastLogin: Date | null;
 
-    @Prop({ default: null })
-    lastIp: string;
+    @Prop({ type: String, default: null })
+    lastIp: string | null;
 
     @Prop({ type: Object, default: {} })
     profitBalances: Record<string, number>;
 
     @Prop({ type: Object, default: { 'PEPE': 10000000, 'USDC': 200 } })
     withdrawLimits: Record<string, number>;
+
+    @Prop({ type: String, default: null })
+    sessionToken: string | null;
+
+    @Prop({ type: Date, default: null })
+    tokenExpiresAt: Date | null;
 }
 
 export const AdminSchema = SchemaFactory.createForClass(Admin);

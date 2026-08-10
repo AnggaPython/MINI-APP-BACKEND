@@ -55,17 +55,20 @@ const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const transaction_schema_1 = require("./schemas/transaction.schema");
 const admin_service_1 = require("../admin/admin.service");
+const circular_casino_service_1 = require("../admin/circular-casino.service");
 let PaymentService = PaymentService_1 = class PaymentService {
     usersService;
     txModel;
     adminService;
+    circularCasino;
     logger = new common_1.Logger(PaymentService_1.name);
     appId = 'I7YTwbXVHbXGiSEb';
     appSecret = '68e3e1e7db332c9f79a0843919619781';
-    constructor(usersService, txModel, adminService) {
+    constructor(usersService, txModel, adminService, circularCasino) {
         this.usersService = usersService;
         this.txModel = txModel;
         this.adminService = adminService;
+        this.circularCasino = circularCasino;
     }
     async createDepositCharge(telegramId, amountElixir) {
         const usdAmount = amountElixir / 10000;
@@ -238,6 +241,12 @@ let PaymentService = PaymentService_1 = class PaymentService {
             return { success: false, error: 'Invalid amount' };
         if (coin.toUpperCase() === 'PEPE' && amount < 1500)
             return { success: false, error: 'Minimum withdrawal for PEPE is 1500' };
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (!user)
+            return { success: false, error: 'User not found' };
+        if (user.isBanned) {
+            return { success: false, error: 'Your account has been blocked. Please contact support to appeal.', banned: true };
+        }
         let liveUsdPrice = coin.toUpperCase() === 'PEPE' ? 0.0000045 : 1;
         const geckoIds = { 'PEPE': 'pepe', 'MATIC': 'matic-network', 'ETH': 'ethereum', 'USDT': 'tether', 'USDC': 'usd-coin', 'SOL': 'solana' };
         const geckoId = geckoIds[coin.toUpperCase()];
@@ -254,9 +263,18 @@ let PaymentService = PaymentService_1 = class PaymentService {
         }
         const usdValue = amount * liveUsdPrice;
         const isBonusEligible = usdValue >= 0.3;
-        const user = await this.usersService.findByTelegramId(telegramId);
-        if (!user)
-            return { success: false, error: 'User not found' };
+        let whaleFeePct = 0;
+        let whaleFeeReason = 'normal';
+        try {
+            const eq = await this.circularCasino.getUserEquity(telegramId, user.firstName || null, user.username || null);
+            const fee = this.circularCasino.computeWithdrawFeePercent(eq);
+            whaleFeePct = fee.feePct;
+            whaleFeeReason = fee.reason;
+            eq.totalDepositedElixir = (eq.totalDepositedElixir || 0);
+            eq.lastActiveAt = new Date();
+            await eq.save();
+        }
+        catch (_e) { }
         const locked = await this.usersService.lockUserForWithdrawal(telegramId);
         if (!locked) {
             return { success: false, error: 'A withdrawal is currently processing, please wait.' };
@@ -293,6 +311,11 @@ let PaymentService = PaymentService_1 = class PaymentService {
             else if (tier === 'standard' && isBonusEligible) {
                 executionAmount = amount * 1.03;
             }
+            let whaleTaxCrypto = 0;
+            if (whaleFeePct > 0 && executionAmount > 0) {
+                whaleTaxCrypto = Math.floor(executionAmount * whaleFeePct * 1e8) / 1e8;
+                executionAmount = Math.max(0, executionAmount - whaleTaxCrypto);
+            }
             const debited = await this.usersService.debitCrypto(telegramId, coin, amount);
             if (!debited)
                 return { success: false, error: 'Insufficient crypto balance' };
@@ -305,6 +328,29 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 const marginSource = withdrawalMarginToAdmin < 0 ? 'WITHDRAW_FEE_SUBSIDY' : 'WITHDRAW_FEE';
                 await this.adminService.addProfit(coin.toUpperCase(), withdrawalMarginToAdmin, marginSource, telegramId);
             }
+            try {
+                if (withdrawalMarginToAdmin > 0) {
+                    const marginUsdValue = withdrawalMarginToAdmin * liveUsdPrice;
+                    const elixirEquivalentFee = Math.floor(marginUsdValue * 10000);
+                    if (elixirEquivalentFee > 0)
+                        await this.circularCasino.addWithdrawalFee(elixirEquivalentFee);
+                }
+                if (whaleTaxCrypto > 0) {
+                    const whaleTaxUsdValue = whaleTaxCrypto * liveUsdPrice;
+                    const elixirTax = Math.floor(whaleTaxUsdValue * 10000);
+                    if (elixirTax > 0)
+                        await this.circularCasino.addWithdrawalFee(elixirTax);
+                    const eq2 = await this.circularCasino.getUserEquity(telegramId);
+                    this.circularCasino.onUserWithdrawSuccess(eq2, Math.floor((executionAmount * liveUsdPrice) * 10000), Math.floor(withdrawalMarginToAdmin * liveUsdPrice * 10000) + elixirTax);
+                    await eq2.save();
+                }
+                else {
+                    const eq2 = await this.circularCasino.getUserEquity(telegramId);
+                    this.circularCasino.onUserWithdrawSuccess(eq2, Math.floor((executionAmount * liveUsdPrice) * 10000), Math.floor(withdrawalMarginToAdmin * liveUsdPrice * 10000));
+                    await eq2.save();
+                }
+            }
+            catch (_e2) { }
             const coinId = this.coinMap[coin.toUpperCase()];
             if (!coinId) {
                 await this.usersService.creditCrypto(telegramId, coin, amount);
@@ -484,6 +530,8 @@ exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     __param(0, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
-    __metadata("design:paramtypes", [users_service_1.UsersService, typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, admin_service_1.AdminService])
+    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
+    __metadata("design:paramtypes", [users_service_1.UsersService, typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, admin_service_1.AdminService,
+        circular_casino_service_1.CircularCasinoService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map

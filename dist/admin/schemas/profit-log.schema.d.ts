@@ -5,5 +5,7 @@ export declare class ProfitLog {
     amount: number;
     source: string;
     telegramId: string;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 export declare const ProfitLogSchema: any;

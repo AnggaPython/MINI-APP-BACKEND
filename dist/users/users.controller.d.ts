@@ -22,6 +22,24 @@ export declare class UsersController {
         payout: number;
         reason?: undefined;
     }>;
+    devPublicLogin(username: string, password: string): Promise<{
+        error: string;
+        success?: undefined;
+        token?: undefined;
+        tokenExpiresAt?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        token: any;
+        tokenExpiresAt: any;
+        user: {
+            telegramId: any;
+            firstName: any;
+            lastName: any;
+            username: any;
+        };
+        error?: undefined;
+    }>;
     startMining(telegramId: string): Promise<{
         success: boolean;
         error: string;
@@ -136,6 +154,7 @@ export declare class UsersController {
         totalReferrals: any;
         lastFaucetRoll: any;
         exp: any;
+        isBanned: boolean;
     }>;
     bindWallet(telegramId: string, cwalletUid: string): Promise<{
         error: string;
@@ -197,7 +216,6 @@ export declare class UsersController {
     }>;
     executeHiLoBet(telegramId: string, betAmount: any, multiplier: any, type: 'hi' | 'lo'): Promise<{
         error: string;
-        cooldownSeconds?: undefined;
         success?: undefined;
         rolledNumber?: undefined;
         thresholdHI?: undefined;
@@ -205,16 +223,21 @@ export declare class UsersController {
         isWin?: undefined;
         profit?: undefined;
         newBalance?: undefined;
+        vestingLocked?: undefined;
+        vestingTurnoverRequired?: undefined;
+        circularMeta?: undefined;
     } | {
-        error: string;
-        cooldownSeconds: number;
-        success?: undefined;
-        rolledNumber?: undefined;
-        thresholdHI?: undefined;
-        thresholdLO?: undefined;
-        isWin?: undefined;
-        profit?: undefined;
-        newBalance?: undefined;
+        success: boolean;
+        rolledNumber: number;
+        thresholdHI: number;
+        thresholdLO: number;
+        isWin: boolean;
+        profit: number;
+        newBalance: any;
+        vestingLocked: number;
+        vestingTurnoverRequired: number;
+        circularMeta: any;
+        error?: undefined;
     } | {
         success: boolean;
         rolledNumber: number;
@@ -224,7 +247,9 @@ export declare class UsersController {
         profit: number;
         newBalance: any;
         error?: undefined;
-        cooldownSeconds?: undefined;
+        vestingLocked?: undefined;
+        vestingTurnoverRequired?: undefined;
+        circularMeta?: undefined;
     } | {
         success: boolean;
         error: string;

@@ -58,6 +58,18 @@ export class UsersController {
         return { status: 'success', user: resolvedUserId, payout: payoutUSD };
     }
 
+    // --- PUBLIC: Dev-mode username-password login (DISABLED IN PRODUCTION)
+    // Chrome Desktop custom mini-app test: call this endpoint first to get a bearer
+    // token, then send Authorization: Bearer <token> on every subsequent request.
+    @Public()
+    @Post('public/login')
+    async devPublicLogin(
+        @Body('username') username: string,
+        @Body('password') password: string
+    ) {
+        return await this.usersService.devLoginUsernamePassword(username, password);
+    }
+
     @Post('start-mining')
     async startMining(@User('telegramId') telegramId: string) {
         const result = await this.usersService.startMining(telegramId);
@@ -150,7 +162,8 @@ export class UsersController {
             lifetimeElixir: result.lifetimeElixir,
             totalReferrals: result.totalReferrals,
             lastFaucetRoll: result.lastFaucetRoll,
-            exp: result.exp
+            exp: result.exp,
+            isBanned: Boolean(result.isBanned),
         };
     }
 

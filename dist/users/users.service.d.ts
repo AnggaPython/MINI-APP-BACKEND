@@ -4,6 +4,7 @@ import { ReferralLogDocument } from './schemas/referral-log.schema';
 import { HiLoBetDocument } from './schemas/hilo-bet.schema';
 import { AchievementsService } from '../achievements/achievements.service';
 import { AdminService } from '../admin/admin.service';
+import { CircularCasinoService } from '../admin/circular-casino.service';
 export declare const VIP_RANKS: {
     name: string;
     xp: number;
@@ -26,7 +27,9 @@ export declare class UsersService {
     private hiloBetModel;
     private achievementsService;
     private adminService;
-    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService, adminService: AdminService);
+    private circularCasino;
+    private readonly logger;
+    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService, adminService: AdminService, circularCasino: CircularCasinoService);
     cleanupOldCodeDrops(): Promise<void>;
     notifyFullMining(): Promise<void>;
     syncTelegramUser(userData: any, referredBy?: string): Promise<User>;
@@ -44,6 +47,25 @@ export declare class UsersService {
         error?: string;
     }>;
     findByTelegramId(telegramId: string): Promise<User | null>;
+    findBySessionToken(token: string): Promise<UserDocument | null>;
+    devLoginUsernamePassword(username: string, password: string): Promise<{
+        error: string;
+        success?: undefined;
+        token?: undefined;
+        tokenExpiresAt?: undefined;
+        user?: undefined;
+    } | {
+        success: boolean;
+        token: any;
+        tokenExpiresAt: any;
+        user: {
+            telegramId: any;
+            firstName: any;
+            lastName: any;
+            username: any;
+        };
+        error?: undefined;
+    }>;
     debitElixir(telegramId: string, amount: number): Promise<boolean>;
     debitCrypto(telegramId: string, coin: string, amount: number): Promise<boolean>;
     creditCrypto(telegramId: string, coin: string, amount: number): Promise<boolean>;
@@ -141,6 +163,7 @@ export declare class UsersService {
         lastFaucetRoll: any;
         totalReferrals: any;
         exp: any;
+        isBanned: boolean;
     }>;
     bindCwalletUid(telegramId: string, uid: string): Promise<{
         error: string;
@@ -192,7 +215,6 @@ export declare class UsersService {
     }>;
     executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: 'hi' | 'lo'): Promise<{
         error: string;
-        cooldownSeconds?: undefined;
         success?: undefined;
         rolledNumber?: undefined;
         thresholdHI?: undefined;
@@ -200,16 +222,21 @@ export declare class UsersService {
         isWin?: undefined;
         profit?: undefined;
         newBalance?: undefined;
+        vestingLocked?: undefined;
+        vestingTurnoverRequired?: undefined;
+        circularMeta?: undefined;
     } | {
-        error: string;
-        cooldownSeconds: number;
-        success?: undefined;
-        rolledNumber?: undefined;
-        thresholdHI?: undefined;
-        thresholdLO?: undefined;
-        isWin?: undefined;
-        profit?: undefined;
-        newBalance?: undefined;
+        success: boolean;
+        rolledNumber: number;
+        thresholdHI: number;
+        thresholdLO: number;
+        isWin: boolean;
+        profit: number;
+        newBalance: any;
+        vestingLocked: number;
+        vestingTurnoverRequired: number;
+        circularMeta: any;
+        error?: undefined;
     } | {
         success: boolean;
         rolledNumber: number;
@@ -219,7 +246,9 @@ export declare class UsersService {
         profit: number;
         newBalance: any;
         error?: undefined;
-        cooldownSeconds?: undefined;
+        vestingLocked?: undefined;
+        vestingTurnoverRequired?: undefined;
+        circularMeta?: undefined;
     }>;
     getHiLoHistory(telegramId: string): Promise<any>;
     searchUserForAdmin(query: string): Promise<User | null>;
@@ -230,6 +259,14 @@ export declare class UsersService {
         totalElixir: any;
         totalAdRevenueUSD: any;
         recentUsers: any;
+    }>;
+    getTopUsersPaginated(page?: number, perPage?: number): Promise<{
+        users: any;
+        page: number;
+        perPage: number;
+        totalUsers: any;
+        hasMore: boolean;
+        loadedCount: any;
     }>;
     lockUserForWithdrawal(telegramId: string): Promise<boolean>;
     unlockUserWithdrawal(telegramId: string): Promise<void>;

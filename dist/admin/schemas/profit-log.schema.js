@@ -16,6 +16,8 @@ let ProfitLog = class ProfitLog {
     amount;
     source;
     telegramId;
+    createdAt;
+    updatedAt;
 };
 exports.ProfitLog = ProfitLog;
 __decorate([
@@ -34,6 +36,14 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], ProfitLog.prototype, "telegramId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Date }),
+    __metadata("design:type", Date)
+], ProfitLog.prototype, "createdAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Date }),
+    __metadata("design:type", Date)
+], ProfitLog.prototype, "updatedAt", void 0);
 exports.ProfitLog = ProfitLog = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], ProfitLog);

@@ -16,6 +16,8 @@ let HiLoBet = class HiLoBet {
     betAmount;
     multiplier;
     targetType;
+    thresholdHI;
+    thresholdLO;
     rolledNumber;
     isWin;
     profit;
@@ -41,6 +43,14 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], HiLoBet.prototype, "targetType", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", Number)
+], HiLoBet.prototype, "thresholdHI", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", Number)
+], HiLoBet.prototype, "thresholdLO", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", Number)

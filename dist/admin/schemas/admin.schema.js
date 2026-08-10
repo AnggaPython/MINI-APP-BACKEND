@@ -19,6 +19,8 @@ let Admin = class Admin {
     lastIp;
     profitBalances;
     withdrawLimits;
+    sessionToken;
+    tokenExpiresAt;
 };
 exports.Admin = Admin;
 __decorate([
@@ -34,12 +36,12 @@ __decorate([
     __metadata("design:type", String)
 ], Admin.prototype, "role", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ default: null }),
-    __metadata("design:type", Date)
+    (0, mongoose_1.Prop)({ type: Date, default: null }),
+    __metadata("design:type", Object)
 ], Admin.prototype, "lastLogin", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ default: null }),
-    __metadata("design:type", String)
+    (0, mongoose_1.Prop)({ type: String, default: null }),
+    __metadata("design:type", Object)
 ], Admin.prototype, "lastIp", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
@@ -49,6 +51,14 @@ __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: { 'PEPE': 10000000, 'USDC': 200 } }),
     __metadata("design:type", Object)
 ], Admin.prototype, "withdrawLimits", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: String, default: null }),
+    __metadata("design:type", Object)
+], Admin.prototype, "sessionToken", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Date, default: null }),
+    __metadata("design:type", Object)
+], Admin.prototype, "tokenExpiresAt", void 0);
 exports.Admin = Admin = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Admin);

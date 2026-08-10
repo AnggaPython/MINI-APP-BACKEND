@@ -23,11 +23,18 @@ export declare class PaymentController {
         tier?: string;
     }): Promise<{
         success: boolean;
+        error: string;
+        banned: boolean;
+        msg?: undefined;
+    } | {
+        success: boolean;
         msg: string;
         error?: undefined;
+        banned?: undefined;
     } | {
         success: boolean;
         error: any;
+        banned?: undefined;
         msg?: undefined;
     }>;
     getTransactions(id: string): Promise<{

@@ -15,13 +15,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminController = void 0;
 const common_1 = require("@nestjs/common");
 const admin_service_1 = require("./admin.service");
+const circular_casino_service_1 = require("./circular-casino.service");
 const users_service_1 = require("../users/users.service");
+const admin_guard_1 = require("../auth/admin.guard");
+const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let AdminController = class AdminController {
     adminService;
     usersService;
-    constructor(adminService, usersService) {
+    circularCasino;
+    constructor(adminService, usersService, circularCasino) {
         this.adminService = adminService;
         this.usersService = usersService;
+        this.circularCasino = circularCasino;
     }
     async login(body, req) {
         if (!body.username || !body.password) {
@@ -34,13 +39,38 @@ let AdminController = class AdminController {
         const stats = await this.usersService.getDashboardStatsAdmin();
         return { success: true, ...stats };
     }
-    async getProfitBalances() {
-        const balances = await this.adminService.getProfitBalances();
-        return { success: true, profitBalances: balances };
+    async getTopUsers(page, limit) {
+        const result = await this.usersService.getTopUsersPaginated(Number(page) || 1, Number(limit) || 10);
+        return { success: true, ...result };
     }
-    async getProfitLogs(coin) {
-        const logs = await this.adminService.getProfitLogs(coin);
-        return { success: true, logs };
+    async getProfitBalances() {
+        const result = await this.adminService.getProfitBalances();
+        return {
+            success: true,
+            profitBalances: result.balances,
+            monetagSummary: result.monetagSummary,
+            totalProfitFeesAllCoinsUsd: result.totalProfitFeesAllCoinsUsd,
+            profitFeeValueByCoin: result.profitFeeValueByCoin,
+            livePriceUsdByCoin: result.livePriceUsdByCoin,
+        };
+    }
+    async getMonetagTopUsers(page, limit) {
+        const res = await this.adminService.getMonetagTopUsers(Number(page) || 1, Number(limit) || 10);
+        return { success: true, ...res };
+    }
+    async getProfitLogs(coin, page, limit) {
+        const result = await this.adminService.getProfitLogsPaginated(coin, Number(page) || 1, Number(limit) || 10);
+        return {
+            success: true,
+            logs: result.logs,
+            pagination: {
+                page: result.page,
+                perPage: result.perPage,
+                totalLogs: result.totalLogs,
+                hasMore: result.hasMore,
+                hardLimit: result.hardLimit,
+            }
+        };
     }
     async getWithdrawLimits() {
         const limits = await this.adminService.getWithdrawLimits();
@@ -77,9 +107,36 @@ let AdminController = class AdminController {
             return { error: 'User not found' };
         return { success: true, user };
     }
+    async getBaseCasinoStats() {
+        const stats = await this.circularCasino.getDashboardStats();
+        const topWhales = await this.circularCasino.getTop5WhalesByNetEquity();
+        return { success: true, treasury: stats.adminTreasury, circularPool: stats.circularPool, burned: stats.burned, taxThisCycle: stats.taxThisCycle, params: stats.params, liveImpactLog: stats.liveImpactLog, dailySnapshots30D: stats.dailySnapshots30D, monthlyBook: stats.monthlyBook, topWhales };
+    }
+    async getTopWhales() {
+        const data = await this.circularCasino.getTop5WhalesByNetEquity();
+        return { success: true, whales: data };
+    }
+    async updateBaseCasinoParams(body) {
+        if (!body || typeof body !== 'object')
+            return { error: 'Invalid payload' };
+        const safeNumbers = {};
+        for (const [k, v] of Object.entries(body)) {
+            if (typeof v === 'number' && Number.isFinite(v))
+                safeNumbers[k] = v;
+        }
+        await this.circularCasino.updateParams(safeNumbers);
+        const stats = await this.circularCasino.getDashboardStats();
+        return { success: true, params: stats.params, treasury: stats.adminTreasury, circularPool: stats.circularPool };
+    }
+    async closeCurrentCycle() {
+        await this.circularCasino.closeCurrentCycleAndStartNew();
+        const stats = await this.circularCasino.getDashboardStats();
+        return { success: true, monthlyBook: stats.monthlyBook, treasury: stats.adminTreasury };
+    }
 };
 exports.AdminController = AdminController;
 __decorate([
+    (0, telegram_user_decorator_1.Public)(),
     (0, common_1.Post)('login'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Req)()),
@@ -94,16 +151,34 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getFeed", null);
 __decorate([
+    (0, common_1.Get)('top-users'),
+    __param(0, (0, common_1.Query)('page')),
+    __param(1, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getTopUsers", null);
+__decorate([
     (0, common_1.Get)('profit-balances'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getProfitBalances", null);
 __decorate([
+    (0, common_1.Get)('profit-logs/monetag-top-users'),
+    __param(0, (0, common_1.Query)('page')),
+    __param(1, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getMonetagTopUsers", null);
+__decorate([
     (0, common_1.Get)('profit-logs'),
     __param(0, (0, common_1.Query)('coin')),
+    __param(1, (0, common_1.Query)('page')),
+    __param(2, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getProfitLogs", null);
 __decorate([
@@ -140,9 +215,36 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "banUser", null);
+__decorate([
+    (0, common_1.Get)('base-casino/stats'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getBaseCasinoStats", null);
+__decorate([
+    (0, common_1.Get)('base-casino/top-whales'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getTopWhales", null);
+__decorate([
+    (0, common_1.Post)('base-casino/params'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "updateBaseCasinoParams", null);
+__decorate([
+    (0, common_1.Post)('base-casino/close-cycle'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "closeCurrentCycle", null);
 exports.AdminController = AdminController = __decorate([
     (0, common_1.Controller)('admin'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminAuthGuard),
     __metadata("design:paramtypes", [admin_service_1.AdminService,
-        users_service_1.UsersService])
+        users_service_1.UsersService,
+        circular_casino_service_1.CircularCasinoService])
 ], AdminController);
 //# sourceMappingURL=admin.controller.js.map

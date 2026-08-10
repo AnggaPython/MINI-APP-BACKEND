@@ -44,6 +44,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var UsersService_1;
 var _a, _b, _c;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = exports.VIP_RANKS = void 0;
@@ -52,6 +53,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const crypto = __importStar(require("crypto"));
+const bcrypt = __importStar(require("bcrypt"));
 const schedule_1 = require("@nestjs/schedule");
 const messages_constant_1 = require("../bot/messages.constant");
 const user_schema_1 = require("./schemas/user.schema");
@@ -59,6 +61,7 @@ const referral_log_schema_1 = require("./schemas/referral-log.schema");
 const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
 const achievements_service_1 = require("../achievements/achievements.service");
 const admin_service_1 = require("../admin/admin.service");
+const circular_casino_service_1 = require("../admin/circular-casino.service");
 exports.VIP_RANKS = [
     { name: 'NON-VIP', xp: 0, reward: 0, wdLimit: 3, maxWdUsd: 3, miningBoost: 0 },
     { name: 'BRONZE', xp: 100, reward: 200, wdLimit: 10, maxWdUsd: 10, miningBoost: 0.05 },
@@ -79,18 +82,21 @@ function getUserVipRank(exp) {
     }
     return rank;
 }
-let UsersService = class UsersService {
+let UsersService = UsersService_1 = class UsersService {
     userModel;
     referralLogModel;
     hiloBetModel;
     achievementsService;
     adminService;
-    constructor(userModel, referralLogModel, hiloBetModel, achievementsService, adminService) {
+    circularCasino;
+    logger = new common_1.Logger(UsersService_1.name);
+    constructor(userModel, referralLogModel, hiloBetModel, achievementsService, adminService, circularCasino) {
         this.userModel = userModel;
         this.referralLogModel = referralLogModel;
         this.hiloBetModel = hiloBetModel;
         this.achievementsService = achievementsService;
         this.adminService = adminService;
+        this.circularCasino = circularCasino;
     }
     async cleanupOldCodeDrops() {
         const expiredCodes = [];
@@ -233,6 +239,75 @@ let UsersService = class UsersService {
     }
     async findByTelegramId(telegramId) {
         return this.userModel.findOne({ telegramId }).exec();
+    }
+    async findBySessionToken(token) {
+        if (!token)
+            return null;
+        const user = await this.userModel.findOne({ sessionToken: token }).exec();
+        if (!user)
+            return null;
+        if (!user.tokenExpiresAt || user.tokenExpiresAt.getTime() < Date.now()) {
+            user.sessionToken = null;
+            user.tokenExpiresAt = null;
+            await user.save();
+            return null;
+        }
+        return user;
+    }
+    async devLoginUsernamePassword(username, password) {
+        if (!username || !password)
+            return { error: 'Missing username or password' };
+        if (process.env.NODE_ENV === 'production') {
+            return { error: 'Username-password login is disabled in production.' };
+        }
+        const usernameSlug = String(username).trim().slice(0, 64);
+        const displayName = usernameSlug.charAt(0).toUpperCase() + usernameSlug.slice(1).toLowerCase();
+        const hashBuf = crypto.createHash('sha256').update(usernameSlug).digest();
+        let idBig = 0n;
+        for (let i = 0; i < 8; i++)
+            idBig = (idBig << 8n) | BigInt(hashBuf[i]);
+        const derivedTelegramId = (1000000000000000n + (idBig % 8999999999999999n)).toString();
+        let user = await this.userModel.findOne({ telegramId: derivedTelegramId }).exec();
+        if (!user) {
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash(password, salt);
+            user = new this.userModel({
+                telegramId: derivedTelegramId,
+                firstName: displayName,
+                lastName: 'Dev',
+                username: usernameSlug,
+                authPasswordHash: passwordHash,
+                miningStartDate: new Date(),
+            });
+            await user.save();
+        }
+        else {
+            if (!user.authPasswordHash) {
+                const salt = await bcrypt.genSalt(10);
+                user.authPasswordHash = await bcrypt.hash(password, salt);
+                await user.save();
+            }
+            else {
+                const ok = await bcrypt.compare(password, user.authPasswordHash);
+                if (!ok)
+                    return { error: 'Invalid credentials' };
+            }
+        }
+        const sessionToken = crypto.randomBytes(32).toString('hex');
+        user.sessionToken = sessionToken;
+        user.tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await user.save();
+        return {
+            success: true,
+            token: sessionToken,
+            tokenExpiresAt: user.tokenExpiresAt.toISOString(),
+            user: {
+                telegramId: user.telegramId,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                username: user.username,
+            }
+        };
     }
     async debitElixir(telegramId, amount) {
         const result = await this.userModel.findOneAndUpdate({ telegramId, elixirBalance: { $gte: amount } }, { $inc: { elixirBalance: -amount } }).exec();
@@ -455,7 +530,8 @@ let UsersService = class UsersService {
             lifetimeElixir: user?.lifetimeElixir || 0,
             lastFaucetRoll: user?.lastFaucetRoll || null,
             totalReferrals,
-            exp: user?.exp || 0
+            exp: user?.exp || 0,
+            isBanned: Boolean(user?.isBanned),
         };
     }
     async bindCwalletUid(telegramId, uid) {
@@ -614,27 +690,13 @@ let UsersService = class UsersService {
         const todayStart = new Date();
         todayStart.setUTCHours(0, 0, 0, 0);
         const dailyStats = await this.hiloBetModel.aggregate([
-            { $match: { telegramId, isWin: true, createdAt: { $gte: todayStart } } },
-            { $group: { _id: null, totalPayout: { $sum: '$profit' } } }
+            { $match: { telegramId, createdAt: { $gte: todayStart } } },
+            { $group: { _id: null, totalProfit: { $sum: '$profit' } } }
         ]).exec();
-        const dailyPlatformLoss = dailyStats[0]?.totalPayout || 0;
-        if (dailyPlatformLoss >= 30000) {
+        const dailyNetProfitUser = dailyStats[0]?.totalProfit || 0;
+        if (dailyNetProfitUser >= 30000) {
             await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
             return { error: '⚠️ Daily win limit reached. Come back tomorrow for more action!' };
-        }
-        const BIG_BET_THRESHOLD = 5000;
-        const last3 = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(3).lean().exec();
-        if (last3.length === 3 &&
-            last3.every(b => b.isWin && b.betAmount >= BIG_BET_THRESHOLD)) {
-            const lastWinAt = new Date(last3[0].createdAt).getTime();
-            const cooldownRemaining = 60000 - (Date.now() - lastWinAt);
-            if (cooldownRemaining > 0) {
-                await this.userModel.updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } }).exec();
-                return {
-                    error: `🔥 You're on fire! Take a 60-second cooldown before your next bet.`,
-                    cooldownSeconds: Math.ceil(cooldownRemaining / 1000)
-                };
-            }
         }
         const user = await this.userModel.findOneAndUpdate({ telegramId, elixirBalance: { $gte: betAmount } }, { $inc: { elixirBalance: -betAmount } }, { returnDocument: 'after' }).exec();
         if (!user) {
@@ -655,63 +717,189 @@ let UsersService = class UsersService {
         if (type === 'lo' && rolledNumber <= thresholdLO)
             isWin = true;
         if (isWin) {
-            let edge = 0.95;
-            const recentBets = await this.hiloBetModel.find({ telegramId }).sort({ createdAt: -1 }).limit(5).lean().exec();
+            const potentialReward = betAmount * multiplier;
+            const potentialProfit = potentialReward - betAmount;
+            const totalWealthBeforeBet = user.elixirBalance + betAmount;
+            let edge = 0.92;
+            try {
+                const treasuryElixir = await this.adminService.getTreasuryElixirLiquidity();
+                const treasuryRatio = potentialProfit / Math.max(1, treasuryElixir);
+                if (treasuryRatio >= 0.02)
+                    edge = Math.min(edge, 0.40);
+                if (treasuryRatio >= 0.05)
+                    edge = Math.min(edge, 0.20);
+                if (treasuryRatio >= 0.10)
+                    edge = Math.min(edge, 0.08);
+                if (potentialReward > (treasuryElixir * 0.15)) {
+                    isWin = false;
+                    edge = 0;
+                }
+            }
+            catch (_err) { }
+            const userLifetimeProfitTotal = Number(user.lifetimeElixir || 0) + Number(user.elixirBalance || 0);
+            if (userLifetimeProfitTotal >= 80000)
+                edge = Math.min(edge, 0.55);
+            if (userLifetimeProfitTotal >= 160000)
+                edge = Math.min(edge, 0.28);
+            if (userLifetimeProfitTotal >= 320000)
+                edge = Math.min(edge, 0.10);
+            if (userLifetimeProfitTotal >= 600000)
+                edge = Math.min(edge, 0.05);
+            try {
+                const accountAgeMs = Date.now() - new Date(user.createdAt || Date.now()).getTime();
+                const graceWindowMs = 30 * 60 * 1000;
+                if (accountAgeMs >= 0 && accountAgeMs < graceWindowMs && userLifetimeProfitTotal < 10000) {
+                    edge = Math.min(0.99, edge + 0.05);
+                }
+                else if (accountAgeMs >= graceWindowMs) {
+                    edge = Math.min(edge, 0.90);
+                }
+            }
+            catch (_e) { }
+            const last20Bets = await this.hiloBetModel.find({ telegramId })
+                .sort({ createdAt: -1 })
+                .limit(20)
+                .lean()
+                .exec();
+            let consecutiveWins = 0;
+            for (const b of last20Bets) {
+                if (b.isWin)
+                    consecutiveWins++;
+                else
+                    break;
+            }
+            if (consecutiveWins >= 1)
+                edge = Math.min(edge, 0.88);
+            if (consecutiveWins >= 2)
+                edge = Math.min(edge, 0.72);
+            if (consecutiveWins >= 3)
+                edge = Math.min(edge, 0.52);
+            if (consecutiveWins >= 4)
+                edge = Math.min(edge, 0.32);
+            if (consecutiveWins >= 5)
+                edge = Math.min(edge, 0.15);
+            if (consecutiveWins >= 7)
+                edge = Math.min(edge, 0.04);
+            const recentBets = last20Bets.slice(0, 5);
             const lastBet = recentBets.length > 0 ? recentBets[0] : null;
             if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
-                edge = Math.min(edge, 0.40);
+                edge = Math.min(edge, 0.10);
+            }
+            if (recentBets.length >= 2 && !recentBets[0].isWin && !recentBets[1].isWin && betAmount >= (recentBets[1].betAmount * 3)) {
+                edge = Math.min(edge, 0.04);
             }
             if (recentBets.length >= 3) {
                 const avgBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0) / recentBets.length;
-                if (betAmount >= (avgBet * 5) && betAmount >= 500) {
-                    edge = Math.min(edge, 0.30);
-                }
+                if (betAmount >= (avgBet * 5) && betAmount >= 500)
+                    edge = Math.min(edge, 0.15);
+                if (betAmount >= (avgBet * 10) && betAmount >= 1000)
+                    edge = Math.min(edge, 0.07);
             }
-            const totalWealthBeforeBet = user.elixirBalance + betAmount;
             if (betAmount > (totalWealthBeforeBet * 0.10)) {
-                edge = Math.min(edge, 0.45);
+                edge = Math.min(edge, 0.22);
             }
+            if (betAmount > (totalWealthBeforeBet * 0.25)) {
+                edge = Math.min(edge, 0.09);
+            }
+            if (multiplier >= 2)
+                edge = Math.min(edge, 0.96);
+            if (multiplier >= 5)
+                edge = Math.min(edge, 0.90);
             if (multiplier >= 10)
-                edge = Math.min(edge, 0.75);
+                edge = Math.min(edge, 0.72);
+            if (multiplier >= 25)
+                edge = Math.min(edge, 0.48);
             if (multiplier >= 50)
-                edge = Math.min(edge, 0.50);
+                edge = Math.min(edge, 0.22);
+            if (multiplier >= 100)
+                edge = Math.min(edge, 0.05);
             const sessionStart = new Date(Date.now() - 30 * 60 * 1000);
             const sessionStats = await this.hiloBetModel.aggregate([
                 { $match: { telegramId, createdAt: { $gte: sessionStart } } },
                 { $group: { _id: null, totalProfit: { $sum: '$profit' } } }
             ]).exec();
             const sessionProfit = sessionStats[0]?.totalProfit || 0;
-            if (sessionProfit >= 25000) {
-                edge = Math.min(edge, 0.15);
+            if (sessionProfit >= 12000)
+                edge = Math.min(edge, 0.62);
+            if (sessionProfit >= 18000)
+                edge = Math.min(edge, 0.32);
+            if (sessionProfit >= 28000)
+                edge = Math.min(edge, 0.10);
+            if (isWin && edge < 1) {
+                const edgeRoll = Math.random();
+                if (edgeRoll > edge) {
+                    isWin = false;
+                }
             }
-            const edgeRoll = Math.random();
-            if (edgeRoll > edge) {
-                isWin = false;
+        }
+        let circularMeta = null;
+        try {
+            const outcome = await this.circularCasino.resolveHiLoBet(telegramId, user.firstName || null, user.username || null, betAmount, isWin, multiplier);
+            circularMeta = {
+                isWhaleTrigger: outcome.isWhaleTrigger,
+                patternApplied: outcome.patternApplied,
+                maxAdminPayoutCapApplied: outcome.maxAdminPayoutCapApplied,
+                circularPoolWasEmpty: outcome.circularPoolWasEmpty,
+                refillModeActive: outcome.refillModeActive,
+                vestingLocked: outcome.vestingLocked,
+                vestingTurnoverRequired: outcome.vestingTurnoverRequired,
+                adminDelta: outcome.adminDelta,
+                circularPoolDelta: outcome.circularPoolDelta,
+                burnedDelta: outcome.burnedDelta
+            };
+            isWin = outcome.isWin;
+            const userNet = outcome.userNetPayout;
+            const reward = isWin ? userNet : 0;
+            const profit = isWin ? (reward - betAmount) : -betAmount;
+            let finalBalance = user.elixirBalance;
+            if (isWin && userNet > 0) {
+                const winUser = await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: userNet, lifetimeElixir: userNet } }, { returnDocument: 'after' }).exec();
+                finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
             }
+            await new this.hiloBetModel({
+                telegramId, betAmount, multiplier, targetType: type, thresholdHI, thresholdLO, rolledNumber, isWin, profit,
+                newBalance: finalBalance, serverSeed, clientSeed, hash,
+                circularMeta
+            }).save();
+            if (betAmount >= 5000) {
+                await this.userModel.updateOne({ telegramId }, { $inc: { exp: 3 } }).exec();
+            }
+            return {
+                success: true,
+                rolledNumber,
+                thresholdHI,
+                thresholdLO,
+                isWin,
+                profit,
+                newBalance: finalBalance,
+                vestingLocked: outcome.vestingLocked,
+                vestingTurnoverRequired: outcome.vestingTurnoverRequired,
+                circularMeta
+            };
         }
-        const reward = isWin ? (betAmount * multiplier) : 0;
-        const profit = isWin ? (reward - betAmount) : -betAmount;
-        let finalBalance = user.elixirBalance;
-        if (isWin) {
-            const winUser = await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: reward, lifetimeElixir: reward } }, { returnDocument: 'after' }).exec();
-            finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
+        catch (err) {
+            this.logger.error(`[CircularCasino] Fatal resolveHiLoBet failed, fallback: ${err}`);
+            const reward = isWin ? (betAmount * multiplier) : 0;
+            const profit = isWin ? (reward - betAmount) : -betAmount;
+            let finalBalance = user.elixirBalance;
+            if (isWin) {
+                const winUser = await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: reward, lifetimeElixir: reward } }, { returnDocument: 'after' }).exec();
+                finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
+            }
+            await new this.hiloBetModel({
+                telegramId, betAmount, multiplier, targetType: type, thresholdHI, thresholdLO, rolledNumber, isWin, profit,
+                newBalance: finalBalance, serverSeed, clientSeed, hash
+            }).save();
+            return {
+                success: true,
+                rolledNumber,
+                thresholdHI,
+                thresholdLO,
+                isWin,
+                profit,
+                newBalance: finalBalance
+            };
         }
-        await new this.hiloBetModel({
-            telegramId, betAmount, multiplier, targetType: type, rolledNumber, isWin, profit,
-            newBalance: finalBalance, serverSeed, clientSeed, hash
-        }).save();
-        if (betAmount >= 5000) {
-            await this.userModel.updateOne({ telegramId }, { $inc: { exp: 3 } }).exec();
-        }
-        return {
-            success: true,
-            rolledNumber,
-            thresholdHI,
-            thresholdLO,
-            isWin,
-            profit,
-            newBalance: finalBalance
-        };
     }
     async getHiLoHistory(telegramId) {
         const history = await this.hiloBetModel.find({ telegramId })
@@ -747,7 +935,7 @@ let UsersService = class UsersService {
         const totalAdRevenueUSD = users.reduce((sum, u) => sum + (u.totalAdRevenueGeneratedUSD || 0), 0);
         const recentUsers = await this.userModel.find()
             .sort({ elixirBalance: -1 })
-            .limit(20)
+            .limit(10)
             .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
             .lean()
             .exec();
@@ -756,6 +944,29 @@ let UsersService = class UsersService {
             totalElixir,
             totalAdRevenueUSD,
             recentUsers
+        };
+    }
+    async getTopUsersPaginated(page = 1, perPage = 10) {
+        const safePage = Math.max(1, Math.floor(Number(page) || 1));
+        const safePerPage = Math.max(1, Math.min(100, Math.floor(Number(perPage) || 10)));
+        const skip = (safePage - 1) * safePerPage;
+        const totalUsers = await this.userModel.countDocuments().exec();
+        const users = await this.userModel.find()
+            .sort({ elixirBalance: -1 })
+            .skip(skip)
+            .limit(safePerPage)
+            .select('telegramId firstName lastName username isBanned createdAt elixirBalance cryptoBalances')
+            .lean()
+            .exec();
+        const loadedCount = skip + users.length;
+        const hasMore = loadedCount < totalUsers;
+        return {
+            users,
+            page: safePage,
+            perPage: safePerPage,
+            totalUsers,
+            hasMore,
+            loadedCount,
         };
     }
     async lockUserForWithdrawal(telegramId) {
@@ -782,14 +993,16 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], UsersService.prototype, "notifyFullMining", null);
-exports.UsersService = UsersService = __decorate([
+exports.UsersService = UsersService = UsersService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(1, (0, mongoose_1.InjectModel)(referral_log_schema_1.ReferralLog.name)),
     __param(2, (0, mongoose_1.InjectModel)(hilo_bet_schema_1.HiLoBet.name)),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
     __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
+    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
     __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, achievements_service_1.AchievementsService,
-        admin_service_1.AdminService])
+        admin_service_1.AdminService,
+        circular_casino_service_1.CircularCasinoService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

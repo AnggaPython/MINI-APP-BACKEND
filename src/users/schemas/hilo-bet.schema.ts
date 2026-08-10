@@ -18,6 +18,12 @@ export class HiLoBet {
     targetType: string; // 'hi' or 'lo'
 
     @Prop({ required: true })
+    thresholdHI: number;
+
+    @Prop({ required: true })
+    thresholdLO: number;
+
+    @Prop({ required: true })
     rolledNumber: number;
 
     @Prop({ required: true })
