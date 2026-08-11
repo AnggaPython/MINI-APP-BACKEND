@@ -10,7 +10,8 @@ async function bootstrap() {
     'http://localhost:3000', // Admin Frontend (Next.js)
     'http://localhost:3001', // Backend NestJS itu sendiri (redirect / self-test)
     'http://localhost:3002', // Alternate admin frontend
-    'http://localhost:3003', // Frontend Mini App (main game)
+    'http://localhost:3003',
+    'admin-mini-app-495y.vercel.app', // Frontend Mini App (main game)
     'https://mini-app-nine-mu.vercel.app'
   ];
 

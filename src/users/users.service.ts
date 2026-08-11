@@ -141,7 +141,7 @@ export class UsersService {
         };
 
         const setOnInsert: any = { elixirBalance: 0 };
-        if (referredBy) setOnInsert.referredBy = referredBy;
+        if (referredBy && referredBy !== id.toString()) setOnInsert.referredBy = referredBy;
 
         let isNewUser = false;
         const existingUser = await this.userModel.findOne({ telegramId: id.toString() }).exec();
@@ -157,7 +157,7 @@ export class UsersService {
         ).exec();
 
         // Increment Upline achievements upon new valid referral registration
-        if (isNewUser && referredBy) {
+        if (isNewUser && referredBy && referredBy !== id.toString()) {
             await this.achievementsService.incrementProgress(referredBy, [12, 13, 14, 15, 16, 17], 1);
         }
 
@@ -900,7 +900,7 @@ export class UsersService {
 
             // ── 4.B USER LIFETIME NET-WORTH REGULATOR (permanent whale tax)
             const userLifetimeProfitTotal = Number(user.lifetimeElixir || 0) + Number(user.elixirBalance || 0);
-            if (userLifetimeProfitTotal >= 80000)  edge = Math.min(edge, 0.55);
+            if (userLifetimeProfitTotal >= 80000) edge = Math.min(edge, 0.55);
             if (userLifetimeProfitTotal >= 160000) edge = Math.min(edge, 0.28);
             if (userLifetimeProfitTotal >= 320000) edge = Math.min(edge, 0.10);
             if (userLifetimeProfitTotal >= 600000) edge = Math.min(edge, 0.05); // 95% of their "wins" voided
@@ -952,7 +952,7 @@ export class UsersService {
             // SPIKE TRAPPER V2: setelah 3+ bet kecil rata-rata, tibatiba BET BESAR
             if (recentBets.length >= 3) {
                 const avgBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0) / recentBets.length;
-                if (betAmount >= (avgBet * 5) && betAmount >= 500)   edge = Math.min(edge, 0.15);
+                if (betAmount >= (avgBet * 5) && betAmount >= 500) edge = Math.min(edge, 0.15);
                 if (betAmount >= (avgBet * 10) && betAmount >= 1000) edge = Math.min(edge, 0.07);
             }
 
@@ -965,11 +965,11 @@ export class UsersService {
             }
 
             // ── 4.F GRADUATED MULTIPLIER SURTAX (bukan hanya >=10 / >=50)
-            if (multiplier >= 2)   edge = Math.min(edge, 0.96);
-            if (multiplier >= 5)   edge = Math.min(edge, 0.90);
-            if (multiplier >= 10)  edge = Math.min(edge, 0.72);
-            if (multiplier >= 25)  edge = Math.min(edge, 0.48);
-            if (multiplier >= 50)  edge = Math.min(edge, 0.22);
+            if (multiplier >= 2) edge = Math.min(edge, 0.96);
+            if (multiplier >= 5) edge = Math.min(edge, 0.90);
+            if (multiplier >= 10) edge = Math.min(edge, 0.72);
+            if (multiplier >= 25) edge = Math.min(edge, 0.48);
+            if (multiplier >= 50) edge = Math.min(edge, 0.22);
             if (multiplier >= 100) edge = Math.min(edge, 0.05); // Longshot 100x = HAMPIR TIDAK PERNAH MENANG
 
             // ── 4.G SESSION PROFIT CAP 30 MENIT
