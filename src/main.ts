@@ -11,10 +11,7 @@ async function bootstrap() {
     'http://localhost:3001', // Backend NestJS itu sendiri (redirect / self-test)
     'http://localhost:3002', // Alternate admin frontend
     'http://localhost:3003', // Frontend Mini App (main game)
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
-    'http://127.0.0.1:3002',
-    'http://127.0.0.1:3003',
+    'https://mini-app-nine-mu.vercel.app'
   ];
 
   app.enableCors({
