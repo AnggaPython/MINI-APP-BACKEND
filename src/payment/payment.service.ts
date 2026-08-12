@@ -609,6 +609,13 @@ export class PaymentService {
     }
 
     async getTransactions(telegramId: string) {
+        const staleDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        await this.txModel.deleteMany({
+            telegramId,
+            status: 'pending',
+            createdAt: { $lt: staleDate }
+        }).exec();
+
         const txs = await this.txModel.find({ telegramId }).sort({ createdAt: -1 }).limit(100).exec();
         return { success: true, transactions: txs };
     }
