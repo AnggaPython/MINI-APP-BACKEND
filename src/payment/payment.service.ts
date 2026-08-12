@@ -16,7 +16,7 @@ export class PaymentService {
     private readonly appSecret = '68e3e1e7db332c9f79a0843919619781';
 
     // Fixie Static Proxy for CCPayment Merchant IP Whitelisting
-    private readonly proxyAgent = new ProxyAgent('http://fixie:smQkefBnOGK9xAD@criterium.usefixie.com:80');
+    private readonly proxyAgent = new ProxyAgent('http://fixie:1DUZEWZyTCkL8HB@criterium.usefixie.com:80');
 
     constructor(
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
