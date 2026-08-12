@@ -30,13 +30,13 @@ export declare class UsersController {
         user?: undefined;
     } | {
         success: boolean;
-        token: any;
-        tokenExpiresAt: any;
+        token: string;
+        tokenExpiresAt: string;
         user: {
-            telegramId: any;
-            firstName: any;
-            lastName: any;
-            username: any;
+            telegramId: string;
+            firstName: string;
+            lastName: string;
+            username: string;
         };
         error?: undefined;
     }>;
@@ -72,9 +72,13 @@ export declare class UsersController {
     getReferralStats(telegramId: string): Promise<{
         success: boolean;
         stats: {
-            referralBalance: any;
-            totalReferrals: any;
-            history: any;
+            referralBalance: number;
+            totalReferrals: number;
+            history: (import("./schemas/referral-log.schema").ReferralLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+                _id: import("mongoose").Types.ObjectId;
+            }> & {
+                __v: number;
+            })[];
         };
     }>;
     claimReferral(telegramId: string): Promise<{
@@ -84,8 +88,14 @@ export declare class UsersController {
         claimedAmount?: undefined;
     } | {
         success: boolean;
-        user: any;
-        claimedAmount: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | undefined;
+        claimedAmount: number | undefined;
         error?: undefined;
     }>;
     claimDaily(telegramId: string): Promise<{
@@ -95,7 +105,13 @@ export declare class UsersController {
         reward?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | undefined;
         reward: number | undefined;
         error?: undefined;
     }>;
@@ -117,7 +133,13 @@ export declare class UsersController {
         reward?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | undefined;
         reward: number | undefined;
         error?: undefined;
     }>;
@@ -128,7 +150,13 @@ export declare class UsersController {
         reward?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | undefined;
         reward: number | undefined;
         error?: undefined;
     }>;
@@ -139,21 +167,27 @@ export declare class UsersController {
         reward?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | undefined;
         reward: number | undefined;
         error?: undefined;
     }>;
     getBalance(telegramId: string): Promise<{
         success: boolean;
-        balance: any;
-        cryptoBalances: any;
-        cwalletUid: any;
-        solanaAddress: any;
+        balance: number;
+        cryptoBalances: Record<string, number>;
+        cwalletUid: string | null;
+        solanaAddress: string | null;
         withdrawLimits: Record<string, number>;
-        lifetimeElixir: any;
-        totalReferrals: any;
-        lastFaucetRoll: any;
-        exp: any;
+        lifetimeElixir: number;
+        totalReferrals: number;
+        lastFaucetRoll: Date | null;
+        exp: number;
         isBanned: boolean;
     }>;
     bindWallet(telegramId: string, cwalletUid: string): Promise<{
@@ -162,7 +196,13 @@ export declare class UsersController {
         user?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | null;
         error?: undefined;
     } | {
         success: boolean;
@@ -174,7 +214,13 @@ export declare class UsersController {
         user?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: (import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        }) | null;
         error?: undefined;
     } | {
         success: boolean;
@@ -189,8 +235,8 @@ export declare class UsersController {
     } | {
         success: boolean;
         elixirGained: number;
-        newElixirBalance: any;
-        cryptoBalances: any;
+        newElixirBalance: number;
+        cryptoBalances: Record<string, number>;
         error?: undefined;
     } | {
         success: boolean;
@@ -205,7 +251,13 @@ export declare class UsersController {
         spread?: undefined;
     } | {
         success: boolean;
-        user: any;
+        user: import("mongoose").Document<unknown, {}, import("./schemas/user.schema").UserDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
         received: number;
         gross: number;
         spread: number;
@@ -233,7 +285,7 @@ export declare class UsersController {
         thresholdLO: number;
         isWin: boolean;
         profit: number;
-        newBalance: any;
+        newBalance: number;
         vestingLocked: number;
         vestingTurnoverRequired: number;
         circularMeta: any;
@@ -245,7 +297,7 @@ export declare class UsersController {
         thresholdLO: number;
         isWin: boolean;
         profit: number;
-        newBalance: any;
+        newBalance: number;
         error?: undefined;
         vestingLocked?: undefined;
         vestingTurnoverRequired?: undefined;
@@ -256,6 +308,10 @@ export declare class UsersController {
     }>;
     getHiLoHistory(telegramId: string): Promise<{
         success: boolean;
-        history: any;
+        history: (import("./schemas/hilo-bet.schema").HiLoBet & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
     }>;
 }

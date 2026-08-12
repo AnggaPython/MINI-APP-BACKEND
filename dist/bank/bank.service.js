@@ -12,7 +12,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var BankService_1;
-var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BankService = void 0;
 const common_1 = require("@nestjs/common");
@@ -271,7 +270,9 @@ exports.BankService = BankService = BankService_1 = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(bank_log_schema_1.BankLog.name)),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService,
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
+        users_service_1.UsersService,
         achievements_service_1.AchievementsService,
         admin_service_1.AdminService])
 ], BankService);

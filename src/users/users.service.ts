@@ -443,7 +443,6 @@ export class UsersService {
     async claimVipRank(telegramId: string, rankName: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user) return { error: 'User not found' };
-        if (user.adTickets < 1) return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
 
         const rank = VIP_RANKS.find(r => r.name === rankName.toUpperCase());
         if (!rank) return { error: 'Invalid rank' };
@@ -455,7 +454,7 @@ export class UsersService {
         const updatedUser = await this.userModel.findOneAndUpdate(
             { telegramId, claimedVipRanks: { $ne: rank.name } },
             {
-                $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward, adTickets: -1 },
+                $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward },
                 $addToSet: { claimedVipRanks: rank.name }
             },
             { returnDocument: 'after' }

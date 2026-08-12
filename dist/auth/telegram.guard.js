@@ -41,7 +41,6 @@ var __importStar = (this && this.__importStar) || (function () {
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TelegramAuthGuard = exports.IS_PUBLIC_KEY = void 0;
 const common_1 = require("@nestjs/common");
@@ -193,6 +192,7 @@ let TelegramAuthGuard = class TelegramAuthGuard {
 exports.TelegramAuthGuard = TelegramAuthGuard;
 exports.TelegramAuthGuard = TelegramAuthGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [typeof (_a = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _a : Object, users_service_1.UsersService])
+    __metadata("design:paramtypes", [core_1.Reflector,
+        users_service_1.UsersService])
 ], TelegramAuthGuard);
 //# sourceMappingURL=telegram.guard.js.map

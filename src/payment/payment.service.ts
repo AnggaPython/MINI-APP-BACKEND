@@ -6,6 +6,7 @@ import { Model } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { AdminService } from '../admin/admin.service';
 import { CircularCasinoService } from '../admin/circular-casino.service';
+import { ProxyAgent } from 'undici';
 
 @Injectable()
 export class PaymentService {
@@ -13,6 +14,9 @@ export class PaymentService {
     // User Provided CCPayment Secrets
     private readonly appId = 'I7YTwbXVHbXGiSEb';
     private readonly appSecret = '68e3e1e7db332c9f79a0843919619781';
+
+    // Fixie Static Proxy for CCPayment Merchant IP Whitelisting
+    private readonly proxyAgent = new ProxyAgent('http://fixie:smQkefBnOGK9xAD@criterium.usefixie.com:80');
 
     constructor(
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
@@ -39,20 +43,13 @@ export class PaymentService {
         const timestamp = Math.floor(Date.now() / 1000).toString();
 
         // Official CCPayment HMAC-SHA256 signature sequence: Appid + Timestamp + JSON Body
-        const signatureText = this.appId + timestamp + rawBody;
-        const signHeader = crypto.createHmac('sha256', this.appSecret).update(signatureText).digest('hex');
-
         try {
             const res = await fetch('https://ccpayment.com/ccpayment/v2/createInvoiceUrl', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Appid': this.appId,
-                    'Timestamp': timestamp,
-                    'Sign': signHeader
-                },
-                body: rawBody
-            });
+                headers: this.getHeaders(rawBody, timestamp),
+                body: rawBody,
+                dispatcher: this.proxyAgent
+            } as any);
 
             const data = await res.json();
             if (data.code === 10000 && data.data && data.data.invoiceUrl) {
@@ -382,8 +379,9 @@ export class PaymentService {
                     const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
                         method: 'POST',
                         headers: this.getHeaders(rawBody, timestamp),
-                        body: rawBody
-                    });
+                        body: rawBody,
+                        dispatcher: this.proxyAgent
+                    } as any);
                     return await res.json();
                 } else {
                     const payload = {
@@ -396,8 +394,9 @@ export class PaymentService {
                     const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToCwallet', {
                         method: 'POST',
                         headers: this.getHeaders(rawBody, timestamp),
-                        body: rawBody
-                    });
+                        body: rawBody,
+                        dispatcher: this.proxyAgent
+                    } as any);
                     return await res.json();
                 }
             };

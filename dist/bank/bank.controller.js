@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BankController = void 0;
 const common_1 = require("@nestjs/common");
 const bank_service_1 = require("./bank.service");
+const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let BankController = class BankController {
     bankService;
     constructor(bankService) {
@@ -26,72 +27,76 @@ let BankController = class BankController {
         const stats = await this.bankService.getStats(telegramId);
         return { success: true, stats };
     }
-    async stake(body) {
-        if (!body.telegramId || !body.amount || !body.durationDays || !body.rate) {
+    async stake(telegramId, body) {
+        if (!telegramId || !body.amount || !body.durationDays || !body.rate) {
             return { error: 'Incomplete parameters' };
         }
-        return await this.bankService.createStake(body.telegramId, Number(body.amount), Number(body.durationDays), Number(body.rate), body.autoClaim || false);
+        return await this.bankService.createStake(telegramId, Number(body.amount), Number(body.durationDays), Number(body.rate), body.autoClaim || false);
     }
     async claimYield(telegramId) {
         if (!telegramId)
             return { error: 'Missing telegramId' };
         return await this.bankService.claimEarnings(telegramId);
     }
-    async unstake(body) {
-        if (!body.telegramId || !body.stakeId)
+    async unstake(telegramId, body) {
+        if (!telegramId || !body.stakeId)
             return { error: 'Incomplete parameters' };
-        return await this.bankService.unstake(body.telegramId, body.stakeId);
+        return await this.bankService.unstake(telegramId, body.stakeId);
     }
-    async toggleStakeConfig(body) {
-        if (!body.telegramId || !body.stakeId)
+    async toggleStakeConfig(telegramId, body) {
+        if (!telegramId || !body.stakeId)
             return { error: 'Incomplete parameters' };
-        return await this.bankService.toggleStakeConfig(body.telegramId, body.stakeId, body.autoClaim, body.autoReinvest);
+        return await this.bankService.toggleStakeConfig(telegramId, body.stakeId, body.autoClaim, body.autoReinvest);
     }
-    async toggleGlobalStakeConfig(body) {
-        return this.bankService.toggleGlobalConfig(body.telegramId, body.field, body.state);
+    async toggleGlobalStakeConfig(telegramId, body) {
+        return this.bankService.toggleGlobalConfig(telegramId, body.field, body.state);
     }
 };
 exports.BankController = BankController;
 __decorate([
     (0, common_1.Post)('stats'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "getStats", null);
 __decorate([
     (0, common_1.Post)('stake'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "stake", null);
 __decorate([
     (0, common_1.Post)('claim-yield'),
-    __param(0, (0, common_1.Body)('telegramId')),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "claimYield", null);
 __decorate([
     (0, common_1.Post)('unstake'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "unstake", null);
 __decorate([
     (0, common_1.Post)('stake/toggle'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "toggleStakeConfig", null);
 __decorate([
     (0, common_1.Post)('stake/toggle-global'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, telegram_user_decorator_1.User)('telegramId')),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], BankController.prototype, "toggleGlobalStakeConfig", null);
 exports.BankController = BankController = __decorate([

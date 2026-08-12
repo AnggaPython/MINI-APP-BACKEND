@@ -9,10 +9,8 @@ async function bootstrap() {
         'http://localhost:3001',
         'http://localhost:3002',
         'http://localhost:3003',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3001',
-        'http://127.0.0.1:3002',
-        'http://127.0.0.1:3003',
+        'https://admin-mini-app-495y.vercel.app',
+        'https://mini-app-nine-mu.vercel.app'
     ];
     app.enableCors({
         origin: (origin, callback) => {
