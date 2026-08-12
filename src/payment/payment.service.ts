@@ -514,37 +514,69 @@ export class PaymentService {
             return { success: true, processed: false, reason: 'No identifier attached' };
         }
 
-        // We deduce ELIXIR quantity logic backward from product string: "500 ELIXIR Deposit"
-        // V2 createInvoiceUrl maps to the `product` field on the webhook payload.
+        // If ApiDeposit, it's missing amount data! We MUST query ccpayment API (section 7.5).
         let elixirAmount = 0;
+        let usdAmt = 0;
+        let cryptoSymbol = payload.coinSymbol || event.coinSymbol || payload.crypto || event.crypto || 'USDT';
+        let cryptoAmountStr = payload.amount || event.amount || payload.cryptoAmount || event.cryptoAmount || '0';
 
-        const productField = payload.product || payload.productName || event.product || event.productName || '';
-        if (productField) {
-            const match = productField.match(/^([0-9\.]+)\s+ELIXIR/);
-            if (match && match[1]) {
-                elixirAmount = parseFloat(match[1]);
+        if (eventType === 'ApiDeposit' && orderId.startsWith('DEP_')) {
+            const timestamp = Math.floor(Date.now() / 1000).toString();
+            const rawBodyFn = JSON.stringify({ orderId });
+            try {
+                const resInfo = await fetch('https://ccpayment.com/ccpayment/v2/getInvoiceOrderInfo', {
+                    method: 'POST',
+                    headers: this.getHeaders(rawBodyFn, timestamp),
+                    body: rawBodyFn,
+                    agent: this.proxyAgent
+                });
+                const infoData = await resInfo.json();
+                if (infoData.code === 10000 && infoData.data && infoData.data.paidList) {
+                    const paidItem = infoData.data.paidList.find((p: any) => p.recordId === payload.recordId);
+                    if (paidItem && paidItem.status === 'Success') {
+                        usdAmt = parseFloat(paidItem.paidValue); // paidValue = fiat normalized
+                        cryptoAmountStr = paidItem.paidAmount.toString();
+                        cryptoSymbol = paidItem.coinSymbol;
+                        if (usdAmt > 0) {
+                            elixirAmount = Math.floor(usdAmt * 10000);
+                            this.logger.log(`[Webhook] Fetched getInvoiceOrderInfo. Extracted ${elixirAmount} ELIXIR from $${usdAmt}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                this.logger.error("Failed to query getInvoiceOrderInfo", error);
             }
         }
 
-        if (elixirAmount <= 0 && orderId.startsWith('DEP_')) {
-            // Fallback: try to parse from direct amount if it was USD (priceFiatId=1033 USD, so credit = 10000 * usd_amount)
-            const priceFiat = parseFloat(payload.price || event.price || '0');
-            if (priceFiat > 0) {
-                elixirAmount = Math.round(priceFiat * 10000);
-                this.logger.log(`[Webhook] Fallback: Derived ${elixirAmount} ELIXIR from USD price ${priceFiat}`);
+        // Fallback or Legacy check
+        if (elixirAmount <= 0) {
+            const productField = payload.product || payload.productName || event.product || event.productName || '';
+            if (productField) {
+                const match = productField.match(/^([0-9\.]+)\s+ELIXIR/);
+                if (match && match[1]) {
+                    elixirAmount = parseFloat(match[1]);
+                }
+            }
+
+            if (elixirAmount <= 0 && orderId.startsWith('DEP_')) {
+                const priceFiat = parseFloat(payload.price || event.price || '0');
+                if (priceFiat > 0) {
+                    elixirAmount = Math.round(priceFiat * 10000);
+                    this.logger.log(`[Webhook] Fallback: Derived ${elixirAmount} ELIXIR from USD price ${priceFiat}`);
+                }
             }
         }
 
         if (elixirAmount <= 0) {
-            this.logger.warn(`[Webhook] Invalid/zero ELIXIR payload for user ${telegramId}. product="${productField}", orderId=${orderId}`);
+            this.logger.warn(`[Webhook] Invalid/zero ELIXIR payload for user ${telegramId}. orderId=${orderId}`);
             return { success: true, processed: false, reason: 'Invalid or zero ELIXIR payload' };
         }
 
         // Top up user's Elixir Balance
-        await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, `DEP_CCPAYMENT_${orderId || Date.now()}`);
+        // We MUST use recordId to guarantee idempotency across multiple partial payments on the same order!
+        const logId = `DEP_CCPAYMENT_${payload.recordId || event.recordId || orderId || Date.now()}`;
+        await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, logId);
 
-        const cryptoSymbol = payload.coinSymbol || event.coinSymbol || payload.crypto || event.crypto || 'USDT';
-        const cryptoAmountStr = payload.amount || event.amount || payload.cryptoAmount || event.cryptoAmount || '0';
         await this.txModel.create({
             telegramId: telegramId.toString(),
             type: 'DEPOSIT',
@@ -554,7 +586,7 @@ export class PaymentService {
             status: 'complete'
         });
 
-        this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId})`);
+        this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId}, recordId=${payload.recordId || ''})`);
         return { success: true, processed: true, credited: elixirAmount, user: telegramId };
     }
 
