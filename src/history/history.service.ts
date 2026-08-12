@@ -29,6 +29,7 @@ export class HistoryService {
                     type: tx.type === 'DEPOSIT' ? 'Deposit' : (tx.type === 'WITHDRAW' ? 'Withdraw' : 'Swap'),
                     hash: tx._id.toString().substring(0, 8).toUpperCase(),
                     amount: tx.amount,
+                    coin: tx.coin || 'ELIXIR',
                     isPositive: isPos,
                     createdAt: tx.createdAt
                 });
@@ -44,6 +45,7 @@ export class HistoryService {
                     type: 'HI-LO bet',
                     hash: bet.hash ? bet.hash.substring(0, 8).toUpperCase() : bet._id.toString().substring(0, 8).toUpperCase(),
                     amount: bet.betAmount,
+                    coin: 'ELIXIR',
                     isPositive: bet.isWin, // For bets, + means win, - means lose (represented visually)
                     // If we want exact profit metrics: isPositive ? bet.profit : bet.betAmount
                     // We'll map visually in React
@@ -67,6 +69,7 @@ export class HistoryService {
                     type: 'Bank vault',
                     hash: log._id.toString().substring(0, 8).toUpperCase(),
                     amount: log.amount,
+                    coin: 'ELIXIR',
                     isPositive: isPos,
                     createdAt: log.createdAt,
                     metaType: log.type // STAKE, CLAIM, EMERGENCY_UNSTAKE
