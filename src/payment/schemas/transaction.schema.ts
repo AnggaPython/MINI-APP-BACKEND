@@ -8,6 +8,9 @@ export class Transaction {
     @Prop({ required: true, index: true })
     telegramId: string;
 
+    @Prop({ index: true })
+    orderId?: string;
+
     @Prop({ required: true })
     type: string; // 'DEPOSIT' | 'WITHDRAW'
 

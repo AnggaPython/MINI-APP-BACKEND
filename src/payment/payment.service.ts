@@ -54,6 +54,16 @@ export class PaymentService {
 
             const data = await res.json();
             if (data.code === 10000 && data.data && data.data.invoiceUrl) {
+                // Record the pending transaction so the user sees it in History
+                await this.txModel.create({
+                    telegramId,
+                    type: 'DEPOSIT',
+                    coin: 'ELIXIR',
+                    amount: amountElixir,
+                    tier: 'STANDARD',
+                    status: 'pending',
+                    orderId: payload.orderId
+                });
                 return { success: true, paymentUrl: data.data.invoiceUrl };
             }
             return { success: false, error: data.msg || 'Gateway rejected payload' };
@@ -577,14 +587,22 @@ export class PaymentService {
         const logId = `DEP_CCPAYMENT_${payload.recordId || event.recordId || orderId || Date.now()}`;
         await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, logId);
 
-        await this.txModel.create({
-            telegramId: telegramId.toString(),
-            type: 'DEPOSIT',
-            coin: (cryptoSymbol as string).toUpperCase(),
-            amount: parseFloat(cryptoAmountStr as string) || elixirAmount,
-            tier: 'STANDARD',
-            status: 'complete'
-        });
+        await this.txModel.findOneAndUpdate(
+            { orderId: orderId },
+            {
+                $set: {
+                    status: 'complete',
+                    coin: (cryptoSymbol as string).toUpperCase(),
+                    amount: parseFloat(cryptoAmountStr as string) || elixirAmount
+                },
+                $setOnInsert: {
+                    telegramId: telegramId.toString(),
+                    type: 'DEPOSIT',
+                    tier: 'STANDARD'
+                }
+            },
+            { upsert: true }
+        );
 
         this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId}, recordId=${payload.recordId || ''})`);
         return { success: true, processed: true, credited: elixirAmount, user: telegramId };
@@ -593,5 +611,53 @@ export class PaymentService {
     async getTransactions(telegramId: string) {
         const txs = await this.txModel.find({ telegramId }).sort({ createdAt: -1 }).limit(100).exec();
         return { success: true, transactions: txs };
+    }
+
+    async syncPendingDeposit(orderId: string, telegramId: string) {
+        const tx = await this.txModel.findOne({ orderId, telegramId, status: 'pending' });
+        if (!tx) return { success: false, error: 'Pending transaction not found or already completed.' };
+
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const rawBodyFn = JSON.stringify({ orderId });
+        try {
+            const resInfo = await fetch('https://ccpayment.com/ccpayment/v2/getInvoiceOrderInfo', {
+                method: 'POST',
+                headers: this.getHeaders(rawBodyFn, timestamp),
+                body: rawBodyFn,
+                agent: this.proxyAgent
+            });
+            const infoData = await resInfo.json();
+
+            if (infoData.code === 10000 && infoData.data && infoData.data.paidList && infoData.data.paidList.length > 0) {
+                // Find latest successful payment
+                const validPayments = infoData.data.paidList.filter((p: any) => p.status === 'Success');
+                if (validPayments.length === 0) return { success: false, error: 'Deposit still pending on blockchain.' };
+
+                const latestPayment = validPayments[validPayments.length - 1]; // Pick the latest
+                const usdAmt = parseFloat(latestPayment.paidValue);
+                const cryptoAmountStr = latestPayment.paidAmount;
+                const cryptoSymbol = latestPayment.coinSymbol;
+
+                if (usdAmt > 0) {
+                    const elixirAmount = Math.floor(usdAmt * 10000);
+
+                    // Credit user securely via Idempotency
+                    const logId = `DEP_CCPAYMENT_${latestPayment.recordId || orderId}`;
+                    await this.usersService.creditRewardAndLogTask(telegramId, elixirAmount, logId);
+
+                    // Update Database
+                    tx.status = 'complete';
+                    tx.amount = elixirAmount;
+                    tx.coin = cryptoSymbol;
+                    await tx.save();
+
+                    return { success: true, msg: `Synced successfully! ${elixirAmount} ELIXIR credited.` };
+                }
+            }
+            return { success: false, error: 'No successful payment records available yet.' };
+        } catch (error) {
+            this.logger.error("Failed manual sync", error);
+            return { success: false, error: 'Network failure while syncing to gateway.' };
+        }
     }
 }

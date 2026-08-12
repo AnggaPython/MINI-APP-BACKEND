@@ -27,6 +27,14 @@ export class PaymentController {
         return await this.paymentService.getTransactions(id);
     }
 
+    @Post('sync-deposit')
+    async syncDeposit(@Body() body: { telegramId: string, orderId: string }) {
+        if (!body.telegramId || !body.orderId) {
+            return { success: false, error: 'Missing parameters' };
+        }
+        return await this.paymentService.syncPendingDeposit(body.orderId, body.telegramId);
+    }
+
     @Post('webhook')
     async handleWebhook(
         @Req() req: Request,
