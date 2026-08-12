@@ -44,7 +44,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 var PaymentService_1;
+var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const common_1 = require("@nestjs/common");
@@ -55,6 +59,8 @@ const mongoose_2 = require("mongoose");
 const transaction_schema_1 = require("./schemas/transaction.schema");
 const admin_service_1 = require("../admin/admin.service");
 const circular_casino_service_1 = require("../admin/circular-casino.service");
+const node_fetch_1 = __importDefault(require("node-fetch"));
+const https_proxy_agent_1 = require("https-proxy-agent");
 let PaymentService = PaymentService_1 = class PaymentService {
     usersService;
     txModel;
@@ -63,6 +69,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
     logger = new common_1.Logger(PaymentService_1.name);
     appId = 'I7YTwbXVHbXGiSEb';
     appSecret = '68e3e1e7db332c9f79a0843919619781';
+    proxyAgent = new https_proxy_agent_1.HttpsProxyAgent('http://fixie:1DUZEWZyTCkL8HB@criterium.usefixie.com:80');
     constructor(usersService, txModel, adminService, circularCasino) {
         this.usersService = usersService;
         this.txModel = txModel;
@@ -81,18 +88,12 @@ let PaymentService = PaymentService_1 = class PaymentService {
         };
         const rawBody = JSON.stringify(payload);
         const timestamp = Math.floor(Date.now() / 1000).toString();
-        const signatureText = this.appId + timestamp + rawBody;
-        const signHeader = crypto.createHmac('sha256', this.appSecret).update(signatureText).digest('hex');
         try {
-            const res = await fetch('https://ccpayment.com/ccpayment/v2/createInvoiceUrl', {
+            const res = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/createInvoiceUrl', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Appid': this.appId,
-                    'Timestamp': timestamp,
-                    'Sign': signHeader
-                },
-                body: rawBody
+                headers: this.getHeaders(rawBody, timestamp),
+                body: rawBody,
+                agent: this.proxyAgent
             });
             const data = await res.json();
             if (data.code === 10000 && data.data && data.data.invoiceUrl) {
@@ -147,7 +148,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
         try {
             let ts = Math.floor(Date.now() / 1000).toString();
             const pricePayload = JSON.stringify({ coinIds: [targetCoinId] });
-            const priceRes = await fetch('https://ccpayment.com/ccpayment/v2/getCoinUSDTPrice', {
+            const priceRes = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/getCoinUSDTPrice', {
                 method: 'POST',
                 headers: this.getHeaders(pricePayload, ts),
                 body: pricePayload
@@ -170,7 +171,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 amountIn: inputUsdc.toFixed(6),
                 coinIdOut: targetCoinId
             });
-            const estRes = await fetch('https://ccpayment.com/ccpayment/v2/estimate', {
+            const estRes = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/estimate', {
                 method: 'POST',
                 headers: this.getHeaders(estPayload, ts),
                 body: estPayload
@@ -194,7 +195,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 coinIdOut: targetCoinId,
                 amountOutMinimum: requiredAmount.toFixed(8)
             });
-            const swapRes = await fetch('https://ccpayment.com/ccpayment/v2/swap', {
+            const swapRes = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/swap', {
                 method: 'POST',
                 headers: this.getHeaders(swapPayload, ts),
                 body: swapPayload
@@ -210,7 +211,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 ts = Math.floor(Date.now() / 1000).toString();
                 const pollPayload = JSON.stringify({ recordId });
-                const pollRes = await fetch('https://ccpayment.com/ccpayment/v2/getSwapRecord', {
+                const pollRes = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/getSwapRecord', {
                     method: 'POST',
                     headers: this.getHeaders(pollPayload, ts),
                     body: pollPayload
@@ -251,7 +252,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
         const geckoId = geckoIds[coin.toUpperCase()];
         if (geckoId) {
             try {
-                const priceRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+                const priceRes = await (0, node_fetch_1.default)(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
                 const priceData = await priceRes.json();
                 if (priceData[geckoId]?.usd) {
                     liveUsdPrice = priceData[geckoId].usd;
@@ -369,10 +370,11 @@ let PaymentService = PaymentService_1 = class PaymentService {
                         notifyUrl: "https://mini-app-backend-production-30ea.up.railway.app/payment/webhook"
                     };
                     const rawBody = JSON.stringify(payload);
-                    const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
+                    const res = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToNetwork', {
                         method: 'POST',
                         headers: this.getHeaders(rawBody, timestamp),
-                        body: rawBody
+                        body: rawBody,
+                        agent: this.proxyAgent
                     });
                     return await res.json();
                 }
@@ -384,10 +386,11 @@ let PaymentService = PaymentService_1 = class PaymentService {
                         coinId: coinId
                     };
                     const rawBody = JSON.stringify(payload);
-                    const res = await fetch('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToCwallet', {
+                    const res = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/applyAppWithdrawToCwallet', {
                         method: 'POST',
                         headers: this.getHeaders(rawBody, timestamp),
-                        body: rawBody
+                        body: rawBody,
+                        agent: this.proxyAgent
                     });
                     return await res.json();
                 }
@@ -530,9 +533,7 @@ exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
-    __metadata("design:paramtypes", [users_service_1.UsersService,
-        mongoose_2.Model,
-        admin_service_1.AdminService,
+    __metadata("design:paramtypes", [users_service_1.UsersService, typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, admin_service_1.AdminService,
         circular_casino_service_1.CircularCasinoService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map

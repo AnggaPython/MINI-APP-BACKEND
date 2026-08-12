@@ -8,34 +8,26 @@ export declare class AdminController {
     constructor(adminService: AdminService, usersService: UsersService, circularCasino: CircularCasinoService);
     login(body: any, req: any): Promise<{
         success: boolean;
-        token: string;
-        role: string;
+        token: any;
+        role: any;
         error?: undefined;
     } | {
         error: string;
     }>;
     getFeed(): Promise<{
-        totalUsers: number;
-        totalElixir: number;
-        totalAdRevenueUSD: number;
-        recentUsers: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        totalUsers: any;
+        totalElixir: any;
+        totalAdRevenueUSD: any;
+        recentUsers: any;
         success: boolean;
     }>;
     getTopUsers(page?: string, limit?: string): Promise<{
-        users: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        users: any;
         page: number;
         perPage: number;
-        totalUsers: number;
+        totalUsers: any;
         hasMore: boolean;
-        loadedCount: number;
+        loadedCount: any;
         success: boolean;
     }>;
     getProfitBalances(): Promise<{
@@ -103,7 +95,7 @@ export declare class AdminController {
     }>;
     getProfitLogs(coin: string, page?: string, limit?: string): Promise<{
         success: boolean;
-        logs: import("./schemas/profit-log.schema").ProfitLogDocument[];
+        logs: any[];
         pagination: {
             page: number;
             perPage: number;

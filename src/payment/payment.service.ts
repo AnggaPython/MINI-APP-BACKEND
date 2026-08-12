@@ -6,7 +6,8 @@ import { Model } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { AdminService } from '../admin/admin.service';
 import { CircularCasinoService } from '../admin/circular-casino.service';
-import { ProxyAgent } from 'undici';
+import fetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 @Injectable()
 export class PaymentService {
@@ -16,7 +17,7 @@ export class PaymentService {
     private readonly appSecret = '68e3e1e7db332c9f79a0843919619781';
 
     // Fixie Static Proxy for CCPayment Merchant IP Whitelisting
-    private readonly proxyAgent = new ProxyAgent('http://fixie:1DUZEWZyTCkL8HB@criterium.usefixie.com:80');
+    private readonly proxyAgent = new HttpsProxyAgent('http://fixie:1DUZEWZyTCkL8HB@criterium.usefixie.com:80');
 
     constructor(
         @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
@@ -48,8 +49,8 @@ export class PaymentService {
                 method: 'POST',
                 headers: this.getHeaders(rawBody, timestamp),
                 body: rawBody,
-                dispatcher: this.proxyAgent
-            } as any);
+                agent: this.proxyAgent
+            });
 
             const data = await res.json();
             if (data.code === 10000 && data.data && data.data.invoiceUrl) {
@@ -380,8 +381,8 @@ export class PaymentService {
                         method: 'POST',
                         headers: this.getHeaders(rawBody, timestamp),
                         body: rawBody,
-                        dispatcher: this.proxyAgent
-                    } as any);
+                        agent: this.proxyAgent
+                    });
                     return await res.json();
                 } else {
                     const payload = {
@@ -395,8 +396,8 @@ export class PaymentService {
                         method: 'POST',
                         headers: this.getHeaders(rawBody, timestamp),
                         body: rawBody,
-                        dispatcher: this.proxyAgent
-                    } as any);
+                        agent: this.proxyAgent
+                    });
                     return await res.json();
                 }
             };

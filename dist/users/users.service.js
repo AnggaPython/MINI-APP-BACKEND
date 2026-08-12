@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var UsersService_1;
+var _a, _b, _c;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = exports.VIP_RANKS = void 0;
 exports.getUserVipRank = getUserVipRank;
@@ -394,8 +395,6 @@ let UsersService = UsersService_1 = class UsersService {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user)
             return { error: 'User not found' };
-        if (user.adTickets < 1)
-            return { error: '⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.' };
         const rank = exports.VIP_RANKS.find(r => r.name === rankName.toUpperCase());
         if (!rank)
             return { error: 'Invalid rank' };
@@ -406,7 +405,7 @@ let UsersService = UsersService_1 = class UsersService {
         if (rank.reward <= 0)
             return { error: 'No reward available for this tier' };
         const updatedUser = await this.userModel.findOneAndUpdate({ telegramId, claimedVipRanks: { $ne: rank.name } }, {
-            $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward, adTickets: -1 },
+            $inc: { elixirBalance: rank.reward, lifetimeElixir: rank.reward },
             $addToSet: { claimedVipRanks: rank.name }
         }, { returnDocument: 'after' }).exec();
         if (!updatedUser)
@@ -1000,10 +999,7 @@ exports.UsersService = UsersService = UsersService_1 = __decorate([
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
     __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        achievements_service_1.AchievementsService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, achievements_service_1.AchievementsService,
         admin_service_1.AdminService,
         circular_casino_service_1.CircularCasinoService])
 ], UsersService);

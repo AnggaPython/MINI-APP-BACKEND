@@ -9,8 +9,8 @@ export declare class AchievementsController {
     } | {
         success: boolean;
         stats: {
-            current: number;
-            claimed: boolean;
+            current: any;
+            claimed: any;
             id: number;
             title: string;
             reward: number;
