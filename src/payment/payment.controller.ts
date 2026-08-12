@@ -39,6 +39,8 @@ export class PaymentController {
         // Security check
         const isValid = this.paymentService.verifyWebhookSignature(headers, rawBodyStr);
         if (!isValid) {
+            console.error(`[Webhook Alert] Invalid Signature Detected! timestamp=${headers.timestamp}, sign=${headers.sign || headers['x-signature']}`);
+            console.error(`[Webhook Alert] Raw Body length: ${rawBodyStr.length}`);
             // Unathorized forged request
             return res.status(HttpStatus.UNAUTHORIZED).send('Invalid Signature');
         }
