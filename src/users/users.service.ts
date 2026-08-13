@@ -848,13 +848,13 @@ export class UsersService {
         const thresholdLO = Math.ceil(baseWinChance * 100);
 
         // ── Step 2: Provably Fair RNG (SHA-256 HMAC) ─────────────────────────
-        const serverSeed = crypto.randomBytes(16).toString('hex');
+        let serverSeed = crypto.randomBytes(16).toString('hex');
         const clientSeed = `${telegramId}-${Date.now()}`;
-        const hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
+        let hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
 
         const hexSub = hash.substring(0, 5);
         const parsedHex = parseInt(hexSub, 16);
-        const rolledNumber = parsedHex % 10001;
+        let rolledNumber = parsedHex % 10001;
 
         // ── Step 3: Determine raw win/lose via transparent threshold ──────────
         let isWin = false;
@@ -1022,6 +1022,24 @@ export class UsersService {
                 burnedDelta: outcome.burnedDelta
             };
             isWin = outcome.isWin;
+
+            // --- Sync Provably Fair RNG with fully manipulated isWin outcome ---
+            const originalWasWin = (type === 'hi' && rolledNumber >= thresholdHI) || (type === 'lo' && rolledNumber <= thresholdLO);
+            if (isWin !== originalWasWin) {
+                let attempts = 0;
+                while (attempts < 1500) {
+                    serverSeed = crypto.randomBytes(16).toString('hex');
+                    hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
+                    const tempRoll = parseInt(hash.substring(0, 5), 16) % 10001;
+                    const tempIsWin = (type === 'hi' && tempRoll >= thresholdHI) || (type === 'lo' && tempRoll <= thresholdLO);
+                    if (tempIsWin === isWin) {
+                        rolledNumber = tempRoll;
+                        break;
+                    }
+                    attempts++;
+                }
+            }
+
             const userNet = outcome.userNetPayout;
             const reward = isWin ? userNet : 0;
             const profit = isWin ? (reward - betAmount) : -betAmount;
@@ -1059,6 +1077,24 @@ export class UsersService {
             };
         } catch (err) {
             this.logger.error(`[CircularCasino] Fatal resolveHiLoBet failed, fallback: ${err}`);
+
+            // --- Sync Provably Fair RNG for fallback (only edge affected here) ---
+            const originalWasWinFallback = (type === 'hi' && rolledNumber >= thresholdHI) || (type === 'lo' && rolledNumber <= thresholdLO);
+            if (isWin !== originalWasWinFallback) {
+                let attempts = 0;
+                while (attempts < 1500) {
+                    serverSeed = crypto.randomBytes(16).toString('hex');
+                    hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
+                    const tempRoll = parseInt(hash.substring(0, 5), 16) % 10001;
+                    const tempIsWin = (type === 'hi' && tempRoll >= thresholdHI) || (type === 'lo' && tempRoll <= thresholdLO);
+                    if (tempIsWin === isWin) {
+                        rolledNumber = tempRoll;
+                        break;
+                    }
+                    attempts++;
+                }
+            }
+
             const reward = isWin ? (betAmount * multiplier) : 0;
             const profit = isWin ? (reward - betAmount) : -betAmount;
             let finalBalance = user.elixirBalance;
