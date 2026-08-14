@@ -39,7 +39,24 @@ export declare class PaymentController {
     }>;
     getTransactions(id: string): Promise<{
         success: boolean;
-        transactions: any;
+        transactions: (import("mongoose").Document<unknown, {}, import("./schemas/transaction.schema").TransactionDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/transaction.schema").Transaction & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        })[];
     }>;
-    handleWebhook(req: Request, res: Response, headers: any): Promise<any>;
+    syncDeposit(body: {
+        telegramId: string;
+        orderId: string;
+    }): Promise<{
+        success: boolean;
+        msg: string;
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    handleWebhook(req: Request, res: Response, headers: any): Promise<Response<any, Record<string, any>>>;
 }

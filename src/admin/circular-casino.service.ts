@@ -136,17 +136,7 @@ export class CircularCasinoService implements OnModuleInit {
         let isWin = rawIsWinFromEngine;
         let patternApplied = false;
 
-        // --- WHALE PATTERN SHUFFLE (>= 500 ELIXIR trigger)
-        if (isWhale) {
-            this.ensureWhalePatternForEquity(eq, t.isRefillMode, t);
-            const idx = eq.whalePatternIndex ?? 0;
-            const q = eq.whalePatternQueue ?? [];
-            if (q[idx] !== undefined) {
-                isWin = q[idx] === 1;
-                eq.whalePatternIndex = idx + 1;
-                patternApplied = true;
-            }
-        }
+        // --- WHALE PATTERN SHUFFLE (REMOVED) ---
 
         eq.totalBetsLifetime = (eq.totalBetsLifetime || 0) + 1;
         eq.lastActiveAt = new Date();

@@ -35,10 +35,18 @@ let PaymentController = class PaymentController {
     async getTransactions(id) {
         return await this.paymentService.getTransactions(id);
     }
+    async syncDeposit(body) {
+        if (!body.telegramId || !body.orderId) {
+            return { success: false, error: 'Missing parameters' };
+        }
+        return await this.paymentService.syncPendingDeposit(body.orderId, body.telegramId);
+    }
     async handleWebhook(req, res, headers) {
         const rawBodyStr = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
         const isValid = this.paymentService.verifyWebhookSignature(headers, rawBodyStr);
         if (!isValid) {
+            console.error(`[Webhook Alert] Invalid Signature Detected! timestamp=${headers.timestamp}, sign=${headers.sign || headers['x-signature']}`);
+            console.error(`[Webhook Alert] Raw Body length: ${rawBodyStr.length}`);
             return res.status(common_1.HttpStatus.UNAUTHORIZED).send('Invalid Signature');
         }
         const eventData = req.body;
@@ -76,6 +84,13 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], PaymentController.prototype, "getTransactions", null);
+__decorate([
+    (0, common_1.Post)('sync-deposit'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "syncDeposit", null);
 __decorate([
     (0, common_1.Post)('webhook'),
     __param(0, (0, common_1.Req)()),

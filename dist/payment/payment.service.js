@@ -48,7 +48,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 var PaymentService_1;
-var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const common_1 = require("@nestjs/common");
@@ -97,6 +96,15 @@ let PaymentService = PaymentService_1 = class PaymentService {
             });
             const data = await res.json();
             if (data.code === 10000 && data.data && data.data.invoiceUrl) {
+                await this.txModel.create({
+                    telegramId,
+                    type: 'DEPOSIT',
+                    coin: 'ELIXIR',
+                    amount: amountElixir,
+                    tier: 'STANDARD',
+                    status: 'pending',
+                    orderId: payload.orderId
+                });
                 return { success: true, paymentUrl: data.data.invoiceUrl };
             }
             return { success: false, error: data.msg || 'Gateway rejected payload' };
@@ -489,41 +497,123 @@ let PaymentService = PaymentService_1 = class PaymentService {
             return { success: true, processed: false, reason: 'No identifier attached' };
         }
         let elixirAmount = 0;
-        const productField = payload.product || payload.productName || event.product || event.productName || '';
-        if (productField) {
-            const match = productField.match(/^([0-9\.]+)\s+ELIXIR/);
-            if (match && match[1]) {
-                elixirAmount = parseFloat(match[1]);
+        let usdAmt = 0;
+        let cryptoSymbol = payload.coinSymbol || event.coinSymbol || payload.crypto || event.crypto || 'USDT';
+        let cryptoAmountStr = payload.amount || event.amount || payload.cryptoAmount || event.cryptoAmount || '0';
+        if (eventType === 'ApiDeposit' && orderId.startsWith('DEP_')) {
+            const timestamp = Math.floor(Date.now() / 1000).toString();
+            const rawBodyFn = JSON.stringify({ orderId });
+            try {
+                const resInfo = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/getInvoiceOrderInfo', {
+                    method: 'POST',
+                    headers: this.getHeaders(rawBodyFn, timestamp),
+                    body: rawBodyFn,
+                    agent: this.proxyAgent
+                });
+                const infoData = await resInfo.json();
+                if (infoData.code === 10000 && infoData.data && infoData.data.paidList) {
+                    const paidItem = infoData.data.paidList.find((p) => p.recordId === payload.recordId);
+                    if (paidItem && paidItem.status === 'Success') {
+                        usdAmt = parseFloat(paidItem.paidValue);
+                        cryptoAmountStr = paidItem.paidAmount.toString();
+                        cryptoSymbol = paidItem.coinSymbol;
+                        if (usdAmt > 0) {
+                            elixirAmount = Math.floor(usdAmt * 10000);
+                            this.logger.log(`[Webhook] Fetched getInvoiceOrderInfo. Extracted ${elixirAmount} ELIXIR from $${usdAmt}`);
+                        }
+                    }
+                }
             }
-        }
-        if (elixirAmount <= 0 && orderId.startsWith('DEP_')) {
-            const priceFiat = parseFloat(payload.price || event.price || '0');
-            if (priceFiat > 0) {
-                elixirAmount = Math.round(priceFiat * 10000);
-                this.logger.log(`[Webhook] Fallback: Derived ${elixirAmount} ELIXIR from USD price ${priceFiat}`);
+            catch (error) {
+                this.logger.error("Failed to query getInvoiceOrderInfo", error);
             }
         }
         if (elixirAmount <= 0) {
-            this.logger.warn(`[Webhook] Invalid/zero ELIXIR payload for user ${telegramId}. product="${productField}", orderId=${orderId}`);
+            const productField = payload.product || payload.productName || event.product || event.productName || '';
+            if (productField) {
+                const match = productField.match(/^([0-9\.]+)\s+ELIXIR/);
+                if (match && match[1]) {
+                    elixirAmount = parseFloat(match[1]);
+                }
+            }
+            if (elixirAmount <= 0 && orderId.startsWith('DEP_')) {
+                const priceFiat = parseFloat(payload.price || event.price || '0');
+                if (priceFiat > 0) {
+                    elixirAmount = Math.round(priceFiat * 10000);
+                    this.logger.log(`[Webhook] Fallback: Derived ${elixirAmount} ELIXIR from USD price ${priceFiat}`);
+                }
+            }
+        }
+        if (elixirAmount <= 0) {
+            this.logger.warn(`[Webhook] Invalid/zero ELIXIR payload for user ${telegramId}. orderId=${orderId}`);
             return { success: true, processed: false, reason: 'Invalid or zero ELIXIR payload' };
         }
-        await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, `DEP_CCPAYMENT_${orderId || Date.now()}`);
-        const cryptoSymbol = payload.coinSymbol || event.coinSymbol || payload.crypto || event.crypto || 'USDT';
-        const cryptoAmountStr = payload.amount || event.amount || payload.cryptoAmount || event.cryptoAmount || '0';
-        await this.txModel.create({
-            telegramId: telegramId.toString(),
-            type: 'DEPOSIT',
-            coin: cryptoSymbol.toUpperCase(),
-            amount: parseFloat(cryptoAmountStr) || elixirAmount,
-            tier: 'STANDARD',
-            status: 'complete'
-        });
-        this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId})`);
+        const logId = `DEP_CCPAYMENT_${payload.recordId || event.recordId || orderId || Date.now()}`;
+        await this.usersService.creditRewardAndLogTask(telegramId.toString(), elixirAmount, logId);
+        await this.txModel.findOneAndUpdate({ orderId: orderId }, {
+            $set: {
+                status: 'complete',
+                coin: cryptoSymbol.toUpperCase(),
+                amount: parseFloat(cryptoAmountStr) || elixirAmount
+            },
+            $setOnInsert: {
+                telegramId: telegramId.toString(),
+                type: 'DEPOSIT',
+                tier: 'STANDARD'
+            }
+        }, { upsert: true });
+        this.logger.log(`[Webhook] SUCCESS: Credited ${elixirAmount} ELIXIR to user ${telegramId} (orderId=${orderId}, recordId=${payload.recordId || ''})`);
         return { success: true, processed: true, credited: elixirAmount, user: telegramId };
     }
     async getTransactions(telegramId) {
+        const staleDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        await this.txModel.deleteMany({
+            telegramId,
+            status: 'pending',
+            createdAt: { $lt: staleDate }
+        }).exec();
         const txs = await this.txModel.find({ telegramId }).sort({ createdAt: -1 }).limit(100).exec();
         return { success: true, transactions: txs };
+    }
+    async syncPendingDeposit(orderId, telegramId) {
+        const tx = await this.txModel.findOne({ orderId, telegramId, status: 'pending' });
+        if (!tx)
+            return { success: false, error: 'Pending transaction not found or already completed.' };
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const rawBodyFn = JSON.stringify({ orderId });
+        try {
+            const resInfo = await (0, node_fetch_1.default)('https://ccpayment.com/ccpayment/v2/getInvoiceOrderInfo', {
+                method: 'POST',
+                headers: this.getHeaders(rawBodyFn, timestamp),
+                body: rawBodyFn,
+                agent: this.proxyAgent
+            });
+            const infoData = await resInfo.json();
+            if (infoData.code === 10000 && infoData.data && infoData.data.paidList && infoData.data.paidList.length > 0) {
+                const validPayments = infoData.data.paidList.filter((p) => p.status === 'Success');
+                if (validPayments.length === 0)
+                    return { success: false, error: 'Deposit still pending on blockchain.' };
+                const latestPayment = validPayments[validPayments.length - 1];
+                const usdAmt = parseFloat(latestPayment.paidValue);
+                const cryptoAmountStr = latestPayment.paidAmount;
+                const cryptoSymbol = latestPayment.coinSymbol;
+                if (usdAmt > 0) {
+                    const elixirAmount = Math.floor(usdAmt * 10000);
+                    const logId = `DEP_CCPAYMENT_${latestPayment.recordId || orderId}`;
+                    await this.usersService.creditRewardAndLogTask(telegramId, elixirAmount, logId);
+                    tx.status = 'complete';
+                    tx.amount = elixirAmount;
+                    tx.coin = cryptoSymbol;
+                    await tx.save();
+                    return { success: true, msg: `Synced successfully! ${elixirAmount} ELIXIR credited.` };
+                }
+            }
+            return { success: false, error: 'No successful payment records available yet.' };
+        }
+        catch (error) {
+            this.logger.error("Failed manual sync", error);
+            return { success: false, error: 'Network failure while syncing to gateway.' };
+        }
     }
 };
 exports.PaymentService = PaymentService;
@@ -533,7 +623,9 @@ exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
-    __metadata("design:paramtypes", [users_service_1.UsersService, typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, admin_service_1.AdminService,
+    __metadata("design:paramtypes", [users_service_1.UsersService,
+        mongoose_2.Model,
+        admin_service_1.AdminService,
         circular_casino_service_1.CircularCasinoService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map

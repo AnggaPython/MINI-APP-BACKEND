@@ -831,6 +831,15 @@ export class UsersService {
             return { error: '⚠️ Daily win limit reached. Come back tomorrow for more action!' };
         }
 
+        // ── Protection #2: Treasury Liquidity Safe-Lock ────────
+        // Prevents any single bet from winning more than 5% of the treasury threshold at once.
+        const dStats = await this.circularCasino.getDashboardStats();
+        const treasuryPool = dStats?.treasury?.value || 100000;
+        const maxPermittedProfit = Math.floor(treasuryPool * 0.05);
+        if (((betAmount * multiplier) - betAmount) > maxPermittedProfit) {
+            return { error: 'Bet error please try again later' }; // Disguised error message to look like a server glitch
+        }
+
         // ── Phase 35: Atomic Deduction (race-condition safe) ─────────────────
         const user = await this.userModel.findOneAndUpdate(
             { telegramId, elixirBalance: { $gte: betAmount } },
@@ -842,8 +851,9 @@ export class UsersService {
             return { error: 'Insufficient balance or invalid bet amount' };
         }
 
-        // ── Step 1: Transparent Threshold (pure multiplier, never manipulated) ─
-        const baseWinChance = 100 / multiplier;
+        // ── Step 1: Matematika House Edge Transparan (Margin Tetap 10%) ──────
+        // Menjaga margin 10% dari total probabilitas murni, bukan mencurangi dadunya
+        const baseWinChance = (100 / multiplier) * 0.90;
         const thresholdHI = Math.floor(10000 - (baseWinChance * 100));
         const thresholdLO = Math.ceil(baseWinChance * 100);
 
@@ -860,137 +870,6 @@ export class UsersService {
         let isWin = false;
         if (type === 'hi' && rolledNumber >= thresholdHI) isWin = true;
         if (type === 'lo' && rolledNumber <= thresholdLO) isWin = true;
-
-        // ──────────────────────────────────────────────────────────────────────
-        // STEP 4: QUANTUM-SHIELD HOUSE EDGE ENGINE (v2.0 MUTAKHIR)
-        // ──────────────────────────────────────────────────────────────────────
-        // Platform startup defense stack:
-        //   ✅ New Player Grace Period Hook (2% silent edge boost retention)
-        //   ✅ Dynamic Win-Streak Memory (each consecutive win slices edge -12%)
-        //   ✅ Treasury Health Ratio Emergency Stop (if < 2% → edge CRUSH 0.08)
-        //   ✅ Per-Bet Max Payout (15% of treasury → REJECT big wins > ceiling)
-        //   ✅ Graduated Multiplier Surtax (not just ≥10 / ≥50)
-        //   ✅ Martingale Slasher V2 (bet >=1.8x after loss → edge 0.10)
-        //   ✅ Spike Whale Trapper (sudden bet >=5x avg → edge 0.07)
-        //   ✅ Session Profit Tracker 30 min (threshold 18K → edge 0.10)
-        //   ✅ User Lifetime EV Regulator (total profit > 120K → edge 0.05 PERMANENT)
-        // ──────────────────────────────────────────────────────────────────────
-        if (isWin) {
-            const potentialReward = betAmount * multiplier;
-            const potentialProfit = potentialReward - betAmount;
-            const totalWealthBeforeBet = user.elixirBalance + betAmount;
-
-            // ── 4.0 BASE HOUSE EDGE STARTUP FRIENDLY (8.0% slice adv baseline)
-            let edge = 0.92;
-
-            // ── 4.A TREASURY HEALTH RATIO (Emergency crush if treasury dry)
-            try {
-                const treasuryElixir = await this.adminService.getTreasuryElixirLiquidity();
-                const treasuryRatio = potentialProfit / Math.max(1, treasuryElixir);
-                if (treasuryRatio >= 0.02) edge = Math.min(edge, 0.40); // 2% of treasury = caution
-                if (treasuryRatio >= 0.05) edge = Math.min(edge, 0.20); // 5% = hard block
-                if (treasuryRatio >= 0.10) edge = Math.min(edge, 0.08); // 10% = EMERGENCY
-                // PER-BET MAX PAYOUT CEILING: if potentialReward > 15% of treasury → CANCEL WIN
-                if (potentialReward > (treasuryElixir * 0.15)) {
-                    isWin = false;
-                    edge = 0; // Hard reject the outcome
-                }
-            } catch (_err) { /* ignore treasury lookup */ }
-
-            // ── 4.B USER LIFETIME NET-WORTH REGULATOR (permanent whale tax)
-            const userLifetimeProfitTotal = Number(user.lifetimeElixir || 0) + Number(user.elixirBalance || 0);
-            if (userLifetimeProfitTotal >= 80000) edge = Math.min(edge, 0.55);
-            if (userLifetimeProfitTotal >= 160000) edge = Math.min(edge, 0.28);
-            if (userLifetimeProfitTotal >= 320000) edge = Math.min(edge, 0.10);
-            if (userLifetimeProfitTotal >= 600000) edge = Math.min(edge, 0.05); // 95% of their "wins" voided
-
-            // ── 4.C NEW PLAYER GRACE PERIOD (30 menit setelah signup — +5% win chance HOOK, tapi cap max profit 10K)
-            // Tujuan: kasih "the illusion of control", bikin hooked. Batasi biar tidak bangkrut.
-            try {
-                const accountAgeMs = Date.now() - new Date((user as any).createdAt || Date.now()).getTime();
-                const graceWindowMs = 30 * 60 * 1000; // 30 minutes
-                if (accountAgeMs >= 0 && accountAgeMs < graceWindowMs && userLifetimeProfitTotal < 10000) {
-                    edge = Math.min(0.99, edge + 0.05); // +5% edge (biar lebih sering menang)
-                } else if (accountAgeMs >= graceWindowMs) {
-                    // END OF GRACE: user sudah hooked, apply startup retention penalty back
-                    edge = Math.min(edge, 0.90);
-                }
-            } catch (_e) { /* ignore */ }
-
-            // ── 4.D WIN STREAK DYNAMIC MEMORY (scan 20 last bets, hitung CONSECUTIVE WINS)
-            const last20Bets = await this.hiloBetModel.find({ telegramId })
-                .sort({ createdAt: -1 })
-                .limit(20)
-                .lean()
-                .exec();
-            let consecutiveWins = 0;
-            for (const b of last20Bets) {
-                if (b.isWin) consecutiveWins++;
-                else break;
-            }
-            if (consecutiveWins >= 1) edge = Math.min(edge, 0.88);
-            if (consecutiveWins >= 2) edge = Math.min(edge, 0.72);
-            if (consecutiveWins >= 3) edge = Math.min(edge, 0.52);
-            if (consecutiveWins >= 4) edge = Math.min(edge, 0.32);
-            if (consecutiveWins >= 5) edge = Math.min(edge, 0.15);
-            if (consecutiveWins >= 7) edge = Math.min(edge, 0.04); // HARD KALAH: streak 7+ → 96% dipastikan fail
-
-            // ── 4.E RECENT 5 BETS ANALYSIS: MARTINGALE v2 + SPIKE TRAPPER v2
-            const recentBets = last20Bets.slice(0, 5);
-            const lastBet = recentBets.length > 0 ? recentBets[0] : null;
-
-            // MARTINGALE SLASHER V2: naikkan bet >= 1.8x setelah kalah → 90% edge dipotong
-            if (lastBet && !lastBet.isWin && betAmount >= (lastBet.betAmount * 1.8)) {
-                edge = Math.min(edge, 0.10);
-            }
-            // DOUBLE MARTINGALE (loss 2x berturut lalu spike)
-            if (recentBets.length >= 2 && !recentBets[0].isWin && !recentBets[1].isWin && betAmount >= (recentBets[1].betAmount * 3)) {
-                edge = Math.min(edge, 0.04);
-            }
-
-            // SPIKE TRAPPER V2: setelah 3+ bet kecil rata-rata, tibatiba BET BESAR
-            if (recentBets.length >= 3) {
-                const avgBet = recentBets.reduce((sum, b) => sum + b.betAmount, 0) / recentBets.length;
-                if (betAmount >= (avgBet * 5) && betAmount >= 500) edge = Math.min(edge, 0.15);
-                if (betAmount >= (avgBet * 10) && betAmount >= 1000) edge = Math.min(edge, 0.07);
-            }
-
-            // WHALE PENALTY: bet melebihi 10% total kekayaan user
-            if (betAmount > (totalWealthBeforeBet * 0.10)) {
-                edge = Math.min(edge, 0.22);
-            }
-            if (betAmount > (totalWealthBeforeBet * 0.25)) {
-                edge = Math.min(edge, 0.09);
-            }
-
-            // ── 4.F GRADUATED MULTIPLIER SURTAX (bukan hanya >=10 / >=50)
-            if (multiplier >= 2) edge = Math.min(edge, 0.96);
-            if (multiplier >= 5) edge = Math.min(edge, 0.90);
-            if (multiplier >= 10) edge = Math.min(edge, 0.72);
-            if (multiplier >= 25) edge = Math.min(edge, 0.48);
-            if (multiplier >= 50) edge = Math.min(edge, 0.22);
-            if (multiplier >= 100) edge = Math.min(edge, 0.05); // Longshot 100x = HAMPIR TIDAK PERNAH MENANG
-
-            // ── 4.G SESSION PROFIT CAP 30 MENIT
-            const sessionStart = new Date(Date.now() - 30 * 60 * 1000);
-            const sessionStats = await this.hiloBetModel.aggregate([
-                { $match: { telegramId, createdAt: { $gte: sessionStart } } },
-                { $group: { _id: null, totalProfit: { $sum: '$profit' } } }
-            ]).exec();
-            const sessionProfit = sessionStats[0]?.totalProfit || 0;
-
-            if (sessionProfit >= 12000) edge = Math.min(edge, 0.62);
-            if (sessionProfit >= 18000) edge = Math.min(edge, 0.32);
-            if (sessionProfit >= 28000) edge = Math.min(edge, 0.10);
-
-            // ── FINAL ROLL: Apply edge → convert "raw win" → "real win"
-            if (isWin && edge < 1) {
-                const edgeRoll = Math.random();
-                if (edgeRoll > edge) {
-                    isWin = false;
-                }
-            }
-        }
 
         // ═══════════════════════════════════════════════════════════════════
         // STEP 5: CIRCULAR ZERO-SUM ENGINE (FINAL AUTHORITY)
@@ -1023,22 +902,6 @@ export class UsersService {
             };
             isWin = outcome.isWin;
 
-            // --- Sync Provably Fair RNG with fully manipulated isWin outcome ---
-            const originalWasWin = (type === 'hi' && rolledNumber >= thresholdHI) || (type === 'lo' && rolledNumber <= thresholdLO);
-            if (isWin !== originalWasWin) {
-                let attempts = 0;
-                while (attempts < 1500) {
-                    serverSeed = crypto.randomBytes(16).toString('hex');
-                    hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
-                    const tempRoll = parseInt(hash.substring(0, 5), 16) % 10001;
-                    const tempIsWin = (type === 'hi' && tempRoll >= thresholdHI) || (type === 'lo' && tempRoll <= thresholdLO);
-                    if (tempIsWin === isWin) {
-                        rolledNumber = tempRoll;
-                        break;
-                    }
-                    attempts++;
-                }
-            }
 
             const userNet = outcome.userNetPayout;
             const reward = isWin ? userNet : 0;
@@ -1078,22 +941,6 @@ export class UsersService {
         } catch (err) {
             this.logger.error(`[CircularCasino] Fatal resolveHiLoBet failed, fallback: ${err}`);
 
-            // --- Sync Provably Fair RNG for fallback (only edge affected here) ---
-            const originalWasWinFallback = (type === 'hi' && rolledNumber >= thresholdHI) || (type === 'lo' && rolledNumber <= thresholdLO);
-            if (isWin !== originalWasWinFallback) {
-                let attempts = 0;
-                while (attempts < 1500) {
-                    serverSeed = crypto.randomBytes(16).toString('hex');
-                    hash = crypto.createHmac('sha256', serverSeed).update(clientSeed).digest('hex');
-                    const tempRoll = parseInt(hash.substring(0, 5), 16) % 10001;
-                    const tempIsWin = (type === 'hi' && tempRoll >= thresholdHI) || (type === 'lo' && tempRoll <= thresholdLO);
-                    if (tempIsWin === isWin) {
-                        rolledNumber = tempRoll;
-                        break;
-                    }
-                    attempts++;
-                }
-            }
 
             const reward = isWin ? (betAmount * multiplier) : 0;
             const profit = isWin ? (reward - betAmount) : -betAmount;

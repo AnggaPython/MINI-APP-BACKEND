@@ -13,6 +13,7 @@ exports.TransactionSchema = exports.Transaction = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
 let Transaction = class Transaction {
     telegramId;
+    orderId;
     type;
     coin;
     amount;
@@ -24,6 +25,10 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
 ], Transaction.prototype, "telegramId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ index: true }),
+    __metadata("design:type", String)
+], Transaction.prototype, "orderId", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
