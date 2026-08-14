@@ -1,17 +1,17 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { ScheduleModule } from '@nestjs/schedule';
-import { UsersModule } from './users/users.module';
-import { CampaignsModule } from './campaigns/campaigns.module';
-import { BankModule } from './bank/bank.module';
-import { AchievementsModule } from './achievements/achievements.module';
-import { PaymentModule } from './payment/payment.module';
-import { HistoryModule } from './history/history.module';
-import { AdminModule } from './admin/admin.module';
-import { BotModule } from './bot/bot.module';
+import { Module } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { MongooseModule } from "@nestjs/mongoose";
+import { AppController } from "./app.controller";
+import { AppService } from "./app.service";
+import { ScheduleModule } from "@nestjs/schedule";
+import { UsersModule } from "./users/users.module";
+import { CampaignsModule } from "./campaigns/campaigns.module";
+import { BankModule } from "./bank/bank.module";
+import { AchievementsModule } from "./achievements/achievements.module";
+import { PaymentModule } from "./payment/payment.module";
+import { HistoryModule } from "./history/history.module";
+import { AdminModule } from "./admin/admin.module";
+import { BotModule } from "./bot/bot.module";
 
 @Module({
   imports: [
@@ -21,7 +21,7 @@ import { BotModule } from './bot/bot.module';
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI'),
+        uri: configService.get<string>("MONGODB_URI"),
       }),
       inject: [ConfigService],
     }),
@@ -38,4 +38,4 @@ import { BotModule } from './bot/bot.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}

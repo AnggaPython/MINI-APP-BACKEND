@@ -1,10 +1,10 @@
-import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
-import { Public } from './auth/telegram-user.decorator';
+import { Controller, Get } from "@nestjs/common";
+import { AppService } from "./app.service";
+import { Public } from "./auth/telegram-user.decorator";
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) { }
+  constructor(private readonly appService: AppService) {}
 
   @Public()
   @Get()
