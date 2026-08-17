@@ -893,6 +893,9 @@ export class UsersService {
         return {
             elixirBalance: user?.elixirBalance || 0,
             cryptoBalances: user?.cryptoBalances || {},
+            ownedPickaxes: user?.ownedPickaxes?.length
+                ? user.ownedPickaxes
+                : ["Common"],
             cwalletUid: user?.cwalletUid || null,
             solanaAddress: user?.solanaAddress || null,
             withdrawLimits,

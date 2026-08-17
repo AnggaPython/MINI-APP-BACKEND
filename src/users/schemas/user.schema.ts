@@ -38,6 +38,14 @@ export class User {
   @Prop({ type: Object, default: {} })
   cryptoBalances: Record<string, number>;
 
+  // Server-authoritative pickaxe ownership — Common is granted to every new user
+  @Prop({ type: [String], default: ["Common"] })
+  ownedPickaxes: string[];
+
+  // Server-side audit trail of paid repairs: tier -> { count, lastRepairAt }
+  @Prop({ type: Object, default: {} })
+  pickaxeRepairs: Record<string, { count: number; lastRepairAt: Date }>;
+
   @Prop({ default: 0 })
   elixirBalance: number;
 

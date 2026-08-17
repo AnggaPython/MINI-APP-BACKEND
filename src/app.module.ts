@@ -12,6 +12,8 @@ import { PaymentModule } from "./payment/payment.module";
 import { HistoryModule } from "./history/history.module";
 import { AdminModule } from "./admin/admin.module";
 import { BotModule } from "./bot/bot.module";
+import { MinerStoneModule } from "./miner-stone/miner-stone.module";
+import { TradeSpotModule } from "./trade-spot/trade-spot.module";
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { BotModule } from "./bot/bot.module";
     HistoryModule,
     AdminModule,
     BotModule,
+    MinerStoneModule,
+    TradeSpotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

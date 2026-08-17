@@ -1,0 +1,119 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TradeSpotController = void 0;
+const common_1 = require("@nestjs/common");
+const trade_spot_service_1 = require("./trade-spot.service");
+const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
+let TradeSpotController = class TradeSpotController {
+    tradeSpotService;
+    constructor(tradeSpotService) {
+        this.tradeSpotService = tradeSpotService;
+    }
+    async ticker() {
+        return this.tradeSpotService.getTicker();
+    }
+    async orderbook(depth) {
+        return this.tradeSpotService.getOrderBook(Number(depth) || 10);
+    }
+    async trades(limit) {
+        return this.tradeSpotService.getTrades(Number(limit) || 30);
+    }
+    async stats() {
+        return this.tradeSpotService.getStats();
+    }
+    async holdings(telegramId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.tradeSpotService.getHoldings(telegramId);
+    }
+    async openOrders(telegramId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.tradeSpotService.getOpenOrders(telegramId);
+    }
+    async placeOrder(telegramId, body) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.tradeSpotService.placeOrder(telegramId, body || {});
+    }
+    async cancelOrder(telegramId, body) {
+        if (!telegramId || !body?.orderId) {
+            return { success: false, error: "Missing orderId" };
+        }
+        return this.tradeSpotService.cancelOrder(telegramId, String(body.orderId));
+    }
+};
+exports.TradeSpotController = TradeSpotController;
+__decorate([
+    (0, common_1.Get)("ticker"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "ticker", null);
+__decorate([
+    (0, common_1.Get)("orderbook"),
+    __param(0, (0, common_1.Query)("depth")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "orderbook", null);
+__decorate([
+    (0, common_1.Get)("trades"),
+    __param(0, (0, common_1.Query)("limit")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "trades", null);
+__decorate([
+    (0, common_1.Get)("stats"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "stats", null);
+__decorate([
+    (0, common_1.Get)("holdings"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "holdings", null);
+__decorate([
+    (0, common_1.Get)("open-orders"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "openOrders", null);
+__decorate([
+    (0, common_1.Post)("order"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "placeOrder", null);
+__decorate([
+    (0, common_1.Post)("cancel-order"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "cancelOrder", null);
+exports.TradeSpotController = TradeSpotController = __decorate([
+    (0, common_1.Controller)("trade-spot"),
+    __metadata("design:paramtypes", [trade_spot_service_1.TradeSpotService])
+], TradeSpotController);
+//# sourceMappingURL=trade-spot.controller.js.map
