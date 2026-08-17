@@ -321,7 +321,13 @@ export class MinerStoneService {
 
     // ONE atomic operation: balance guards live inside the query, so a race
     // can never spend more than the user holds or repair without paying.
-    const filter: Record<string, any> = { telegramId, ownedPickaxes: tier };
+    // The $or also covers legacy docs that predate the ownedPickaxes field
+    // (missing field ⇒ treated as owning Common via the fallback above), so a
+    // fresh user with mined IRON is never locked out of repairing.
+    const filter: Record<string, any> = {
+      telegramId,
+      $or: [{ ownedPickaxes: { $in: owned } }, { ownedPickaxes: { $exists: false } }],
+    };
     const inc: Record<string, number> = {};
     for (const [resource, amount] of Object.entries(cost)) {
       filter[`cryptoBalances.${resource}`] = { $gte: amount };
@@ -335,6 +341,8 @@ export class MinerStoneService {
         {
           $inc: { ...inc, [`pickaxeRepairs.${tier}.count`]: 1 },
           $set: { [`pickaxeRepairs.${tier}.lastRepairAt`]: now },
+          // Idempotent backfill — legacy docs missing the field get Common (+ tier) here
+          $addToSet: { ownedPickaxes: { $each: ["Common", tier] } },
         },
         { returnDocument: "after" },
       )
