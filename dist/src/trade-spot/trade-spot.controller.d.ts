@@ -39,9 +39,9 @@ export declare class TradeSpotController {
         success: boolean;
         lastBotRunAt: Date;
         botRunCount: number;
-        botTrades: any;
-        userTrades: any;
-        totalTrades: any;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -50,6 +50,44 @@ export declare class TradeSpotController {
         lastMid: number;
         feePct: number;
         spreadPct: number;
+    }>;
+    info(): Promise<{
+        success: boolean;
+        pair: string;
+        base: string;
+        quote: string;
+        last: number;
+        day: {
+            trades: any;
+            volume: number;
+            quoteVolume: number;
+            fees: number;
+            buyVolume: number;
+            sellVolume: number;
+            botVolume: number;
+            userVolume: number;
+        };
+        lifetime: {
+            trades: number;
+            botTrades: number;
+            userTrades: number;
+            volume: number;
+            fees: number;
+            spreadProfit: number;
+        };
+        pool: {
+            elixirReserve: number;
+            elixcoinReserve: number;
+            lastMid: number;
+            feePct: number;
+            spreadPct: number;
+        };
+        hourly: {
+            hour: number;
+            label: string;
+            volume: number;
+            count: number;
+        }[];
     }>;
     holdings(telegramId: string): Promise<{
         success: boolean;
@@ -68,6 +106,17 @@ export declare class TradeSpotController {
         success: boolean;
         error: string;
     }>;
+    userTrades(telegramId: string, page?: string, limit?: string): Promise<{
+        success: boolean;
+        trades: any;
+        page: number;
+        limit: number;
+        hasMore: boolean;
+        total: number;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
     placeOrder(telegramId: string, body: {
         side?: string;
         type?: string;
@@ -82,7 +131,8 @@ export declare class TradeSpotController {
             amount: number;
             total: number;
             fee: number;
-            source: "BOT" | "USER";
+            feeCurrency: "ELIXIR" | "ELIXCOIN";
+            source: "USER" | "BOT";
         };
         balances: {
             elixir: number;
@@ -96,8 +146,8 @@ export declare class TradeSpotController {
         order: {
             id: string;
             side: string;
-            price: any;
-            amount: any;
+            price: number;
+            amount: number;
             status: string;
         };
         message: string;
@@ -110,7 +160,13 @@ export declare class TradeSpotController {
         orderId?: string;
     }): Promise<{
         success: boolean;
-        order: any;
+        order: import("mongoose").Document<unknown, {}, import("./schemas/open-order.schema").OpenOrder, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/open-order.schema").OpenOrder & {
+            _id: import("mongoose").Types.ObjectId;
+        } & {
+            __v: number;
+        } & {
+            id: string;
+        };
         error?: undefined;
     } | {
         success: boolean;

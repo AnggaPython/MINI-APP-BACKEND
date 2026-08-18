@@ -19,6 +19,7 @@ const user_net_equity_schema_1 = require("./schemas/user-net-equity.schema");
 const monthly_book_cycle_schema_1 = require("./schemas/monthly-book-cycle.schema");
 const user_schema_1 = require("../users/schemas/user.schema");
 const users_module_1 = require("../users/users.module");
+const trade_spot_module_1 = require("../trade-spot/trade-spot.module");
 let AdminModule = class AdminModule {
 };
 exports.AdminModule = AdminModule;
@@ -34,6 +35,7 @@ exports.AdminModule = AdminModule = __decorate([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
             ]),
             (0, common_1.forwardRef)(() => users_module_1.UsersModule),
+            trade_spot_module_1.TradeSpotModule,
         ],
         controllers: [admin_controller_1.AdminController],
         providers: [admin_service_1.AdminService, circular_casino_service_1.CircularCasinoService],

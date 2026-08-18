@@ -19,6 +19,6 @@ import { User, UserSchema } from "../users/schemas/user.schema";
   ],
   controllers: [TradeSpotController],
   providers: [TradeSpotService, MarketMakerService],
-  exports: [TradeSpotService],
+  exports: [TradeSpotService, MarketMakerService],
 })
 export class TradeSpotModule {}

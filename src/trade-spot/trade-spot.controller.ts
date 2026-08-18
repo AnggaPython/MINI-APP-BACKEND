@@ -24,10 +24,16 @@ export class TradeSpotController {
     return this.tradeSpotService.getTrades(Number(limit) || 30);
   }
 
-  /** Market-maker + platform pool stats for the Bots tab. */
+  /** Market-maker + platform pool stats (legacy Bots-tab payload). */
   @Get("stats")
   async stats() {
     return this.tradeSpotService.getStats();
+  }
+
+  /** INFO panel: 24h totals + lifetime + chart data for ELIXIR & ELIXCOIN. */
+  @Get("info")
+  async info() {
+    return this.tradeSpotService.getInfo();
   }
 
   /** The caller's tradable balances (ELIXIR + ELIXCOIN). */
@@ -45,9 +51,27 @@ export class TradeSpotController {
   }
 
   /**
+   * The caller's own trade history — newest first, 5 per page. The frontend
+   * "Load more" button keeps fetching the next page (5 more rows each).
+   */
+  @Get("user-trades")
+  async userTrades(
+    @User("telegramId") telegramId: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+  ) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return this.tradeSpotService.getUserTrades(
+      telegramId,
+      Number(page) || 1,
+      Number(limit) || 5,
+    );
+  }
+
+  /**
    * Place an order — market (instant) or limit (instant if crossing, else rests).
    * Server-authoritative: balances are guarded + moved in ONE atomic update,
-   * the platform pool is the counterparty, and 2.5% fee + spread slip accrue
+   * the platform pool is the counterparty, and 1.5% fee + spread slip accrue
    * to the platform on every fill.
    */
   @Post("order")

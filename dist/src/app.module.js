@@ -23,6 +23,7 @@ const admin_module_1 = require("./admin/admin.module");
 const bot_module_1 = require("./bot/bot.module");
 const miner_stone_module_1 = require("./miner-stone/miner-stone.module");
 const trade_spot_module_1 = require("./trade-spot/trade-spot.module");
+const case_box_module_1 = require("./case-box/case-box.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -50,6 +51,7 @@ exports.AppModule = AppModule = __decorate([
             bot_module_1.BotModule,
             miner_stone_module_1.MinerStoneModule,
             trade_spot_module_1.TradeSpotModule,
+            case_box_module_1.CaseBoxModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

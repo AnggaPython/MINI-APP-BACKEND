@@ -19,6 +19,7 @@ import {
 } from "./schemas/monthly-book-cycle.schema";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import { UsersModule } from "../users/users.module";
+import { TradeSpotModule } from "../trade-spot/trade-spot.module";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { UsersModule } from "../users/users.module";
       { name: User.name, schema: UserSchema },
     ]),
     forwardRef(() => UsersModule),
+    TradeSpotModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, CircularCasinoService],

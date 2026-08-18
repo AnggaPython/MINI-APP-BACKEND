@@ -1,33 +1,45 @@
 import { AdminService } from "./admin.service";
 import { CircularCasinoService } from "./circular-casino.service";
 import { UsersService } from "../users/users.service";
+import { TradeSpotService } from "../trade-spot/trade-spot.service";
+import { MarketMakerService } from "../trade-spot/market-maker.service";
 export declare class AdminController {
     private readonly adminService;
     private readonly usersService;
     private readonly circularCasino;
-    constructor(adminService: AdminService, usersService: UsersService, circularCasino: CircularCasinoService);
+    private readonly tradeSpotService;
+    private readonly marketMakerService;
+    constructor(adminService: AdminService, usersService: UsersService, circularCasino: CircularCasinoService, tradeSpotService: TradeSpotService, marketMakerService: MarketMakerService);
     login(body: any, req: any): Promise<{
         success: boolean;
-        token: any;
-        role: any;
+        token: string;
+        role: string;
         error?: undefined;
     } | {
         error: string;
     }>;
     getFeed(): Promise<{
-        totalUsers: any;
-        totalElixir: any;
-        totalAdRevenueUSD: any;
-        recentUsers: any;
+        totalUsers: number;
+        totalElixir: number;
+        totalAdRevenueUSD: number;
+        recentUsers: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         success: boolean;
     }>;
     getTopUsers(page?: string, limit?: string): Promise<{
-        users: any;
+        users: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         page: number;
         perPage: number;
-        totalUsers: any;
+        totalUsers: number;
         hasMore: boolean;
-        loadedCount: any;
+        loadedCount: number;
         success: boolean;
     }>;
     getProfitBalances(): Promise<{
@@ -95,7 +107,7 @@ export declare class AdminController {
     }>;
     getProfitLogs(coin: string, page?: string, limit?: string): Promise<{
         success: boolean;
-        logs: any[];
+        logs: import("./schemas/profit-log.schema").ProfitLogDocument[];
         pagination: {
             page: number;
             perPage: number;
@@ -187,5 +199,72 @@ export declare class AdminController {
         success: boolean;
         monthlyBook: any;
         treasury: any;
+    }>;
+    getTradeSpotBot(): Promise<{
+        enabled: boolean;
+        intervalMinutes: number;
+        lastBotRunAt: Date;
+        nextBotRunAt: Date;
+        success: boolean;
+        botRunCount: number;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
+        lifetimeVolume: number;
+        platformFeesAccumulated: number;
+        spreadProfitAccumulated: number;
+        elixirReserve: number;
+        elixcoinReserve: number;
+        lastMid: number;
+        feePct: number;
+        spreadPct: number;
+    }>;
+    updateTradeSpotBot(body: {
+        enabled?: boolean;
+        intervalMinutes?: number;
+    }): Promise<{
+        enabled: boolean;
+        intervalMinutes: number;
+        lastBotRunAt: Date;
+        nextBotRunAt: Date;
+        success: boolean;
+        botRunCount: number;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
+        lifetimeVolume: number;
+        platformFeesAccumulated: number;
+        spreadProfitAccumulated: number;
+        elixirReserve: number;
+        elixcoinReserve: number;
+        lastMid: number;
+        feePct: number;
+        spreadPct: number;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    runTradeSpotBotNow(): Promise<{
+        runNow: {
+            ran: boolean;
+            count: number;
+        };
+        enabled: boolean;
+        intervalMinutes: number;
+        lastBotRunAt: Date;
+        nextBotRunAt: Date;
+        success: boolean;
+        botRunCount: number;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
+        lifetimeVolume: number;
+        platformFeesAccumulated: number;
+        spreadProfitAccumulated: number;
+        elixirReserve: number;
+        elixcoinReserve: number;
+        lastMid: number;
+        feePct: number;
+        spreadPct: number;
     }>;
 }

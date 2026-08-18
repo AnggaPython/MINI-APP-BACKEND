@@ -12,6 +12,8 @@ import { CircularCasinoService } from "./circular-casino.service";
 import { UsersService } from "../users/users.service";
 import { AdminAuthGuard } from "../auth/admin.guard";
 import { Public } from "../auth/telegram-user.decorator";
+import { TradeSpotService } from "../trade-spot/trade-spot.service";
+import { MarketMakerService } from "../trade-spot/market-maker.service";
 
 @Controller("admin")
 @UseGuards(AdminAuthGuard)
@@ -20,6 +22,8 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly usersService: UsersService,
     private readonly circularCasino: CircularCasinoService,
+    private readonly tradeSpotService: TradeSpotService,
+    private readonly marketMakerService: MarketMakerService,
   ) {}
 
   @Public()
@@ -225,6 +229,33 @@ export class AdminController {
       success: true,
       monthlyBook: stats.monthlyBook,
       treasury: stats.adminTreasury,
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Trade Spot — Market-Maker Bot control
+  // Bot info & controls live HERE (admin-only), not in the user UI.
+  // ──────────────────────────────────────────────────────────────────
+
+  @Get("trade-spot/bot")
+  async getTradeSpotBot() {
+    return this.tradeSpotService.getBotStatus();
+  }
+
+  @Post("trade-spot/bot")
+  async updateTradeSpotBot(
+    @Body() body: { enabled?: boolean; intervalMinutes?: number },
+  ) {
+    return this.tradeSpotService.updateBotConfig(body || {});
+  }
+
+  @Post("trade-spot/bot/run-now")
+  async runTradeSpotBotNow() {
+    const res = await this.marketMakerService.runNow();
+    const status = await this.tradeSpotService.getBotStatus();
+    return {
+      ...status,
+      runNow: res,
     };
   }
 }

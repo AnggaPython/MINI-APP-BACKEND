@@ -33,6 +33,9 @@ let TradeSpotController = class TradeSpotController {
     async stats() {
         return this.tradeSpotService.getStats();
     }
+    async info() {
+        return this.tradeSpotService.getInfo();
+    }
     async holdings(telegramId) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
@@ -42,6 +45,11 @@ let TradeSpotController = class TradeSpotController {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
         return this.tradeSpotService.getOpenOrders(telegramId);
+    }
+    async userTrades(telegramId, page, limit) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.tradeSpotService.getUserTrades(telegramId, Number(page) || 1, Number(limit) || 5);
     }
     async placeOrder(telegramId, body) {
         if (!telegramId)
@@ -83,6 +91,12 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "stats", null);
 __decorate([
+    (0, common_1.Get)("info"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "info", null);
+__decorate([
     (0, common_1.Get)("holdings"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
@@ -96,6 +110,15 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "openOrders", null);
+__decorate([
+    (0, common_1.Get)("user-trades"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Query)("page")),
+    __param(2, (0, common_1.Query)("limit")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "userTrades", null);
 __decorate([
     (0, common_1.Post)("order"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),

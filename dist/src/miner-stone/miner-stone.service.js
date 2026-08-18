@@ -45,7 +45,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var MinerStoneService_1;
-var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MinerStoneService = exports.PICKAXE_COSTS = exports.PICKAXE_TIERS = exports.ELIX_RATES = void 0;
 const common_1 = require("@nestjs/common");
@@ -90,11 +89,11 @@ const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 50;
 const ZONK_CHANCE = 0.1;
 exports.ELIX_RATES = {
-    IRON: 0.05,
-    COPPER: 0.075,
-    SILVER: 0.5,
-    GOLD: 5,
-    DIAMOND: 10,
+    IRON: 0.00005,
+    COPPER: 0.000075,
+    SILVER: 0.1,
+    GOLD: 1,
+    DIAMOND: 20,
 };
 exports.PICKAXE_TIERS = [
     "Common",
@@ -268,7 +267,10 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         if (!owned.includes(tier)) {
             return { success: false, error: "Pickaxe not owned" };
         }
-        const filter = { telegramId, ownedPickaxes: tier };
+        const filter = {
+            telegramId,
+            $or: [{ ownedPickaxes: { $in: owned } }, { ownedPickaxes: { $exists: false } }],
+        };
         const inc = {};
         for (const [resource, amount] of Object.entries(cost)) {
             filter[`cryptoBalances.${resource}`] = { $gte: amount };
@@ -279,6 +281,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             .findOneAndUpdate(filter, {
             $inc: { ...inc, [`pickaxeRepairs.${tier}.count`]: 1 },
             $set: { [`pickaxeRepairs.${tier}.lastRepairAt`]: now },
+            $addToSet: { ownedPickaxes: { $each: ["Common", tier] } },
         }, { returnDocument: "after" })
             .exec();
         if (!updated) {
@@ -329,6 +332,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             return {
                 success: true,
                 zonk: true,
+                adRequired: stone.tier === "Medium" || stone.tier === "Rare",
                 stone: {
                     stoneId: stone._id.toString(),
                     tier: stone.tier,
@@ -351,6 +355,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         return {
             success: true,
             zonk: false,
+            adRequired: stone.tier === "Medium" || stone.tier === "Rare",
             stone: {
                 stoneId: stone._id.toString(),
                 tier: stone.tier,
@@ -368,6 +373,24 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             return {
                 success: false,
                 error: "User account not found. Please reload the app.",
+            };
+        }
+        const pending = await this.miningStoneModel
+            .findOne({ _id: stoneId, telegramId, status: "claimed", claimAction: null })
+            .lean()
+            .exec();
+        if (!pending) {
+            return {
+                success: false,
+                error: "Rewards already claimed or stone not found.",
+            };
+        }
+        const adRequired = pending.tier === "Medium" || pending.tier === "Rare";
+        if (adRequired && (user.adTickets || 0) < 1) {
+            return {
+                success: false,
+                adRequired: true,
+                error: "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
             };
         }
         const stone = await this.miningStoneModel
@@ -393,9 +416,20 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 for (const [resource, amount] of Object.entries(rewards)) {
                     inc[`cryptoBalances.${resource}`] = amount;
                 }
-                await this.userModel
-                    .findOneAndUpdate({ telegramId }, { $inc: inc })
+                if (adRequired)
+                    inc["adTickets"] = -1;
+                const saved = await this.userModel
+                    .findOneAndUpdate(adRequired
+                    ? { telegramId, adTickets: { $gte: 1 } }
+                    : { telegramId }, { $inc: inc })
                     .exec();
+                if (adRequired && !saved) {
+                    return {
+                        success: false,
+                        adRequired: true,
+                        error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Save again to retry.",
+                    };
+                }
                 Object.assign(credited, rewards);
             }
             else {
@@ -406,21 +440,36 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 }
                 elixir = Math.round(elixir * 100) / 100;
                 if (elixir > 0) {
-                    await this.userModel
-                        .findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: elixir, lifetimeElixir: elixir } })
+                    const inc = {
+                        "cryptoBalances.ELIXCOIN": elixir,
+                    };
+                    if (adRequired)
+                        inc["adTickets"] = -1;
+                    const sold = await this.userModel
+                        .findOneAndUpdate(adRequired
+                        ? { telegramId, adTickets: { $gte: 1 } }
+                        : { telegramId }, { $inc: inc })
                         .exec();
+                    if (adRequired && !sold) {
+                        return {
+                            success: false,
+                            adRequired: true,
+                            error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
+                        };
+                    }
                 }
             }
         }
         const fresh = await this.userModel.findOne({ telegramId }).exec();
+        const freshCrypto = (fresh?.cryptoBalances || {});
         return {
             success: true,
             action,
             stoneId: stone._id.toString(),
             credited,
             elixir,
-            cryptoBalances: fresh?.cryptoBalances || {},
-            elixirBalance: fresh?.elixirBalance || 0,
+            cryptoBalances: freshCrypto,
+            elixcoinBalance: freshCrypto.ELIXCOIN || 0,
         };
     }
     async history(telegramId) {
@@ -447,6 +496,8 @@ exports.MinerStoneService = MinerStoneService = MinerStoneService_1 = __decorate
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(mining_stone_schema_1.MiningStone.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
+        users_service_1.UsersService])
 ], MinerStoneService);
 //# sourceMappingURL=miner-stone.service.js.map

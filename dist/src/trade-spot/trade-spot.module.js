@@ -31,7 +31,7 @@ exports.TradeSpotModule = TradeSpotModule = __decorate([
         ],
         controllers: [trade_spot_controller_1.TradeSpotController],
         providers: [trade_spot_service_1.TradeSpotService, market_maker_service_1.MarketMakerService],
-        exports: [trade_spot_service_1.TradeSpotService],
+        exports: [trade_spot_service_1.TradeSpotService, market_maker_service_1.MarketMakerService],
     })
 ], TradeSpotModule);
 //# sourceMappingURL=trade-spot.module.js.map

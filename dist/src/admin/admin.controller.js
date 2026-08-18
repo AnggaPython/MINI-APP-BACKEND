@@ -19,14 +19,20 @@ const circular_casino_service_1 = require("./circular-casino.service");
 const users_service_1 = require("../users/users.service");
 const admin_guard_1 = require("../auth/admin.guard");
 const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
+const trade_spot_service_1 = require("../trade-spot/trade-spot.service");
+const market_maker_service_1 = require("../trade-spot/market-maker.service");
 let AdminController = class AdminController {
     adminService;
     usersService;
     circularCasino;
-    constructor(adminService, usersService, circularCasino) {
+    tradeSpotService;
+    marketMakerService;
+    constructor(adminService, usersService, circularCasino, tradeSpotService, marketMakerService) {
         this.adminService = adminService;
         this.usersService = usersService;
         this.circularCasino = circularCasino;
+        this.tradeSpotService = tradeSpotService;
+        this.marketMakerService = marketMakerService;
     }
     async login(body, req) {
         if (!body.username || !body.password) {
@@ -153,6 +159,20 @@ let AdminController = class AdminController {
             treasury: stats.adminTreasury,
         };
     }
+    async getTradeSpotBot() {
+        return this.tradeSpotService.getBotStatus();
+    }
+    async updateTradeSpotBot(body) {
+        return this.tradeSpotService.updateBotConfig(body || {});
+    }
+    async runTradeSpotBotNow() {
+        const res = await this.marketMakerService.runNow();
+        const status = await this.tradeSpotService.getBotStatus();
+        return {
+            ...status,
+            runNow: res,
+        };
+    }
 };
 exports.AdminController = AdminController;
 __decorate([
@@ -260,11 +280,32 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "closeCurrentCycle", null);
+__decorate([
+    (0, common_1.Get)("trade-spot/bot"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getTradeSpotBot", null);
+__decorate([
+    (0, common_1.Post)("trade-spot/bot"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "updateTradeSpotBot", null);
+__decorate([
+    (0, common_1.Post)("trade-spot/bot/run-now"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "runTradeSpotBotNow", null);
 exports.AdminController = AdminController = __decorate([
     (0, common_1.Controller)("admin"),
     (0, common_1.UseGuards)(admin_guard_1.AdminAuthGuard),
     __metadata("design:paramtypes", [admin_service_1.AdminService,
         users_service_1.UsersService,
-        circular_casino_service_1.CircularCasinoService])
+        circular_casino_service_1.CircularCasinoService,
+        trade_spot_service_1.TradeSpotService,
+        market_maker_service_1.MarketMakerService])
 ], AdminController);
 //# sourceMappingURL=admin.controller.js.map

@@ -29,9 +29,16 @@ export class Trade {
   @Prop({ required: true })
   total: number;
 
-  /** 2.5% fee charged in ELIXCOIN — always accrues to the platform pool. */
+  /** 1.5% fee — always accrues to the platform pool. */
   @Prop({ required: true })
   fee: number;
+
+  /**
+   * Currency the fee was charged in: the currency the user RECEIVES.
+   * BUY (spend ELIXCOIN → receive ELIXIR) → "ELIXIR" · SELL → "ELIXCOIN".
+   */
+  @Prop({ required: true, default: "ELIXCOIN", enum: ["ELIXIR", "ELIXCOIN"] })
+  feeCurrency: "ELIXIR" | "ELIXCOIN";
 
   /** "BOT" = market-maker background volume · "USER" = real user order. */
   @Prop({ required: true, default: "USER", enum: ["BOT", "USER"] })

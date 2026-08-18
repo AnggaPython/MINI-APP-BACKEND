@@ -7,5 +7,10 @@ export declare class MarketMakerService implements OnModuleInit, OnModuleDestroy
     constructor(tradeSpotService: TradeSpotService);
     onModuleInit(): void;
     onModuleDestroy(): void;
-    runCycle(): Promise<void>;
+    private tick;
+    runNow(): Promise<{
+        ran: boolean;
+        count: number;
+    }>;
+    runCycle(): Promise<number>;
 }

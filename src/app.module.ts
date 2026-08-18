@@ -14,6 +14,7 @@ import { AdminModule } from "./admin/admin.module";
 import { BotModule } from "./bot/bot.module";
 import { MinerStoneModule } from "./miner-stone/miner-stone.module";
 import { TradeSpotModule } from "./trade-spot/trade-spot.module";
+import { CaseBoxModule } from "./case-box/case-box.module";
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { TradeSpotModule } from "./trade-spot/trade-spot.module";
     BotModule,
     MinerStoneModule,
     TradeSpotModule,
+    CaseBoxModule,
   ],
   controllers: [AppController],
   providers: [AppService],

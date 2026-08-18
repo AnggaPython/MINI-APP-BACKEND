@@ -20,26 +20,43 @@ let MarketMakerService = class MarketMakerService {
         this.tradeSpotService = tradeSpotService;
     }
     onModuleInit() {
-        this.runCycle().catch((e) => console.error("[MM Bot] initial cycle failed:", e?.message));
+        this.tick().catch((e) => console.error("[MM Bot] initial tick failed:", e?.message));
         this.intervalId = setInterval(() => {
-            this.runCycle().catch((e) => console.error("[MM Bot] cycle failed:", e?.message));
-        }, 5 * 60 * 1000);
-        console.log("[MM Bot] armed — 10 trades (5 buy / 5 sell) every 5 minutes at the real-time mid price");
+            this.tick().catch((e) => console.error("[MM Bot] tick failed:", e?.message));
+        }, 10_000);
+        console.log("[MM Bot] armed — 10 trades (5 buy / 5 sell) per cycle, config-driven cooldown (default 15 min), trades priced at the real-time mid");
     }
     onModuleDestroy() {
         if (this.intervalId)
             clearInterval(this.intervalId);
         this.intervalId = null;
     }
+    async tick() {
+        const pool = await this.tradeSpotService.getPool();
+        if (pool.botEnabled === false)
+            return;
+        const intervalMs = (pool.botIntervalMinutes ?? 15) * 60_000;
+        const last = pool.lastBotRunAt ? pool.lastBotRunAt.getTime() : 0;
+        if (Date.now() - last >= intervalMs) {
+            await this.runCycle();
+        }
+    }
+    async runNow() {
+        if (this.running)
+            return { ran: false, count: 0 };
+        const count = await this.runCycle();
+        return { ran: true, count };
+    }
     async runCycle() {
         if (this.running)
-            return;
+            return 0;
         this.running = true;
         try {
             await this.tradeSpotService.driftMid();
             const fills = await this.tradeSpotService.matchOpenOrders();
             const { count } = await this.tradeSpotService.botCycle();
             console.log(`[MM Bot] cycle done — ${count} trades (mid ${(await this.tradeSpotService.getPool()).lastMid.toFixed(8)}), ${fills.length} user limit order(s) filled`);
+            return count;
         }
         finally {
             this.running = false;

@@ -11,7 +11,6 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-var _a, _b, _c, _d;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradeSpotService = exports.MID_MAX = exports.MID_MIN = exports.QUOTE_BALANCE_KEY = exports.SPREAD_PCT = exports.FEE_PCT = exports.BASE_PRICE = exports.QUOTE = exports.BASE = exports.PAIR = void 0;
 const common_1 = require("@nestjs/common");
@@ -25,10 +24,10 @@ exports.PAIR = "ELIXIR/ELIXCOIN";
 exports.BASE = "ELIXIR";
 exports.QUOTE = "ELIXCOIN";
 exports.BASE_PRICE = 10;
-exports.FEE_PCT = 0.025;
+exports.FEE_PCT = 0.015;
 exports.SPREAD_PCT = 0.004;
 exports.QUOTE_BALANCE_KEY = "ELIXCOIN";
-exports.MID_MIN = 9.5;
+exports.MID_MIN = 10;
 exports.MID_MAX = 10.5;
 const round8 = (n) => Math.round(n * 1e8) / 1e8;
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -65,6 +64,12 @@ let TradeSpotService = class TradeSpotService {
                 spreadPct: exports.SPREAD_PCT,
                 feePct: exports.FEE_PCT,
             });
+        }
+        else if (pool.feePct !== exports.FEE_PCT) {
+            pool.feePct = exports.FEE_PCT;
+            await this.poolModel
+                .updateOne({ pair: exports.PAIR }, { $set: { feePct: exports.FEE_PCT } })
+                .exec();
         }
         return pool;
     }
@@ -184,6 +189,144 @@ let TradeSpotService = class TradeSpotService {
             spreadPct: pool.spreadPct,
         };
     }
+    async getInfo() {
+        const pool = await this.getPool();
+        const since24 = new Date(Date.now() - 24 * 3600 * 1000);
+        const agg24 = await this.tradeModel
+            .aggregate([
+            { $match: { createdAt: { $gte: since24 } } },
+            {
+                $group: {
+                    _id: null,
+                    count: { $sum: 1 },
+                    volume: { $sum: "$amount" },
+                    fees: { $sum: "$fee" },
+                    buyVolume: {
+                        $sum: { $cond: [{ $eq: ["$side", "BUY"] }, "$amount", 0] },
+                    },
+                    sellVolume: {
+                        $sum: { $cond: [{ $eq: ["$side", "SELL"] }, "$amount", 0] },
+                    },
+                    botVolume: {
+                        $sum: { $cond: [{ $eq: ["$source", "BOT"] }, "$amount", 0] },
+                    },
+                    userVolume: {
+                        $sum: { $cond: [{ $eq: ["$source", "USER"] }, "$amount", 0] },
+                    },
+                },
+            },
+        ])
+            .exec();
+        const a = agg24[0] || {};
+        const buckets = await this.tradeModel
+            .aggregate([
+            { $match: { createdAt: { $gte: since24 } } },
+            {
+                $group: {
+                    _id: {
+                        $dateToString: {
+                            format: "%Y-%m-%d %H",
+                            date: "$createdAt",
+                        },
+                    },
+                    volume: { $sum: "$amount" },
+                    count: { $sum: 1 },
+                },
+            },
+        ])
+            .exec();
+        const bucketMap = new Map();
+        for (const b of buckets) {
+            bucketMap.set(String(b._id), { volume: b.volume, count: b.count });
+        }
+        const start = since24.getTime();
+        const hourly = [];
+        for (let i = 0; i < 24; i++) {
+            const t = new Date(start + i * 3600_000);
+            const key = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")} ${String(t.getUTCHours()).padStart(2, "0")}`;
+            const b = bucketMap.get(key);
+            hourly.push({
+                hour: t.getUTCHours(),
+                label: `${String(t.getUTCHours()).padStart(2, "0")}:00`,
+                volume: round2(b?.volume || 0),
+                count: b?.count || 0,
+            });
+        }
+        const botTrades = await this.tradeModel
+            .countDocuments({ source: "BOT" })
+            .exec();
+        const userTrades = await this.tradeModel
+            .countDocuments({ source: "USER" })
+            .exec();
+        return {
+            success: true,
+            pair: exports.PAIR,
+            base: exports.BASE,
+            quote: exports.QUOTE,
+            last: round8(pool.lastMid),
+            day: {
+                trades: a.count || 0,
+                volume: round2(a.volume || 0),
+                quoteVolume: round2((a.volume || 0) * pool.lastMid),
+                fees: round2(a.fees || 0),
+                buyVolume: round2(a.buyVolume || 0),
+                sellVolume: round2(a.sellVolume || 0),
+                botVolume: round2(a.botVolume || 0),
+                userVolume: round2(a.userVolume || 0),
+            },
+            lifetime: {
+                trades: botTrades + userTrades,
+                botTrades,
+                userTrades,
+                volume: round2(pool.lifetimeVolume),
+                fees: round4(pool.platformFeesAccumulated),
+                spreadProfit: round4(pool.spreadProfitAccumulated),
+            },
+            pool: {
+                elixirReserve: round2(pool.elixirReserve),
+                elixcoinReserve: round2(pool.elixcoinReserve),
+                lastMid: round8(pool.lastMid),
+                feePct: pool.feePct,
+                spreadPct: pool.spreadPct,
+            },
+            hourly,
+        };
+    }
+    async getBotStatus() {
+        const pool = await this.getPool();
+        const stats = await this.getStats();
+        const intervalMs = (pool.botIntervalMinutes ?? 15) * 60_000;
+        const lastRun = pool.lastBotRunAt ? pool.lastBotRunAt.getTime() : null;
+        return {
+            ...stats,
+            enabled: pool.botEnabled !== false,
+            intervalMinutes: pool.botIntervalMinutes ?? 15,
+            lastBotRunAt: pool.lastBotRunAt ?? null,
+            nextBotRunAt: lastRun ? new Date(lastRun + intervalMs) : new Date(),
+        };
+    }
+    async updateBotConfig(body) {
+        const pool = await this.getPool();
+        const set = {};
+        if (typeof body.enabled === "boolean")
+            set.botEnabled = body.enabled;
+        if (body.intervalMinutes !== undefined) {
+            const m = Number(body.intervalMinutes);
+            if (!isFinite(m) || m < 1 || m > 60) {
+                return {
+                    success: false,
+                    error: "Cooldown must be between 1 and 60 minutes",
+                };
+            }
+            set.botIntervalMinutes = Math.round(m);
+        }
+        if (Object.keys(set).length > 0) {
+            await this.poolModel
+                .updateOne({ pair: exports.PAIR }, { $set: set })
+                .exec();
+        }
+        return this.getBotStatus();
+    }
     async getHoldings(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
         return {
@@ -253,14 +396,17 @@ let TradeSpotService = class TradeSpotService {
         if (source === "USER" && !telegramId)
             return { success: false, error: "Missing account" };
         const total = round4(amount * price);
-        const fee = round4(total * exports.FEE_PCT);
         const pool = await this.getPool();
         const userKey = `cryptoBalances.${exports.QUOTE_BALANCE_KEY}`;
         let updated = null;
+        let fee = 0;
+        let feeCurrency = exports.QUOTE_BALANCE_KEY;
         if (side === "BUY") {
-            const cost = round4(total + fee);
+            fee = round4(amount * exports.FEE_PCT);
+            feeCurrency = exports.BASE;
+            const receivedElixir = round4(amount - fee);
             updated = await this.userModel
-                .findOneAndUpdate({ telegramId, [userKey]: { $gte: cost } }, { $inc: { [userKey]: -cost, elixirBalance: amount } }, { new: true })
+                .findOneAndUpdate({ telegramId, [userKey]: { $gte: total } }, { $inc: { [userKey]: -total, elixirBalance: receivedElixir } }, { new: true })
                 .exec();
             if (!updated)
                 return { success: false, error: `Insufficient ${exports.QUOTE} balance` };
@@ -268,7 +414,7 @@ let TradeSpotService = class TradeSpotService {
                 .findOneAndUpdate({ pair: exports.PAIR, elixirReserve: { $gte: amount } }, {
                 $inc: {
                     elixirReserve: -amount,
-                    elixcoinReserve: cost,
+                    elixcoinReserve: total,
                     platformFeesAccumulated: fee,
                     spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
                 },
@@ -276,12 +422,14 @@ let TradeSpotService = class TradeSpotService {
                 .exec();
             if (!poolUpd) {
                 await this.userModel
-                    .updateOne({ telegramId }, { $inc: { [userKey]: cost, elixirBalance: -amount } })
+                    .updateOne({ telegramId }, { $inc: { [userKey]: total, elixirBalance: -receivedElixir } })
                     .exec();
                 return { success: false, error: "Insufficient platform liquidity" };
             }
         }
         else {
+            fee = round4(total * exports.FEE_PCT);
+            feeCurrency = exports.QUOTE_BALANCE_KEY;
             const proceeds = round4(total - fee);
             updated = await this.userModel
                 .findOneAndUpdate({ telegramId, elixirBalance: { $gte: amount } }, { $inc: { elixirBalance: -amount, [userKey]: proceeds } }, { new: true })
@@ -312,6 +460,7 @@ let TradeSpotService = class TradeSpotService {
             amount,
             total,
             fee,
+            feeCurrency,
             source,
             ...(source === "USER" ? { telegramId } : {}),
         });
@@ -327,6 +476,7 @@ let TradeSpotService = class TradeSpotService {
                 amount,
                 total,
                 fee,
+                feeCurrency,
                 source,
             },
             balances: {
@@ -334,7 +484,7 @@ let TradeSpotService = class TradeSpotService {
                 elixcoin: round4(updated.cryptoBalances?.[exports.QUOTE_BALANCE_KEY] || 0),
             },
             message: source === "USER"
-                ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${exports.BASE} @ ${round8(price)} ${exports.QUOTE} (fee ${round4(fee)} ${exports.QUOTE})`
+                ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${exports.BASE} @ ${round8(price)} ${exports.QUOTE} · fee ${round4(fee)} ${feeCurrency}`
                 : undefined,
         };
     }
@@ -363,6 +513,39 @@ let TradeSpotService = class TradeSpotService {
         if (!order)
             return { success: false, error: "Order not found or already closed" };
         return { success: true, order };
+    }
+    async getUserTrades(telegramId, page = 1, limit = 5) {
+        const p = Math.max(1, Math.floor(page || 1));
+        const n = Math.max(1, Math.min(50, Math.floor(limit || 5)));
+        const skip = (p - 1) * n;
+        const trades = await this.tradeModel
+            .find({ telegramId, source: "USER" })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(n)
+            .lean()
+            .exec();
+        const total = await this.tradeModel
+            .countDocuments({ telegramId, source: "USER" })
+            .exec();
+        return {
+            success: true,
+            trades: trades.map((t) => ({
+                id: String(t._id),
+                side: t.side,
+                price: t.price,
+                amount: t.amount,
+                total: t.total,
+                fee: t.fee,
+                feeCurrency: t.feeCurrency || "ELIXCOIN",
+                source: t.source,
+                time: t.createdAt,
+            })),
+            page: p,
+            limit: n,
+            hasMore: skip + trades.length < total,
+            total,
+        };
     }
     async matchOpenOrders() {
         const pool = await this.getPool();
@@ -449,6 +632,7 @@ let TradeSpotService = class TradeSpotService {
                 amount,
                 total,
                 fee,
+                feeCurrency: "ELIXCOIN",
                 source: "BOT",
             });
             trades.push(trade);
@@ -475,6 +659,9 @@ exports.TradeSpotService = TradeSpotService = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(pool_schema_1.LiquidityPool.name)),
     __param(2, (0, mongoose_1.InjectModel)(open_order_schema_1.OpenOrder.name)),
     __param(3, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
+        mongoose_2.Model,
+        mongoose_2.Model])
 ], TradeSpotService);
 //# sourceMappingURL=trade-spot.service.js.map

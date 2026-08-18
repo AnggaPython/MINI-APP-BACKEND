@@ -9,7 +9,7 @@ export type LiquidityPoolDocument = LiquidityPool & Document;
  * The platform/admin pre-installs both reserves (1 ELIXIR = 10 ELIXCOIN at
  * the reference mid), quotes a bid/ask spread around the real-time mid, and
  * captures profit from (a) the spread slip on every user fill and (b) a flat
- * 2.5% fee on every transaction — user AND market-maker bot alike.
+ * 1.5% fee on every transaction — user AND market-maker bot alike.
  *
  * The market-maker bot trades against this pool at the exact mid price, so
  * its synthetic volume never moves the price (no pump / no dump).
@@ -35,7 +35,7 @@ export class LiquidityPool {
   @Prop({ default: 0.004 })
   spreadPct: number;
 
-  /** Flat fee per transaction (0.025 = 2.5%). */
+  /** Flat fee per transaction (0.015 = 1.5%). */
   @Prop({ default: 0.025 })
   feePct: number;
 
@@ -57,6 +57,14 @@ export class LiquidityPool {
   /** Total base volume ever traded on the pair (ELIXIR). */
   @Prop({ default: 0 })
   lifetimeVolume: number;
+
+  /** Admin switch — the market-maker bot runs only while enabled. */
+  @Prop({ default: true })
+  botEnabled: boolean;
+
+  /** Admin-tunable cooldown between bot cycles, in minutes (1–60). */
+  @Prop({ default: 15, min: 1, max: 60 })
+  botIntervalMinutes: number;
 }
 
 export const LiquidityPoolSchema =

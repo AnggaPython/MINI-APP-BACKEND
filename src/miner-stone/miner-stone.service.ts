@@ -72,14 +72,20 @@ const HISTORY_LIMIT = 50;
 // Rolled at spawn by the same HMAC RNG so the stone's fate is fixed up front.
 const ZONK_CHANCE = 0.1;
 
-// Server-authoritative ELIX COIN conversion rates for mined resources.
-// SELL converts the stone's loot to ELIX at these prices and credits elixirBalance.
+// Server-authoritative ELIXCOIN conversion rates for mined resources.
+// SELL converts the stone's loot to ELIXCOIN at these prices and credits
+// cryptoBalances.ELIXCOIN — the quote currency of the ELIXIR/ELIXCOIN spot
+// market. It is a SEPARATE entity from the user's ELIXIR balance (elixirBalance).
+//
+// Balanced against the Monetag S2S ad budget (IRON/COPPER are the constant
+// Common drops, so they are the cheapest; DIAMOND is the rarest and dearest).
+// Expected SELL value per stone: Common ≈ 46 · Medium ≈ 112 · Rare ≈ 180.
 export const ELIX_RATES: Record<string, number> = {
-  IRON: 0.05,
-  COPPER: 0.075,
-  SILVER: 0.5,
-  GOLD: 5,
-  DIAMOND: 10,
+  IRON: 0.00005,
+  COPPER: 0.000075,
+  SILVER: 0.1,
+  GOLD: 1,
+  DIAMOND: 20,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -146,7 +152,7 @@ export class MinerStoneService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   // ─────────────────────────────────────────────────────────────
   // Provably-fair HMAC-SHA256 RNG (same pattern as the Hi-Lo casino engine)
@@ -415,6 +421,7 @@ export class MinerStoneService {
       return {
         success: true,
         zonk: true,
+        adRequired: stone.tier === "Medium" || stone.tier === "Rare",
         stone: {
           stoneId: stone._id.toString(),
           tier: stone.tier,
@@ -450,6 +457,7 @@ export class MinerStoneService {
     return {
       success: true,
       zonk: false,
+      adRequired: stone.tier === "Medium" || stone.tier === "Rare",
       stone: {
         stoneId: stone._id.toString(),
         tier: stone.tier,
@@ -462,8 +470,9 @@ export class MinerStoneService {
   // ─────────────────────────────────────────────────────────────
   // POST /miner-stone/claim — commit the pending loot (SAVE or SELL)
   //   SAVE → resources are credited into cryptoBalances (the Bag)
-  //   SELL → every resource converts to ELIX COIN at ELIX_RATES and credits
-  //          elixirBalance. Atomic + idempotent per stone (claimAction lock).
+  //   SELL → every resource converts to ELIXCOIN at ELIX_RATES and credits
+  //          cryptoBalances.ELIXCOIN — NOT elixirBalance: the two coins are
+  //          separate entities. Atomic + idempotent per stone (claimAction lock).
   // ─────────────────────────────────────────────────────────────
   async claimRewards(telegramId: string, stoneId: string, action: string) {
     if (action !== "save" && action !== "sell") {
@@ -475,6 +484,29 @@ export class MinerStoneService {
       return {
         success: false,
         error: "User account not found. Please reload the app.",
+      };
+    }
+
+    // Peek the stone's tier first — Medium/Rare loot requires a Monetag S2S
+    // ad ticket (granted by the S2S postback) before SELL/SAVE can commit.
+    const pending = await this.miningStoneModel
+      .findOne({ _id: stoneId, telegramId, status: "claimed", claimAction: null })
+      .lean()
+      .exec();
+    if (!pending) {
+      return {
+        success: false,
+        error: "Rewards already claimed or stone not found.",
+      };
+    }
+
+    const adRequired = pending.tier === "Medium" || pending.tier === "Rare";
+    if (adRequired && (user.adTickets || 0) < 1) {
+      return {
+        success: false,
+        adRequired: true,
+        error:
+          "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
       };
     }
 
@@ -511,12 +543,30 @@ export class MinerStoneService {
         for (const [resource, amount] of Object.entries(rewards)) {
           inc[`cryptoBalances.${resource}`] = amount;
         }
-        await this.userModel
-          .findOneAndUpdate({ telegramId }, { $inc: inc })
+        // Medium/Rare stones consume the S2S ad ticket in the same atomic op
+        // (adTickets $gte guard prevents double-spending the ticket).
+        if (adRequired) inc["adTickets"] = -1;
+        const saved = await this.userModel
+          .findOneAndUpdate(
+            adRequired
+              ? { telegramId, adTickets: { $gte: 1 } }
+              : { telegramId },
+            { $inc: inc },
+          )
           .exec();
+        if (adRequired && !saved) {
+          return {
+            success: false,
+            adRequired: true,
+            error:
+              "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Save again to retry.",
+          };
+        }
         Object.assign(credited, rewards);
       } else {
-        // SELL: convert each resource at its fixed ELIX COIN rate
+        // SELL: convert each resource at its fixed ELIXCOIN rate and credit
+        // cryptoBalances.ELIXCOIN. This is a distinct coin from ELIXIR — the
+        // sale NEVER touches elixirBalance / lifetimeElixir.
         elixir = 0;
         for (const [resource, amount] of Object.entries(rewards)) {
           const rate = ELIX_RATES[resource] || 0;
@@ -524,25 +574,41 @@ export class MinerStoneService {
         }
         elixir = Math.round(elixir * 100) / 100; // 2 decimals, no float dust
         if (elixir > 0) {
-          await this.userModel
+          const inc: Record<string, number> = {
+            "cryptoBalances.ELIXCOIN": elixir,
+          };
+          // Medium/Rare stones consume the S2S ad ticket in the same atomic op.
+          if (adRequired) inc["adTickets"] = -1;
+          const sold = await this.userModel
             .findOneAndUpdate(
-              { telegramId },
-              { $inc: { elixirBalance: elixir, lifetimeElixir: elixir } },
+              adRequired
+                ? { telegramId, adTickets: { $gte: 1 } }
+                : { telegramId },
+              { $inc: inc },
             )
             .exec();
+          if (adRequired && !sold) {
+            return {
+              success: false,
+              adRequired: true,
+              error:
+                "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
+            };
+          }
         }
       }
     }
 
     const fresh = await this.userModel.findOne({ telegramId }).exec();
+    const freshCrypto = (fresh?.cryptoBalances || {}) as Record<string, number>;
     return {
       success: true,
       action,
       stoneId: stone._id.toString(),
       credited,
       elixir,
-      cryptoBalances: fresh?.cryptoBalances || {},
-      elixirBalance: fresh?.elixirBalance || 0,
+      cryptoBalances: freshCrypto,
+      elixcoinBalance: freshCrypto.ELIXCOIN || 0,
     };
   }
 

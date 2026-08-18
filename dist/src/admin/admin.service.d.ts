@@ -18,8 +18,8 @@ export declare class AdminService implements OnModuleInit {
         role?: undefined;
     } | {
         success: boolean;
-        token: any;
-        role: any;
+        token: string;
+        role: string;
         error?: undefined;
     }>;
     verifySessionToken(token: string): Promise<AdminDocument | null>;
@@ -95,7 +95,7 @@ export declare class AdminService implements OnModuleInit {
         hasMore: boolean;
         hardLimit: number;
     }>;
-    getProfitLogs(coin?: string): Promise<any[]>;
+    getProfitLogs(coin?: string): Promise<ProfitLogDocument[]>;
     getWithdrawLimits(): Promise<Record<string, number>>;
     getTreasuryElixirLiquidity(): Promise<number>;
     updateWithdrawLimit(coin: string, limit: number): Promise<Record<string, number>>;

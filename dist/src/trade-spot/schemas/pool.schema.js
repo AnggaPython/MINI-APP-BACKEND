@@ -23,6 +23,8 @@ let LiquidityPool = class LiquidityPool {
     botRunCount;
     lastBotRunAt;
     lifetimeVolume;
+    botEnabled;
+    botIntervalMinutes;
 };
 exports.LiquidityPool = LiquidityPool;
 __decorate([
@@ -69,6 +71,14 @@ __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
 ], LiquidityPool.prototype, "lifetimeVolume", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: true }),
+    __metadata("design:type", Boolean)
+], LiquidityPool.prototype, "botEnabled", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 15, min: 1, max: 60 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "botIntervalMinutes", void 0);
 exports.LiquidityPool = LiquidityPool = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], LiquidityPool);
