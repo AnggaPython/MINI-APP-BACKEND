@@ -30,7 +30,7 @@ export class CaseBoxController {
     @Body("caseId") caseId: string,
   ) {
     if (!caseId) return { success: false, error: "Missing caseId" };
-    return await this.caseBoxService.destroy(caseId, telegramId);
+    return await this.caseBoxService.destroy(telegramId, caseId);
   }
 
   @Post("claim")
