@@ -14,6 +14,7 @@ const case_box_controller_1 = require("./case-box.controller");
 const case_box_schema_1 = require("./schemas/case-box.schema");
 const user_schema_1 = require("../users/schemas/user.schema");
 const users_module_1 = require("../users/users.module");
+const buff_item_collections_module_1 = require("../buff-item-collections/buff-item-collections.module");
 let CaseBoxModule = class CaseBoxModule {
 };
 exports.CaseBoxModule = CaseBoxModule;
@@ -25,6 +26,7 @@ exports.CaseBoxModule = CaseBoxModule = __decorate([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
             ]),
             users_module_1.UsersModule,
+            buff_item_collections_module_1.BuffItemCollectionsModule,
         ],
         controllers: [case_box_controller_1.CaseBoxController],
         providers: [case_box_service_1.CaseBoxService],

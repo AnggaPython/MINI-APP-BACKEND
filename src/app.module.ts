@@ -15,6 +15,8 @@ import { BotModule } from "./bot/bot.module";
 import { MinerStoneModule } from "./miner-stone/miner-stone.module";
 import { TradeSpotModule } from "./trade-spot/trade-spot.module";
 import { CaseBoxModule } from "./case-box/case-box.module";
+import { BuffItemCollectionsModule } from "./buff-item-collections/buff-item-collections.module";
+import { AuctionHouseModule } from "./auction-house/auction-house.module";
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { CaseBoxModule } from "./case-box/case-box.module";
     MinerStoneModule,
     TradeSpotModule,
     CaseBoxModule,
+    BuffItemCollectionsModule,
+    AuctionHouseModule,
   ],
   controllers: [AppController],
   providers: [AppService],

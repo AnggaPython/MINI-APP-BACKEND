@@ -21,6 +21,7 @@ let CaseBox = class CaseBox {
     lootName;
     loot;
     openedAt;
+    claimedAt;
     expireAt;
 };
 exports.CaseBox = CaseBox;
@@ -45,11 +46,11 @@ __decorate([
     __metadata("design:type", String)
 ], CaseBox.prototype, "status", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ type: String, default: null, enum: [null, "ZONK", "ELIXCOIN", "MATERIAL"] }),
+    (0, mongoose_1.Prop)({ type: String, default: null, enum: [null, "ZONK", "ELIXCOIN", "MATERIAL", "BUFF"] }),
     __metadata("design:type", Object)
 ], CaseBox.prototype, "outcome", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ type: String, default: null, enum: [null, "COMMON", "MEDIUM", "RARE"] }),
+    (0, mongoose_1.Prop)({ type: String, default: null, enum: [null, "COMMON", "MEDIUM", "RARE", "ULTRA_RARE"] }),
     __metadata("design:type", Object)
 ], CaseBox.prototype, "lootRarity", void 0);
 __decorate([
@@ -64,6 +65,10 @@ __decorate([
     (0, mongoose_1.Prop)({ type: Date, default: null }),
     __metadata("design:type", Object)
 ], CaseBox.prototype, "openedAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Date, default: null }),
+    __metadata("design:type", Object)
+], CaseBox.prototype, "claimedAt", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: Date, required: true }),
     __metadata("design:type", Date)

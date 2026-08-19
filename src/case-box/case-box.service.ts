@@ -10,6 +10,7 @@ import {
 } from "./schemas/case-box.schema";
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
+import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 
 // ─────────────────────────────────────────────────────────────
 // MULTI-LAYER RNG — server-authoritative case-box loot table.
@@ -17,20 +18,23 @@ import { UsersService } from "../users/users.service";
 // Opening a case is deliberately hard. The outcome is rolled in layers:
 //
 //   Layer 1 — OUTCOME (100%):
-//       35%  ZONK          → nothing at all
-//       35%  ELIXCOIN      → ELIXCOIN by case tier (COMMON 100–500, MEDIUM
-//                            300–1,200, RARE 800–3,000)
-//       30%  MATERIAL      → exactly 1 material tool, rarity rolled next
+//       25%  ZONK          → nothing at all
+//       10%  ELIXCOIN      → ELIXCOIN by case tier
+//       20%  MATERIAL      → exactly 1 material tool, rarity rolled next
+//       45%  BUFF          → buff collection item, rarity rolled next
 //
-//   Layer 2 — MATERIAL RARITY (only from the 30% MATERIAL pool):
+//   Layer 2 — MATERIAL RARITY (only from the 20% MATERIAL pool):
 //       70%  COMMON  (1 of 25 tools)
 //       22%  MEDIUM  (1 of 25 tools)
 //       8%   RARE    (1 of 25 tools)
 //
-//   Layer 3 — AMOUNT: always exactly 1 (materials stay scarce, no inflation).
+//   Layer 2b — BUFF RARITY (only from the 45% BUFF pool):
+//        60%  COMMON     (+0.10…+0.60 buff)
+//        15%  MEDIUM     (+1.25…+3.50 buff)
+//         5%  RARE       (+3.75…+6.00 buff)
+//        0.5% ULTRA_RARE (+6.00…+33.00 buff)
 //
-// So a RARE tool overall ≈ 30% × 8% = 2.4% of every case opened, COMMON
-// ≈ 21% and MEDIUM ≈ 6.6% — materials are deliberately hard to get.
+//   Layer 3 — AMOUNT: always exactly 1 (materials stay scarce, no inflation).
 // ─────────────────────────────────────────────────────────────
 
 /** Spawned case rarity weights (decides which case SVG + HP band). */
@@ -40,12 +44,12 @@ export const CASE_TIER_WEIGHTS: Record<CaseTier, number> = {
   RARE: 5,
 };
 
-/** Layer 1 — outcome weights (sums to 100). Materials are scarce: 70% of
- * opens land on ZONK or ELIXCOIN so material tools never hyper-inflate. */
+/** Layer 1 — outcome weights (sums to 100). */
 export const OUTCOME_WEIGHTS: Record<CaseOutcome, number> = {
-  MATERIAL: 30,
-  ZONK: 35,
-  ELIXCOIN: 35,
+  MATERIAL: 20,
+  BUFF: 45,
+  ZONK: 25,
+  ELIXCOIN: 10,
 };
 
 /** Layer 2 — material rarity weights (sums to 100). */
@@ -53,6 +57,14 @@ export const LOOT_RARITY_WEIGHTS: Record<CaseTier, number> = {
   COMMON: 70,
   MEDIUM: 22,
   RARE: 8,
+};
+
+/** Layer 2b — buff rarity weights (sums to 80.5). */
+export const BUFF_RARITY_WEIGHTS: Record<string, number> = {
+  COMMON: 60,
+  MEDIUM: 15,
+  RARE: 5,
+  ULTRA_RARE: 0.5,
 };
 
 /**
@@ -183,10 +195,34 @@ const ACTIVE_CASE_TTL_MS = 2 * 60 * 60 * 1000; // 2h — unopened cases auto-exp
 const OPENED_CASE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — opened cases power history
 const HISTORY_LIMIT = 50;
 
+// ── Anti-exploit constants ────────────────────────────────────────────────
+// Minimum ms per HP point when opening a case. Frontend enforces 1.7s between
+// hits (HIT_DELAY_MS), but the server is more lenient (800ms) to account for
+// network latency and page-load time. A bot that opens a 24-HP case in under
+// 19 seconds (24 × 800ms) will be rejected.
+const MIN_HIT_TIME_PER_HP_MS = 800;
+
+// Server-side cooldown between cases (matches frontend COOLDOWN_MS = 78s).
+// Enforced by checking the last claimed case's claimedAt timestamp.
+const CASE_COOLDOWN_MS = 78_000;
+
+// Rate limit: max destroy calls per user per time window.
+const DESTROY_RATE_LIMIT = 5;
+const DESTROY_RATE_WINDOW_MS = 60_000;
+
 @Injectable()
 export class CaseBoxService {
   // Lightweight in-memory spawn throttle: telegramId -> last spawn timestamp.
   private readonly lastSpawnAt = new Map<string, number>();
+
+  // In-memory rate limit: telegramId -> array of destroy timestamps (sliding window).
+  private readonly destroyTimestamps = new Map<string, number[]>();
+
+  // In-memory cooldown: telegramId -> last claim timestamp (ms).
+  // Mirrors lastSpawnAt pattern — lost on server restart, but that's fine:
+  // one extra spawn after restart is harmless, and the DB claimedAt field
+  // serves as the durable audit trail.
+  private readonly lastClaimAt = new Map<string, number>();
 
   constructor(
     @InjectModel(CaseBox.name)
@@ -194,7 +230,28 @@ export class CaseBoxService {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly usersService: UsersService,
+    private readonly buffCollectionsService: BuffItemCollectionsService,
   ) { }
+
+  /** Evict stale destroy timestamps older than the rate window. */
+  private evictRateLimit(telegramId: string, now: number): void {
+    const ts = this.destroyTimestamps.get(telegramId);
+    if (!ts) return;
+    const cutoff = now - DESTROY_RATE_WINDOW_MS;
+    const filtered = ts.filter((t) => t > cutoff);
+    if (filtered.length === 0) {
+      this.destroyTimestamps.delete(telegramId);
+    } else {
+      this.destroyTimestamps.set(telegramId, filtered);
+    }
+  }
+
+  /** Returns the remaining cooldown in ms (0 = no cooldown). Pure in-memory. */
+  private getCooldownLeft(telegramId: string, now: number): number {
+    const last = this.lastClaimAt.get(telegramId);
+    if (!last) return 0;
+    return Math.max(0, CASE_COOLDOWN_MS - (now - last));
+  }
 
   // ─────────────────────────────────────────────────────────────
   // Provably-fair HMAC-SHA256 RNG (same pattern as miner-stone / Hi-Lo)
@@ -241,6 +298,17 @@ export class CaseBoxService {
       }
     }
 
+    // Server-side cooldown: reject if the user's last claimed case was <78s ago.
+    // Pure in-memory — no DB query, zero cost.
+    const cooldownLeft = this.getCooldownLeft(telegramId, now);
+    if (cooldownLeft > 0) {
+      return {
+        success: false,
+        error: "Please wait before opening another case.",
+        cooldownLeft,
+      };
+    }
+
     // Spawned case rarity — cosmetic (which case SVG) + HP band.
     const clientSeed = `${telegramId}:${now}`;
     const tierRoll = this.roll01(clientSeed, "case-tier");
@@ -277,11 +345,22 @@ export class CaseBoxService {
   // replay can never double-credit a case.
   // ─────────────────────────────────────────────────────────────
   async destroy(telegramId: string, caseId: string) {
+    const now = Date.now();
     const user = await this.usersService.findByTelegramId(telegramId);
     if (!user) {
       return {
         success: false,
         error: "User account not found. Please reload the app.",
+      };
+    }
+
+    // ── Rate limit: max DESTROY_RATE_LIMIT destroys per minute ────────────
+    this.evictRateLimit(telegramId, now);
+    const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
+    if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+      return {
+        success: false,
+        error: "Too many requests. Please wait a moment.",
       };
     }
 
@@ -293,6 +372,18 @@ export class CaseBoxService {
       .exec();
     if (!pending) {
       return { success: false, error: "Case not found or already opened." };
+    }
+
+    // ── Time-gate: reject if the user opened the case too fast ────────────
+    // The fastest possible legitimate time is maxHp × MIN_HIT_TIME_PER_HP_MS.
+    // Bots that skip hits will be caught here.
+    const minRequiredTime = pending.maxHp * MIN_HIT_TIME_PER_HP_MS;
+    const caseAge = now - new Date((pending as any).createdAt).getTime();
+    if (caseAge < minRequiredTime) {
+      return {
+        success: false,
+        error: "Case not ready yet. Keep hitting the lock!",
+      };
     }
 
     // Atomic single-open lock: race-condition safe, cannot double-open.
@@ -308,27 +399,79 @@ export class CaseBoxService {
       return { success: false, error: "Case not found or already opened." };
     }
 
-    // ── Layer 1 — OUTCOME (30 MATERIAL / 35 ZONK / 35 ELIXCOIN) ──────────
+    // ── Fetch active buffs (ECONOMY + DROPRATE) before rolling loot ────
+    let economyMultiplier = 1;
+    let droprateBonus = 0;
+    try {
+      const buffTotals = await this.buffCollectionsService.getUserBuffTotals(telegramId);
+      if (buffTotals.totals?.ECONOMY) economyMultiplier = 1 + buffTotals.totals.ECONOMY / 100;
+      if (buffTotals.totals?.DROPRATE) droprateBonus = buffTotals.totals.DROPRATE;
+    } catch { /* buff service unavailable — skip bonuses gracefully */ }
+
+    // DROPRATE buff: shift rarity weights upward so rarer items are more likely.
+    // Formula: add droprateBonus% of RARE weight to RARE, and half that to ULTRA_RARE.
+    const boostedMaterialWeights = { ...LOOT_RARITY_WEIGHTS };
+    const boostedBuffWeights = { ...BUFF_RARITY_WEIGHTS };
+    if (droprateBonus > 0) {
+      const rareBoost = Math.min(droprateBonus, 30); // cap at 30% to prevent 100% rare
+      const ultraBoost = rareBoost * 0.3;
+      boostedMaterialWeights.RARE = LOOT_RARITY_WEIGHTS.RARE + rareBoost;
+      boostedMaterialWeights.COMMON = Math.max(10, LOOT_RARITY_WEIGHTS.COMMON - rareBoost);
+      boostedBuffWeights.RARE = BUFF_RARITY_WEIGHTS.RARE + rareBoost;
+      boostedBuffWeights.ULTRA_RARE = BUFF_RARITY_WEIGHTS.ULTRA_RARE + ultraBoost;
+      boostedBuffWeights.COMMON = Math.max(10, BUFF_RARITY_WEIGHTS.COMMON - rareBoost - ultraBoost);
+    }
+
+    // ── Layer 1 — OUTCOME (20 MATERIAL / 45 BUFF / 25 ZONK / 10 ELIXCOIN) ──
     const clientSeed = `${telegramId}:${box._id}:${Date.now()}`;
     const outcomeRoll = this.roll01(clientSeed, "case-outcome");
     const outcome = this.weightedPick(outcomeRoll, OUTCOME_WEIGHTS) as CaseOutcome;
 
     let rarity: CaseTier | null = null;
     let loot: Record<string, number> | null = null;
+    let buffGranted: any = null;
 
     if (outcome === "ZONK") {
       loot = null;
     } else if (outcome === "ELIXCOIN") {
+      // ECONOMY buff: multiply ELIXCOIN drop amount
       const [min, max] = ELIXCOIN_BANDS[box.tier];
-      const amount = Math.floor(min + Math.random() * (max - min + 1));
+      const base = Math.floor(min + Math.random() * (max - min + 1));
+      const amount = Math.round(base * economyMultiplier);
       loot = { ELIXCOIN: amount };
-    } else {
+    } else if (outcome === "MATERIAL") {
+      // Layer 2 — material rarity (DROPRATE buff boosted weights)
       const rarityRoll = this.roll01(clientSeed, "case-rarity");
-      rarity = this.weightedPick(rarityRoll, LOOT_RARITY_WEIGHTS) as CaseTier;
+      rarity = this.weightedPick(rarityRoll, boostedMaterialWeights) as CaseTier;
       const pool = CASE_MATERIALS[rarity];
       const lootName = pool[Math.floor(Math.random() * pool.length)];
       loot = { [lootName]: 1 };
+    } else if (outcome === "BUFF") {
+      // Layer 2b — buff rarity roll (DROPRATE buff boosted weights)
+      const buffRarityRoll = this.roll01(clientSeed, "case-buff-rarity");
+      const buffRarity = this.weightedPick(buffRarityRoll, boostedBuffWeights);
+      // Grant a random buff item of the rolled rarity to the user
+      const grantResult: any = await this.buffCollectionsService.grantRandomBuff(
+        telegramId,
+        buffRarity as any,
+      );
+      buffGranted = grantResult;
+      if (grantResult?.buffItem) {
+        rarity = grantResult.buffItem.rarity;
+        loot = { [grantResult.buffItem.name]: 1 };
+      } else {
+        // Fallback: if collection is complete or grant failed, give ELIXCOIN
+        const [min, max] = ELIXCOIN_BANDS[box.tier];
+        const base = Math.floor(min + Math.random() * (max - min + 1));
+        const amount = Math.round(base * economyMultiplier);
+        loot = { ELIXCOIN: amount };
+      }
     }
+
+    // ── Record destroy timestamp for rate limiting ───────────────────────
+    const userTimestamps = this.destroyTimestamps.get(telegramId) || [];
+    userTimestamps.push(now);
+    this.destroyTimestamps.set(telegramId, userTimestamps);
 
     // ── Persist the outcome on the case record (audit + history) ─────────
     await this.caseBoxModel
@@ -352,6 +495,9 @@ export class CaseBoxService {
       outcome,
       rarity,
       loot,
+      buffGranted: outcome === "BUFF" ? buffGranted : undefined,
+      economyMultiplier: economyMultiplier > 1 ? economyMultiplier : undefined,
+      droprateBonus: droprateBonus > 0 ? droprateBonus : undefined,
     };
   }
 
@@ -380,17 +526,27 @@ export class CaseBoxService {
       };
     }
 
-    // Lock the claim transition
+    // Lock the claim transition — record claimedAt for server-side cooldown
     const boxToClaim = await this.caseBoxModel
       .findOneAndUpdate(
         { _id: caseId, telegramId, status: "opened" },
-        { $set: { status: "claimed" } },
+        { $set: { status: "claimed", claimedAt: new Date() } },
         { returnDocument: "after" },
       )
       .exec();
 
     if (!boxToClaim) {
       return { success: false, error: "Concurreny error: already claimed." };
+    }
+
+    // Record claim time in memory for server-side cooldown (zero DB cost).
+    this.lastClaimAt.set(telegramId, Date.now());
+    // Lazy cleanup — evict entries older than 2× cooldown.
+    if (this.lastClaimAt.size > 5000) {
+      const cutoff = Date.now() - CASE_COOLDOWN_MS * 2;
+      for (const [key, ts] of this.lastClaimAt) {
+        if (ts < cutoff) this.lastClaimAt.delete(key);
+      }
     }
 
     if (outcome !== "ZONK" && loot) {

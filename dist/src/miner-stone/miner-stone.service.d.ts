@@ -1,7 +1,8 @@
 import { Model } from "mongoose";
-import { MiningStoneDocument, StoneTier } from "./schemas/mining-stone.schema";
+import { MiningStoneDocument } from "./schemas/mining-stone.schema";
 import { UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
+import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 export declare const ELIX_RATES: Record<string, number>;
 export declare const PICKAXE_TIERS: readonly ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
 export type PickaxeTier = (typeof PICKAXE_TIERS)[number];
@@ -13,24 +14,36 @@ export declare class MinerStoneService {
     private miningStoneModel;
     private userModel;
     private readonly usersService;
+    private readonly buffCollectionsService;
     private readonly logger;
     private readonly lastSpawnAt;
-    constructor(miningStoneModel: Model<MiningStoneDocument>, userModel: Model<UserDocument>, usersService: UsersService);
+    private readonly destroyTimestamps;
+    private readonly lastClaimAt;
+    constructor(miningStoneModel: Model<MiningStoneDocument>, userModel: Model<UserDocument>, usersService: UsersService, buffCollectionsService: BuffItemCollectionsService);
+    private evictRateLimit;
+    private getCooldownLeft;
     private roll01;
     private round2;
     spawn(telegramId: string): Promise<{
         success: boolean;
         error: string;
+        cooldownLeft?: undefined;
+        stone?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+        cooldownLeft: number;
         stone?: undefined;
     } | {
         success: boolean;
         stone: {
-            stoneId: string;
-            tier: StoneTier;
-            maxHp: number;
-            zonk: boolean;
+            stoneId: any;
+            tier: any;
+            maxHp: any;
+            zonk: any;
         };
         error?: undefined;
+        cooldownLeft?: undefined;
     }>;
     purchasePickaxe(telegramId: string, tier: string): Promise<{
         success: boolean;
@@ -41,10 +54,10 @@ export declare class MinerStoneService {
     } | {
         success: boolean;
         tier: string;
-        ownedPickaxes: string[];
+        ownedPickaxes: any;
         balances: {
-            GOLD: number;
-            DIAMOND: number;
+            GOLD: any;
+            DIAMOND: any;
         };
         error?: undefined;
     }>;
@@ -62,7 +75,7 @@ export declare class MinerStoneService {
         cost: Record<string, number>;
         repairedAt: Date;
         balances: Record<string, number>;
-        ownedPickaxes: string[];
+        ownedPickaxes: any;
         error?: undefined;
     }>;
     destroy(telegramId: string, stoneId: string): Promise<{
@@ -77,9 +90,9 @@ export declare class MinerStoneService {
         zonk: boolean;
         adRequired: boolean;
         stone: {
-            stoneId: string;
-            tier: StoneTier;
-            maxHp: number;
+            stoneId: any;
+            tier: any;
+            maxHp: any;
         };
         rewards: Record<string, number>;
         error?: undefined;
@@ -94,6 +107,7 @@ export declare class MinerStoneService {
         elixir?: undefined;
         cryptoBalances?: undefined;
         elixcoinBalance?: undefined;
+        economyMultiplier?: undefined;
     } | {
         success: boolean;
         adRequired: boolean;
@@ -104,25 +118,21 @@ export declare class MinerStoneService {
         elixir?: undefined;
         cryptoBalances?: undefined;
         elixcoinBalance?: undefined;
+        economyMultiplier?: undefined;
     } | {
         success: boolean;
         action: string;
-        stoneId: string;
+        stoneId: any;
         credited: Record<string, number>;
         elixir: number;
         cryptoBalances: Record<string, number>;
         elixcoinBalance: number;
+        economyMultiplier: number | undefined;
         error?: undefined;
         adRequired?: undefined;
     }>;
     history(telegramId: string): Promise<{
         success: boolean;
-        history: {
-            stoneId: string;
-            tier: StoneTier;
-            maxHp: number;
-            rewards: Record<string, number>;
-            claimedAt: Date | null;
-        }[];
+        history: any;
     }>;
 }

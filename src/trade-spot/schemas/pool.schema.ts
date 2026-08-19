@@ -65,6 +65,26 @@ export class LiquidityPool {
   /** Admin-tunable cooldown between bot cycles, in minutes (1–60). */
   @Prop({ default: 15, min: 1, max: 60 })
   botIntervalMinutes: number;
+
+  // ── 24h pre-computed stats (eliminates full table scan every 5s) ────────
+  // Updated on every trade (bot + user). Reset daily by the bot cycle.
+  @Prop({ default: 0 })
+  high24h: number;
+
+  @Prop({ default: Infinity })
+  low24h: number;
+
+  @Prop({ default: 0 })
+  volume24h: number;
+
+  @Prop({ default: 0 })
+  quoteVolume24h: number;
+
+  @Prop({ default: 0 })
+  open24h: number;
+
+  @Prop({ default: null })
+  dayResetAt: Date;
 }
 
 export const LiquidityPoolSchema =

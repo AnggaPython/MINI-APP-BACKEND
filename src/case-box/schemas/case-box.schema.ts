@@ -4,7 +4,8 @@ import { Document } from "mongoose";
 export type CaseBoxDocument = CaseBox & Document;
 
 export type CaseTier = "COMMON" | "MEDIUM" | "RARE";
-export type CaseOutcome = "ZONK" | "ELIXCOIN" | "MATERIAL";
+export type BuffRarity = "COMMON" | "MEDIUM" | "RARE" | "ULTRA_RARE";
+export type CaseOutcome = "ZONK" | "ELIXCOIN" | "MATERIAL" | "BUFF";
 
 /**
  * A single spawned case-box session. Two server round-trips per case:
@@ -43,10 +44,10 @@ export class CaseBox {
   status: string;
 
   // Rolled at destroy by the multi-layer RNG (stored for audit + history).
-  @Prop({ type: String, default: null, enum: [null, "ZONK", "ELIXCOIN", "MATERIAL"] })
+  @Prop({ type: String, default: null, enum: [null, "ZONK", "ELIXCOIN", "MATERIAL", "BUFF"] })
   outcome: CaseOutcome | null;
 
-  @Prop({ type: String, default: null, enum: [null, "COMMON", "MEDIUM", "RARE"] })
+  @Prop({ type: String, default: null, enum: [null, "COMMON", "MEDIUM", "RARE", "ULTRA_RARE"] })
   lootRarity: CaseTier | null;
 
   @Prop({ type: String, default: null })
@@ -58,6 +59,11 @@ export class CaseBox {
 
   @Prop({ type: Date, default: null })
   openedAt: Date | null;
+
+  // Timestamp when the user claimed the loot — used for server-side cooldown
+  // enforcement so bots cannot spam-spawn cases.
+  @Prop({ type: Date, default: null })
+  claimedAt: Date | null;
 
   // TTL expiry: active (unopened) cases die after 2h; opened cases live 30 days
   // so the History tab stays meaningful.

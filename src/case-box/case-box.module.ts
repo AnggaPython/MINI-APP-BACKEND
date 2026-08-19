@@ -5,6 +5,7 @@ import { CaseBoxController } from "./case-box.controller";
 import { CaseBox, CaseBoxSchema } from "./schemas/case-box.schema";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import { UsersModule } from "../users/users.module";
+import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-collections.module";
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { UsersModule } from "../users/users.module";
       { name: User.name, schema: UserSchema },
     ]),
     UsersModule,
+    BuffItemCollectionsModule,
   ],
   controllers: [CaseBoxController],
   providers: [CaseBoxService],

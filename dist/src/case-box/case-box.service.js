@@ -44,8 +44,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CaseBoxService = exports.CASE_MATERIALS = exports.CASE_DURABILITY_COST = exports.CASE_HP_BANDS = exports.MATERIAL_AMOUNTS = exports.ELIXCOIN_BANDS = exports.LOOT_RARITY_WEIGHTS = exports.OUTCOME_WEIGHTS = exports.CASE_TIER_WEIGHTS = void 0;
+exports.CaseBoxService = exports.CASE_MATERIALS = exports.CASE_DURABILITY_COST = exports.CASE_HP_BANDS = exports.MATERIAL_AMOUNTS = exports.ELIXCOIN_BANDS = exports.BUFF_RARITY_WEIGHTS = exports.LOOT_RARITY_WEIGHTS = exports.OUTCOME_WEIGHTS = exports.CASE_TIER_WEIGHTS = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
@@ -53,20 +54,28 @@ const crypto = __importStar(require("crypto"));
 const case_box_schema_1 = require("./schemas/case-box.schema");
 const user_schema_1 = require("../users/schemas/user.schema");
 const users_service_1 = require("../users/users.service");
+const buff_item_collections_service_1 = require("../buff-item-collections/buff-item-collections.service");
 exports.CASE_TIER_WEIGHTS = {
     COMMON: 70,
     MEDIUM: 25,
     RARE: 5,
 };
 exports.OUTCOME_WEIGHTS = {
-    MATERIAL: 30,
-    ZONK: 35,
-    ELIXCOIN: 35,
+    MATERIAL: 20,
+    BUFF: 45,
+    ZONK: 25,
+    ELIXCOIN: 10,
 };
 exports.LOOT_RARITY_WEIGHTS = {
     COMMON: 70,
     MEDIUM: 22,
     RARE: 8,
+};
+exports.BUFF_RARITY_WEIGHTS = {
+    COMMON: 60,
+    MEDIUM: 15,
+    RARE: 5,
+    ULTRA_RARE: 0.5,
 };
 exports.ELIXCOIN_BANDS = {
     COMMON: [100, 500],
@@ -171,15 +180,42 @@ const SPAWN_THROTTLE_MS = 800;
 const ACTIVE_CASE_TTL_MS = 2 * 60 * 60 * 1000;
 const OPENED_CASE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 50;
+const MIN_HIT_TIME_PER_HP_MS = 800;
+const CASE_COOLDOWN_MS = 78_000;
+const DESTROY_RATE_LIMIT = 5;
+const DESTROY_RATE_WINDOW_MS = 60_000;
 let CaseBoxService = class CaseBoxService {
     caseBoxModel;
     userModel;
     usersService;
+    buffCollectionsService;
     lastSpawnAt = new Map();
-    constructor(caseBoxModel, userModel, usersService) {
+    destroyTimestamps = new Map();
+    lastClaimAt = new Map();
+    constructor(caseBoxModel, userModel, usersService, buffCollectionsService) {
         this.caseBoxModel = caseBoxModel;
         this.userModel = userModel;
         this.usersService = usersService;
+        this.buffCollectionsService = buffCollectionsService;
+    }
+    evictRateLimit(telegramId, now) {
+        const ts = this.destroyTimestamps.get(telegramId);
+        if (!ts)
+            return;
+        const cutoff = now - DESTROY_RATE_WINDOW_MS;
+        const filtered = ts.filter((t) => t > cutoff);
+        if (filtered.length === 0) {
+            this.destroyTimestamps.delete(telegramId);
+        }
+        else {
+            this.destroyTimestamps.set(telegramId, filtered);
+        }
+    }
+    getCooldownLeft(telegramId, now) {
+        const last = this.lastClaimAt.get(telegramId);
+        if (!last)
+            return 0;
+        return Math.max(0, CASE_COOLDOWN_MS - (now - last));
     }
     roll01(clientSeed, purpose) {
         const serverSeed = crypto.randomBytes(16).toString("hex");
@@ -216,6 +252,14 @@ let CaseBoxService = class CaseBoxService {
                     this.lastSpawnAt.delete(key);
             }
         }
+        const cooldownLeft = this.getCooldownLeft(telegramId, now);
+        if (cooldownLeft > 0) {
+            return {
+                success: false,
+                error: "Please wait before opening another case.",
+                cooldownLeft,
+            };
+        }
         const clientSeed = `${telegramId}:${now}`;
         const tierRoll = this.roll01(clientSeed, "case-tier");
         const tier = this.weightedPick(tierRoll, exports.CASE_TIER_WEIGHTS);
@@ -240,11 +284,20 @@ let CaseBoxService = class CaseBoxService {
         };
     }
     async destroy(telegramId, caseId) {
+        const now = Date.now();
         const user = await this.usersService.findByTelegramId(telegramId);
         if (!user) {
             return {
                 success: false,
                 error: "User account not found. Please reload the app.",
+            };
+        }
+        this.evictRateLimit(telegramId, now);
+        const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
+        if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+            return {
+                success: false,
+                error: "Too many requests. Please wait a moment.",
             };
         }
         const pending = await this.caseBoxModel
@@ -254,32 +307,82 @@ let CaseBoxService = class CaseBoxService {
         if (!pending) {
             return { success: false, error: "Case not found or already opened." };
         }
+        const minRequiredTime = pending.maxHp * MIN_HIT_TIME_PER_HP_MS;
+        const caseAge = now - new Date(pending.createdAt).getTime();
+        if (caseAge < minRequiredTime) {
+            return {
+                success: false,
+                error: "Case not ready yet. Keep hitting the lock!",
+            };
+        }
         const box = await this.caseBoxModel
             .findOneAndUpdate({ _id: caseId, telegramId, status: "active" }, { $set: { status: "opened" } }, { returnDocument: "after" })
             .exec();
         if (!box) {
             return { success: false, error: "Case not found or already opened." };
         }
+        let economyMultiplier = 1;
+        let droprateBonus = 0;
+        try {
+            const buffTotals = await this.buffCollectionsService.getUserBuffTotals(telegramId);
+            if (buffTotals.totals?.ECONOMY)
+                economyMultiplier = 1 + buffTotals.totals.ECONOMY / 100;
+            if (buffTotals.totals?.DROPRATE)
+                droprateBonus = buffTotals.totals.DROPRATE;
+        }
+        catch { }
+        const boostedMaterialWeights = { ...exports.LOOT_RARITY_WEIGHTS };
+        const boostedBuffWeights = { ...exports.BUFF_RARITY_WEIGHTS };
+        if (droprateBonus > 0) {
+            const rareBoost = Math.min(droprateBonus, 30);
+            const ultraBoost = rareBoost * 0.3;
+            boostedMaterialWeights.RARE = exports.LOOT_RARITY_WEIGHTS.RARE + rareBoost;
+            boostedMaterialWeights.COMMON = Math.max(10, exports.LOOT_RARITY_WEIGHTS.COMMON - rareBoost);
+            boostedBuffWeights.RARE = exports.BUFF_RARITY_WEIGHTS.RARE + rareBoost;
+            boostedBuffWeights.ULTRA_RARE = exports.BUFF_RARITY_WEIGHTS.ULTRA_RARE + ultraBoost;
+            boostedBuffWeights.COMMON = Math.max(10, exports.BUFF_RARITY_WEIGHTS.COMMON - rareBoost - ultraBoost);
+        }
         const clientSeed = `${telegramId}:${box._id}:${Date.now()}`;
         const outcomeRoll = this.roll01(clientSeed, "case-outcome");
         const outcome = this.weightedPick(outcomeRoll, exports.OUTCOME_WEIGHTS);
         let rarity = null;
         let loot = null;
+        let buffGranted = null;
         if (outcome === "ZONK") {
             loot = null;
         }
         else if (outcome === "ELIXCOIN") {
             const [min, max] = exports.ELIXCOIN_BANDS[box.tier];
-            const amount = Math.floor(min + Math.random() * (max - min + 1));
+            const base = Math.floor(min + Math.random() * (max - min + 1));
+            const amount = Math.round(base * economyMultiplier);
             loot = { ELIXCOIN: amount };
         }
-        else {
+        else if (outcome === "MATERIAL") {
             const rarityRoll = this.roll01(clientSeed, "case-rarity");
-            rarity = this.weightedPick(rarityRoll, exports.LOOT_RARITY_WEIGHTS);
+            rarity = this.weightedPick(rarityRoll, boostedMaterialWeights);
             const pool = exports.CASE_MATERIALS[rarity];
             const lootName = pool[Math.floor(Math.random() * pool.length)];
             loot = { [lootName]: 1 };
         }
+        else if (outcome === "BUFF") {
+            const buffRarityRoll = this.roll01(clientSeed, "case-buff-rarity");
+            const buffRarity = this.weightedPick(buffRarityRoll, boostedBuffWeights);
+            const grantResult = await this.buffCollectionsService.grantRandomBuff(telegramId, buffRarity);
+            buffGranted = grantResult;
+            if (grantResult?.buffItem) {
+                rarity = grantResult.buffItem.rarity;
+                loot = { [grantResult.buffItem.name]: 1 };
+            }
+            else {
+                const [min, max] = exports.ELIXCOIN_BANDS[box.tier];
+                const base = Math.floor(min + Math.random() * (max - min + 1));
+                const amount = Math.round(base * economyMultiplier);
+                loot = { ELIXCOIN: amount };
+            }
+        }
+        const userTimestamps = this.destroyTimestamps.get(telegramId) || [];
+        userTimestamps.push(now);
+        this.destroyTimestamps.set(telegramId, userTimestamps);
         await this.caseBoxModel
             .updateOne({ _id: caseId }, {
             $set: {
@@ -297,6 +400,9 @@ let CaseBoxService = class CaseBoxService {
             outcome,
             rarity,
             loot,
+            buffGranted: outcome === "BUFF" ? buffGranted : undefined,
+            economyMultiplier: economyMultiplier > 1 ? economyMultiplier : undefined,
+            droprateBonus: droprateBonus > 0 ? droprateBonus : undefined,
         };
     }
     async claimCase(caseId, telegramId) {
@@ -320,10 +426,18 @@ let CaseBoxService = class CaseBoxService {
             };
         }
         const boxToClaim = await this.caseBoxModel
-            .findOneAndUpdate({ _id: caseId, telegramId, status: "opened" }, { $set: { status: "claimed" } }, { returnDocument: "after" })
+            .findOneAndUpdate({ _id: caseId, telegramId, status: "opened" }, { $set: { status: "claimed", claimedAt: new Date() } }, { returnDocument: "after" })
             .exec();
         if (!boxToClaim) {
             return { success: false, error: "Concurreny error: already claimed." };
+        }
+        this.lastClaimAt.set(telegramId, Date.now());
+        if (this.lastClaimAt.size > 5000) {
+            const cutoff = Date.now() - CASE_COOLDOWN_MS * 2;
+            for (const [key, ts] of this.lastClaimAt) {
+                if (ts < cutoff)
+                    this.lastClaimAt.delete(key);
+            }
         }
         if (outcome !== "ZONK" && loot) {
             const inc = {};
@@ -371,8 +485,7 @@ exports.CaseBoxService = CaseBoxService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(case_box_schema_1.CaseBox.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        users_service_1.UsersService])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService,
+        buff_item_collections_service_1.BuffItemCollectionsService])
 ], CaseBoxService);
 //# sourceMappingURL=case-box.service.js.map

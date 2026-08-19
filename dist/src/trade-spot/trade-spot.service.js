@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a, _b, _c, _d;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradeSpotService = exports.MID_MAX = exports.MID_MIN = exports.QUOTE_BALANCE_KEY = exports.SPREAD_PCT = exports.FEE_PCT = exports.BASE_PRICE = exports.QUOTE = exports.BASE = exports.PAIR = void 0;
 const common_1 = require("@nestjs/common");
@@ -42,16 +43,47 @@ function mulberry32(seed) {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 }
+const ORDER_RATE_LIMIT = 10;
+const CANCEL_RATE_LIMIT = 20;
+const RATE_WINDOW_MS = 60_000;
+const TICKER_CACHE_MS = 3_000;
+const BOOK_CACHE_MS = 3_000;
+const TRADES_CACHE_MS = 5_000;
 let TradeSpotService = class TradeSpotService {
     tradeModel;
     poolModel;
     orderModel;
     userModel;
+    orderTimestamps = new Map();
+    cancelTimestamps = new Map();
+    tickerCache = { data: null, ts: 0 };
+    bookCache = { data: null, ts: 0, depth: 0 };
+    tradesCache = { data: null, ts: 0, limit: 0 };
     constructor(tradeModel, poolModel, orderModel, userModel) {
         this.tradeModel = tradeModel;
         this.poolModel = poolModel;
         this.orderModel = orderModel;
         this.userModel = userModel;
+    }
+    evictRateLimit(map, telegramId, now) {
+        const ts = map.get(telegramId);
+        if (!ts)
+            return;
+        const cutoff = now - RATE_WINDOW_MS;
+        const filtered = ts.filter((t) => t > cutoff);
+        if (filtered.length === 0)
+            map.delete(telegramId);
+        else
+            map.set(telegramId, filtered);
+    }
+    checkRateLimit(map, telegramId, limit, now) {
+        this.evictRateLimit(map, telegramId, now);
+        const ts = map.get(telegramId) || [];
+        if (ts.length >= limit)
+            return "Too many requests. Please slow down.";
+        ts.push(now);
+        map.set(telegramId, ts);
+        return null;
     }
     async getPool() {
         let pool = await this.poolModel.findOne({ pair: exports.PAIR }).exec();
@@ -74,33 +106,19 @@ let TradeSpotService = class TradeSpotService {
         return pool;
     }
     async getTicker() {
+        const now = Date.now();
+        if (this.tickerCache.data && now - this.tickerCache.ts < TICKER_CACHE_MS) {
+            return this.tickerCache.data;
+        }
         const pool = await this.getPool();
-        const since = new Date(Date.now() - 24 * 3600 * 1000);
-        const windowTrades = await this.tradeModel
-            .find({ createdAt: { $gte: since } })
-            .sort({ createdAt: 1 })
-            .select("price amount")
-            .lean()
-            .exec();
-        let open = null;
-        let close = pool.lastMid;
-        let high = -Infinity;
-        let low = Infinity;
-        let volume = 0;
-        for (const t of windowTrades) {
-            if (open === null)
-                open = t.price;
-            close = t.price;
-            high = Math.max(high, t.price);
-            low = Math.min(low, t.price);
-            volume += t.amount;
-        }
-        if (open === null) {
-            open = pool.lastMid;
-            high = low = pool.lastMid;
-        }
+        const close = pool.lastMid;
+        const open = pool.open24h || close;
+        const high = pool.high24h || close;
+        const low = pool.low24h === Infinity ? close : (pool.low24h || close);
+        const volume = pool.volume24h || 0;
+        const quoteVolume = pool.quoteVolume24h || 0;
         const changePct = open ? ((close - open) / open) * 100 : 0;
-        return {
+        const result = {
             success: true,
             pair: exports.PAIR,
             base: exports.BASE,
@@ -110,17 +128,23 @@ let TradeSpotService = class TradeSpotService {
             high: round8(high),
             low: round8(low),
             volume: round2(volume),
-            quoteVolume: round2(volume * close),
+            quoteVolume: round2(quoteVolume),
             feePct: pool.feePct,
             spreadPct: pool.spreadPct,
         };
+        this.tickerCache = { data: result, ts: now };
+        return result;
     }
     async getOrderBook(depth = 10) {
+        const now = Date.now();
+        const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
+        if (this.bookCache.data && now - this.bookCache.ts < BOOK_CACHE_MS && this.bookCache.depth === clamped) {
+            return this.bookCache.data;
+        }
         const pool = await this.getPool();
         const mid = pool.lastMid;
         const half = pool.spreadPct / 2;
         const step = 0.0012;
-        const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
         const asks = [];
         const bids = [];
         for (let i = 0; i < clamped; i++) {
@@ -136,7 +160,7 @@ let TradeSpotService = class TradeSpotService {
         const totalAsk = asks.reduce((acc, l) => acc + l.amount, 0);
         const totalBid = bids.reduce((acc, l) => acc + l.amount, 0);
         const bidShare = totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
-        return {
+        const result = {
             success: true,
             pair: exports.PAIR,
             mid: round8(mid),
@@ -145,16 +169,22 @@ let TradeSpotService = class TradeSpotService {
             bids,
             bidShare: round4(bidShare),
         };
+        this.bookCache = { data: result, ts: now, depth: clamped };
+        return result;
     }
     async getTrades(limit = 30) {
+        const now = Date.now();
         const n = Math.max(1, Math.min(100, Math.floor(limit || 30)));
+        if (this.tradesCache.data && now - this.tradesCache.ts < TRADES_CACHE_MS && this.tradesCache.limit === n) {
+            return this.tradesCache.data;
+        }
         const trades = await this.tradeModel
             .find()
             .sort({ createdAt: -1 })
             .limit(n)
             .lean()
             .exec();
-        return {
+        const result = {
             success: true,
             trades: trades.map((t) => ({
                 id: String(t._id),
@@ -167,6 +197,8 @@ let TradeSpotService = class TradeSpotService {
                 time: t.createdAt,
             })),
         };
+        this.tradesCache = { data: result, ts: now, limit: n };
+        return result;
     }
     async getStats() {
         const pool = await this.getPool();
@@ -338,6 +370,9 @@ let TradeSpotService = class TradeSpotService {
         };
     }
     async placeOrder(telegramId, body) {
+        const rateErr = this.checkRateLimit(this.orderTimestamps, telegramId, ORDER_RATE_LIMIT, Date.now());
+        if (rateErr)
+            return { success: false, error: rateErr };
         const pool = await this.getPool();
         const side = String(body.side || "").toUpperCase();
         if (side !== "BUY" && side !== "SELL")
@@ -464,9 +499,16 @@ let TradeSpotService = class TradeSpotService {
             source,
             ...(source === "USER" ? { telegramId } : {}),
         });
+        const quoteAmt = round4(amount * price);
         await this.poolModel
-            .updateOne({ pair: exports.PAIR }, { $inc: { lifetimeVolume: amount } })
+            .updateOne({ pair: exports.PAIR }, {
+            $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: quoteAmt },
+            $max: { high24h: price },
+            $min: { low24h: price },
+        })
             .exec();
+        this.tickerCache = { data: null, ts: 0 };
+        this.tradesCache = { data: null, ts: 0, limit: 0 };
         return {
             success: true,
             trade: {
@@ -507,6 +549,9 @@ let TradeSpotService = class TradeSpotService {
         };
     }
     async cancelOrder(telegramId, orderId) {
+        const rateErr = this.checkRateLimit(this.cancelTimestamps, telegramId, CANCEL_RATE_LIMIT, Date.now());
+        if (rateErr)
+            return { success: false, error: rateErr };
         const order = await this.orderModel
             .findOneAndUpdate({ _id: orderId, telegramId, status: "OPEN" }, { $set: { status: "CANCELLED" } }, { new: true })
             .exec();
@@ -637,12 +682,27 @@ let TradeSpotService = class TradeSpotService {
             });
             trades.push(trade);
         }
-        await this.poolModel
-            .updateOne({ pair: exports.PAIR }, {
+        const now = Date.now();
+        const shouldResetDay = !pool.dayResetAt || (now - pool.dayResetAt.getTime()) > 24 * 3600_000;
+        const updateOps = {
             $inc: { lifetimeVolume: trades.reduce((a, t) => a + t.amount, 0), botRunCount: 1 },
             $set: { lastBotRunAt: new Date() },
-        })
+        };
+        if (shouldResetDay && trades.length > 0) {
+            const lastPrice = trades[trades.length - 1].price;
+            updateOps.$set.high24h = lastPrice;
+            updateOps.$set.low24h = lastPrice;
+            updateOps.$set.volume24h = 0;
+            updateOps.$set.quoteVolume24h = 0;
+            updateOps.$set.open24h = lastPrice;
+            updateOps.$set.dayResetAt = new Date();
+        }
+        await this.poolModel
+            .updateOne({ pair: exports.PAIR }, updateOps)
             .exec();
+        this.tickerCache = { data: null, ts: 0 };
+        this.bookCache = { data: null, ts: 0, depth: 0 };
+        this.tradesCache = { data: null, ts: 0, limit: 0 };
         return { count: trades.length, trades };
     }
     randomAmount() {
@@ -659,9 +719,6 @@ exports.TradeSpotService = TradeSpotService = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(pool_schema_1.LiquidityPool.name)),
     __param(2, (0, mongoose_1.InjectModel)(open_order_schema_1.OpenOrder.name)),
     __param(3, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object])
 ], TradeSpotService);
 //# sourceMappingURL=trade-spot.service.js.map

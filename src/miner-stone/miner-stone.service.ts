@@ -9,6 +9,7 @@ import {
 } from "./schemas/mining-stone.schema";
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
+import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 
 /**
  * Server-authoritative balance tables.
@@ -67,6 +68,18 @@ const SPAWN_THROTTLE_MS = 800;
 const ACTIVE_STONE_TTL_MS = 2 * 60 * 60 * 1000; // 2h — unclaimed stones auto-expire
 const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — claimed stones power the History tab
 const HISTORY_LIMIT = 50;
+
+// ── Anti-exploit constants (mirrors case-box, tuned for miner-stone) ──────
+// Minimum ms per HP point. Frontend enforces 1500ms between hits, but the
+// server is more lenient (800ms) to account for network + page load time.
+const MIN_HIT_TIME_PER_HP_MS = 800;
+
+// Server-side cooldown between stones (matches frontend 2-minute auto-spawn).
+const MINER_COOLDOWN_MS = 120_000;
+
+// Rate limit: max destroy calls per user per time window.
+const DESTROY_RATE_LIMIT = 5;
+const DESTROY_RATE_WINDOW_MS = 60_000;
 
 // Casino-style ZONK: ~10% of spawned stones contain nothing at all.
 // Rolled at spawn by the same HMAC RNG so the stone's fate is fixed up front.
@@ -146,13 +159,41 @@ export class MinerStoneService {
   // Bounded memory: entries are purged lazily once stale / map grows too large.
   private readonly lastSpawnAt = new Map<string, number>();
 
+  // In-memory rate limit: telegramId -> array of destroy timestamps (sliding window).
+  private readonly destroyTimestamps = new Map<string, number[]>();
+
+  // In-memory cooldown: telegramId -> last claim timestamp (ms).
+  // Lost on server restart — one extra spawn after restart is harmless.
+  private readonly lastClaimAt = new Map<string, number>();
+
   constructor(
     @InjectModel(MiningStone.name)
     private miningStoneModel: Model<MiningStoneDocument>,
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private readonly usersService: UsersService,
+    private readonly buffCollectionsService: BuffItemCollectionsService,
   ) { }
+
+  /** Evict stale destroy timestamps older than the rate window. */
+  private evictRateLimit(telegramId: string, now: number): void {
+    const ts = this.destroyTimestamps.get(telegramId);
+    if (!ts) return;
+    const cutoff = now - DESTROY_RATE_WINDOW_MS;
+    const filtered = ts.filter((t) => t > cutoff);
+    if (filtered.length === 0) {
+      this.destroyTimestamps.delete(telegramId);
+    } else {
+      this.destroyTimestamps.set(telegramId, filtered);
+    }
+  }
+
+  /** Returns the remaining cooldown in ms (0 = no cooldown). Pure in-memory. */
+  private getCooldownLeft(telegramId: string, now: number): number {
+    const last = this.lastClaimAt.get(telegramId);
+    if (!last) return 0;
+    return Math.max(0, MINER_COOLDOWN_MS - (now - last));
+  }
 
   // ─────────────────────────────────────────────────────────────
   // Provably-fair HMAC-SHA256 RNG (same pattern as the Hi-Lo casino engine)
@@ -189,6 +230,17 @@ export class MinerStoneService {
       for (const [key, ts] of this.lastSpawnAt) {
         if (now - ts > 60000) this.lastSpawnAt.delete(key);
       }
+    }
+
+    // Server-side cooldown: reject if the user's last claimed stone was <2min ago.
+    // Pure in-memory — no DB query, zero cost.
+    const cooldownLeft = this.getCooldownLeft(telegramId, now);
+    if (cooldownLeft > 0) {
+      return {
+        success: false,
+        error: "Please wait before mining another stone.",
+        cooldownLeft,
+      };
     }
 
     // Weighted tier roll: most spawns are Common, Medium/Rare only sometimes
@@ -383,6 +435,7 @@ export class MinerStoneService {
   // The loot stays pending on the stone until the client picks SAVE or SELL.
   // ─────────────────────────────────────────────────────────────
   async destroy(telegramId: string, stoneId: string) {
+    const now = Date.now();
     // Guard: never work for a phantom account. The user is normally created by
     // /users/sync on app launch, but fail loudly instead of dropping loot.
     const user = await this.usersService.findByTelegramId(telegramId);
@@ -390,6 +443,35 @@ export class MinerStoneService {
       return {
         success: false,
         error: "User account not found. Please reload the app.",
+      };
+    }
+
+    // ── Rate limit: max DESTROY_RATE_LIMIT destroys per minute ────────────
+    this.evictRateLimit(telegramId, now);
+    const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
+    if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+      return {
+        success: false,
+        error: "Too many requests. Please wait a moment.",
+      };
+    }
+
+    // Peek the stone first to validate it exists and is active.
+    const pending = await this.miningStoneModel
+      .findOne({ _id: stoneId, telegramId, status: "active" })
+      .lean()
+      .exec();
+    if (!pending) {
+      return { success: false, error: "Stone not found or already claimed." };
+    }
+
+    // ── Time-gate: reject if the user mined the stone too fast ─────────────
+    const minRequiredTime = pending.maxHp * MIN_HIT_TIME_PER_HP_MS;
+    const stoneAge = now - new Date((pending as any).createdAt).getTime();
+    if (stoneAge < minRequiredTime) {
+      return {
+        success: false,
+        error: "Stone not ready yet. Keep mining!",
       };
     }
 
@@ -412,6 +494,11 @@ export class MinerStoneService {
     if (!stone) {
       return { success: false, error: "Stone not found or already claimed." };
     }
+
+    // ── Record destroy timestamp for rate limiting ───────────────────────
+    const userTimestamps = this.destroyTimestamps.get(telegramId) || [];
+    userTimestamps.push(now);
+    this.destroyTimestamps.set(telegramId, userTimestamps);
 
     // ZONK stone — no loot, nothing to claim
     if (stone.zonk) {
@@ -532,6 +619,25 @@ export class MinerStoneService {
       };
     }
 
+    // Record claim time in memory for server-side cooldown (zero DB cost).
+    this.lastClaimAt.set(telegramId, Date.now());
+    // Lazy cleanup — evict entries older than 2× cooldown.
+    if (this.lastClaimAt.size > 5000) {
+      const cutoff = Date.now() - MINER_COOLDOWN_MS * 2;
+      for (const [key, ts] of this.lastClaimAt) {
+        if (ts < cutoff) this.lastClaimAt.delete(key);
+      }
+    }
+
+    // ── ECONOMY buff: percentage bonus on claimed resources ────────────
+    let economyMultiplier = 1;
+    try {
+      const buffTotals = await this.buffCollectionsService.getUserBuffTotals(telegramId);
+      if (buffTotals.totals?.ECONOMY) {
+        economyMultiplier = 1 + buffTotals.totals.ECONOMY / 100;
+      }
+    } catch { /* buff service unavailable — skip bonus gracefully */ }
+
     const rewards = stone.rewards || {};
     const credited: Record<string, number> = {};
     let elixir = 0;
@@ -539,9 +645,13 @@ export class MinerStoneService {
     if (Object.keys(rewards).length > 0) {
       if (action === "save") {
         // SAVE: atomic $inc per resource straight into the Bag
+        // ECONOMY buff multiplier applied to each resource amount
         const inc: Record<string, number> = {};
         for (const [resource, amount] of Object.entries(rewards)) {
-          inc[`cryptoBalances.${resource}`] = amount;
+          const boosted = Math.round(amount * economyMultiplier * 100) / 100;
+          inc[`cryptoBalances.${resource}`] = boosted;
+          // Track what was ACTUALLY credited (boosted amount, not original)
+          credited[resource] = boosted;
         }
         // Medium/Rare stones consume the S2S ad ticket in the same atomic op
         // (adTickets $gte guard prevents double-spending the ticket).
@@ -562,17 +672,17 @@ export class MinerStoneService {
               "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Save again to retry.",
           };
         }
-        Object.assign(credited, rewards);
       } else {
         // SELL: convert each resource at its fixed ELIXCOIN rate and credit
         // cryptoBalances.ELIXCOIN. This is a distinct coin from ELIXIR — the
         // sale NEVER touches elixirBalance / lifetimeElixir.
+        // ECONOMY buff multiplier applied to the final ELIXCOIN total.
         elixir = 0;
         for (const [resource, amount] of Object.entries(rewards)) {
           const rate = ELIX_RATES[resource] || 0;
           elixir += amount * rate;
         }
-        elixir = Math.round(elixir * 100) / 100; // 2 decimals, no float dust
+        elixir = Math.round(elixir * economyMultiplier * 100) / 100; // ECONOMY buff
         if (elixir > 0) {
           const inc: Record<string, number> = {
             "cryptoBalances.ELIXCOIN": elixir,
@@ -587,16 +697,18 @@ export class MinerStoneService {
               { $inc: inc },
             )
             .exec();
-          if (adRequired && !sold) {
-            return {
-              success: false,
-              adRequired: true,
-              error:
-                "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
-            };
-          }
+        if (adRequired && !sold) {
+          return {
+            success: false,
+            adRequired: true,
+            error:
+              "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
+          };
         }
+        // Track ELIXCOIN as the credited amount for SELL
+        credited["ELIXCOIN"] = elixir;
       }
+    }
     }
 
     const fresh = await this.userModel.findOne({ telegramId }).exec();
@@ -609,6 +721,7 @@ export class MinerStoneService {
       elixir,
       cryptoBalances: freshCrypto,
       elixcoinBalance: freshCrypto.ELIXCOIN || 0,
+      economyMultiplier: economyMultiplier > 1 ? economyMultiplier : undefined,
     };
   }
 

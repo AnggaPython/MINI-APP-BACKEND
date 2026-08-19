@@ -2,46 +2,16 @@ import { TradeSpotService } from "./trade-spot.service";
 export declare class TradeSpotController {
     private readonly tradeSpotService;
     constructor(tradeSpotService: TradeSpotService);
-    ticker(): Promise<{
-        success: boolean;
-        pair: string;
-        base: string;
-        quote: string;
-        last: number;
-        changePct: number;
-        high: number;
-        low: number;
-        volume: number;
-        quoteVolume: number;
-        feePct: number;
-        spreadPct: number;
-    }>;
-    orderbook(depth?: string): Promise<{
-        success: boolean;
-        pair: string;
-        mid: number;
-        spread: number;
-        asks: {
-            price: number;
-            amount: number;
-        }[];
-        bids: {
-            price: number;
-            amount: number;
-        }[];
-        bidShare: number;
-    }>;
-    trades(limit?: string): Promise<{
-        success: boolean;
-        trades: any;
-    }>;
+    ticker(): Promise<any>;
+    orderbook(depth?: string): Promise<any>;
+    trades(limit?: string): Promise<any>;
     stats(): Promise<{
         success: boolean;
         lastBotRunAt: Date;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -68,9 +38,9 @@ export declare class TradeSpotController {
             userVolume: number;
         };
         lifetime: {
-            trades: number;
-            botTrades: number;
-            userTrades: number;
+            trades: any;
+            botTrades: any;
+            userTrades: any;
             volume: number;
             fees: number;
             spreadProfit: number;
@@ -112,7 +82,7 @@ export declare class TradeSpotController {
         page: number;
         limit: number;
         hasMore: boolean;
-        total: number;
+        total: any;
     } | {
         success: boolean;
         error: string;
@@ -146,8 +116,8 @@ export declare class TradeSpotController {
         order: {
             id: string;
             side: string;
-            price: number;
-            amount: number;
+            price: any;
+            amount: any;
             status: string;
         };
         message: string;
@@ -160,13 +130,7 @@ export declare class TradeSpotController {
         orderId?: string;
     }): Promise<{
         success: boolean;
-        order: import("mongoose").Document<unknown, {}, import("./schemas/open-order.schema").OpenOrder, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/open-order.schema").OpenOrder & {
-            _id: import("mongoose").Types.ObjectId;
-        } & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        order: any;
         error?: undefined;
     } | {
         success: boolean;

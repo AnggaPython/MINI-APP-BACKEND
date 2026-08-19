@@ -12,6 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var CircularCasinoService_1;
+var _a, _b, _c;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CircularCasinoService = void 0;
 const common_1 = require("@nestjs/common");
@@ -531,8 +532,6 @@ exports.CircularCasinoService = CircularCasinoService = CircularCasinoService_1 
     __param(0, (0, mongoose_1.InjectModel)(circular_treasury_schema_1.CircularTreasury.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_net_equity_schema_1.UserNetEquity.name)),
     __param(2, (0, mongoose_1.InjectModel)(monthly_book_cycle_schema_1.MonthlyBookCycle.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object])
 ], CircularCasinoService);
 //# sourceMappingURL=circular-casino.service.js.map

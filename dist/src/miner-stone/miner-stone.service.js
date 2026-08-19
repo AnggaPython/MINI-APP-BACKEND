@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var MinerStoneService_1;
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MinerStoneService = exports.PICKAXE_COSTS = exports.PICKAXE_TIERS = exports.ELIX_RATES = void 0;
 const common_1 = require("@nestjs/common");
@@ -54,6 +55,7 @@ const crypto = __importStar(require("crypto"));
 const mining_stone_schema_1 = require("./schemas/mining-stone.schema");
 const user_schema_1 = require("../users/schemas/user.schema");
 const users_service_1 = require("../users/users.service");
+const buff_item_collections_service_1 = require("../buff-item-collections/buff-item-collections.service");
 const TIER_CONFIG = {
     Common: {
         hpMin: 30,
@@ -87,6 +89,10 @@ const SPAWN_THROTTLE_MS = 800;
 const ACTIVE_STONE_TTL_MS = 2 * 60 * 60 * 1000;
 const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 50;
+const MIN_HIT_TIME_PER_HP_MS = 800;
+const MINER_COOLDOWN_MS = 120_000;
+const DESTROY_RATE_LIMIT = 5;
+const DESTROY_RATE_WINDOW_MS = 60_000;
 const ZONK_CHANCE = 0.1;
 exports.ELIX_RATES = {
     IRON: 0.00005,
@@ -130,12 +136,35 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
     miningStoneModel;
     userModel;
     usersService;
+    buffCollectionsService;
     logger = new common_1.Logger(MinerStoneService_1.name);
     lastSpawnAt = new Map();
-    constructor(miningStoneModel, userModel, usersService) {
+    destroyTimestamps = new Map();
+    lastClaimAt = new Map();
+    constructor(miningStoneModel, userModel, usersService, buffCollectionsService) {
         this.miningStoneModel = miningStoneModel;
         this.userModel = userModel;
         this.usersService = usersService;
+        this.buffCollectionsService = buffCollectionsService;
+    }
+    evictRateLimit(telegramId, now) {
+        const ts = this.destroyTimestamps.get(telegramId);
+        if (!ts)
+            return;
+        const cutoff = now - DESTROY_RATE_WINDOW_MS;
+        const filtered = ts.filter((t) => t > cutoff);
+        if (filtered.length === 0) {
+            this.destroyTimestamps.delete(telegramId);
+        }
+        else {
+            this.destroyTimestamps.set(telegramId, filtered);
+        }
+    }
+    getCooldownLeft(telegramId, now) {
+        const last = this.lastClaimAt.get(telegramId);
+        if (!last)
+            return 0;
+        return Math.max(0, MINER_COOLDOWN_MS - (now - last));
     }
     roll01(clientSeed, purpose) {
         const serverSeed = crypto.randomBytes(16).toString("hex");
@@ -164,6 +193,14 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 if (now - ts > 60000)
                     this.lastSpawnAt.delete(key);
             }
+        }
+        const cooldownLeft = this.getCooldownLeft(telegramId, now);
+        if (cooldownLeft > 0) {
+            return {
+                success: false,
+                error: "Please wait before mining another stone.",
+                cooldownLeft,
+            };
         }
         const clientSeed = `${telegramId}:${now}`;
         const tierRoll = this.roll01(clientSeed, "tier");
@@ -306,11 +343,35 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         };
     }
     async destroy(telegramId, stoneId) {
+        const now = Date.now();
         const user = await this.usersService.findByTelegramId(telegramId);
         if (!user) {
             return {
                 success: false,
                 error: "User account not found. Please reload the app.",
+            };
+        }
+        this.evictRateLimit(telegramId, now);
+        const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
+        if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+            return {
+                success: false,
+                error: "Too many requests. Please wait a moment.",
+            };
+        }
+        const pending = await this.miningStoneModel
+            .findOne({ _id: stoneId, telegramId, status: "active" })
+            .lean()
+            .exec();
+        if (!pending) {
+            return { success: false, error: "Stone not found or already claimed." };
+        }
+        const minRequiredTime = pending.maxHp * MIN_HIT_TIME_PER_HP_MS;
+        const stoneAge = now - new Date(pending.createdAt).getTime();
+        if (stoneAge < minRequiredTime) {
+            return {
+                success: false,
+                error: "Stone not ready yet. Keep mining!",
             };
         }
         const stone = await this.miningStoneModel
@@ -325,6 +386,9 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         if (!stone) {
             return { success: false, error: "Stone not found or already claimed." };
         }
+        const userTimestamps = this.destroyTimestamps.get(telegramId) || [];
+        userTimestamps.push(now);
+        this.destroyTimestamps.set(telegramId, userTimestamps);
         if (stone.zonk) {
             await this.miningStoneModel
                 .updateOne({ _id: stone._id }, { $set: { rewards: {} } })
@@ -407,6 +471,22 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 error: "Rewards already claimed or stone not found.",
             };
         }
+        this.lastClaimAt.set(telegramId, Date.now());
+        if (this.lastClaimAt.size > 5000) {
+            const cutoff = Date.now() - MINER_COOLDOWN_MS * 2;
+            for (const [key, ts] of this.lastClaimAt) {
+                if (ts < cutoff)
+                    this.lastClaimAt.delete(key);
+            }
+        }
+        let economyMultiplier = 1;
+        try {
+            const buffTotals = await this.buffCollectionsService.getUserBuffTotals(telegramId);
+            if (buffTotals.totals?.ECONOMY) {
+                economyMultiplier = 1 + buffTotals.totals.ECONOMY / 100;
+            }
+        }
+        catch { }
         const rewards = stone.rewards || {};
         const credited = {};
         let elixir = 0;
@@ -414,7 +494,9 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             if (action === "save") {
                 const inc = {};
                 for (const [resource, amount] of Object.entries(rewards)) {
-                    inc[`cryptoBalances.${resource}`] = amount;
+                    const boosted = Math.round(amount * economyMultiplier * 100) / 100;
+                    inc[`cryptoBalances.${resource}`] = boosted;
+                    credited[resource] = boosted;
                 }
                 if (adRequired)
                     inc["adTickets"] = -1;
@@ -430,7 +512,6 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                         error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Save again to retry.",
                     };
                 }
-                Object.assign(credited, rewards);
             }
             else {
                 elixir = 0;
@@ -438,7 +519,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                     const rate = exports.ELIX_RATES[resource] || 0;
                     elixir += amount * rate;
                 }
-                elixir = Math.round(elixir * 100) / 100;
+                elixir = Math.round(elixir * economyMultiplier * 100) / 100;
                 if (elixir > 0) {
                     const inc = {
                         "cryptoBalances.ELIXCOIN": elixir,
@@ -457,6 +538,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                             error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
                         };
                     }
+                    credited["ELIXCOIN"] = elixir;
                 }
             }
         }
@@ -470,6 +552,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             elixir,
             cryptoBalances: freshCrypto,
             elixcoinBalance: freshCrypto.ELIXCOIN || 0,
+            economyMultiplier: economyMultiplier > 1 ? economyMultiplier : undefined,
         };
     }
     async history(telegramId) {
@@ -496,8 +579,7 @@ exports.MinerStoneService = MinerStoneService = MinerStoneService_1 = __decorate
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(mining_stone_schema_1.MiningStone.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        users_service_1.UsersService])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService,
+        buff_item_collections_service_1.BuffItemCollectionsService])
 ], MinerStoneService);
 //# sourceMappingURL=miner-stone.service.js.map

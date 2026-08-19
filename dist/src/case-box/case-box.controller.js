@@ -29,7 +29,7 @@ let CaseBoxController = class CaseBoxController {
     async destroyCase(telegramId, caseId) {
         if (!caseId)
             return { success: false, error: "Missing caseId" };
-        return await this.caseBoxService.destroy(caseId, telegramId);
+        return await this.caseBoxService.destroy(telegramId, caseId);
     }
     async claimCase(telegramId, caseId) {
         if (!caseId)

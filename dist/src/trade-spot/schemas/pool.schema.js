@@ -25,6 +25,12 @@ let LiquidityPool = class LiquidityPool {
     lifetimeVolume;
     botEnabled;
     botIntervalMinutes;
+    high24h;
+    low24h;
+    volume24h;
+    quoteVolume24h;
+    open24h;
+    dayResetAt;
 };
 exports.LiquidityPool = LiquidityPool;
 __decorate([
@@ -79,6 +85,30 @@ __decorate([
     (0, mongoose_1.Prop)({ default: 15, min: 1, max: 60 }),
     __metadata("design:type", Number)
 ], LiquidityPool.prototype, "botIntervalMinutes", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "high24h", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: Infinity }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "low24h", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "volume24h", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "quoteVolume24h", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "open24h", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: null }),
+    __metadata("design:type", Date)
+], LiquidityPool.prototype, "dayResetAt", void 0);
 exports.LiquidityPool = LiquidityPool = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], LiquidityPool);

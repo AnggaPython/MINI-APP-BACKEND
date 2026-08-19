@@ -17,48 +17,25 @@ export declare class TradeSpotService {
     private readonly poolModel;
     private readonly orderModel;
     private readonly userModel;
+    private readonly orderTimestamps;
+    private readonly cancelTimestamps;
+    private tickerCache;
+    private bookCache;
+    private tradesCache;
     constructor(tradeModel: Model<Trade>, poolModel: Model<LiquidityPool>, orderModel: Model<OpenOrder>, userModel: Model<User>);
+    private evictRateLimit;
+    private checkRateLimit;
     getPool(): Promise<LiquidityPool>;
-    getTicker(): Promise<{
-        success: boolean;
-        pair: string;
-        base: string;
-        quote: string;
-        last: number;
-        changePct: number;
-        high: number;
-        low: number;
-        volume: number;
-        quoteVolume: number;
-        feePct: number;
-        spreadPct: number;
-    }>;
-    getOrderBook(depth?: number): Promise<{
-        success: boolean;
-        pair: string;
-        mid: number;
-        spread: number;
-        asks: {
-            price: number;
-            amount: number;
-        }[];
-        bids: {
-            price: number;
-            amount: number;
-        }[];
-        bidShare: number;
-    }>;
-    getTrades(limit?: number): Promise<{
-        success: boolean;
-        trades: any;
-    }>;
+    getTicker(): Promise<any>;
+    getOrderBook(depth?: number): Promise<any>;
+    getTrades(limit?: number): Promise<any>;
     getStats(): Promise<{
         success: boolean;
         lastBotRunAt: Date;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -85,9 +62,9 @@ export declare class TradeSpotService {
             userVolume: number;
         };
         lifetime: {
-            trades: number;
-            botTrades: number;
-            userTrades: number;
+            trades: any;
+            botTrades: any;
+            userTrades: any;
             volume: number;
             fees: number;
             spreadProfit: number;
@@ -113,9 +90,9 @@ export declare class TradeSpotService {
         nextBotRunAt: Date;
         success: boolean;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -135,9 +112,9 @@ export declare class TradeSpotService {
         nextBotRunAt: Date;
         success: boolean;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -192,8 +169,8 @@ export declare class TradeSpotService {
         order: {
             id: string;
             side: string;
-            price: number;
-            amount: number;
+            price: any;
+            amount: any;
             status: string;
         };
         message: string;
@@ -210,13 +187,7 @@ export declare class TradeSpotService {
         order?: undefined;
     } | {
         success: boolean;
-        order: import("mongoose").Document<unknown, {}, OpenOrder, {}, import("mongoose").DefaultSchemaOptions> & OpenOrder & {
-            _id: import("mongoose").Types.ObjectId;
-        } & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        order: any;
         error?: undefined;
     }>;
     getUserTrades(telegramId: string, page?: number, limit?: number): Promise<{
@@ -225,7 +196,7 @@ export declare class TradeSpotService {
         page: number;
         limit: number;
         hasMore: boolean;
-        total: number;
+        total: any;
     }>;
     matchOpenOrders(): Promise<any[]>;
     driftMid(): Promise<void>;

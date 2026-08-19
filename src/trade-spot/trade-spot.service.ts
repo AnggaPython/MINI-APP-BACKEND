@@ -48,18 +48,53 @@ function mulberry32(seed: number) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
+}// ── Anti-exploit constants ────────────────────────────────────────────────
+const ORDER_RATE_LIMIT = 10;      // max orders per minute per user
+const CANCEL_RATE_LIMIT = 20;     // max cancels per minute per user
+const RATE_WINDOW_MS = 60_000;
+
+// ── In-memory cache TTL (shared across ALL users — 0 extra DB reads) ──────
+const TICKER_CACHE_MS = 3_000;    // 3 seconds
+const BOOK_CACHE_MS = 3_000;
+const TRADES_CACHE_MS = 5_000;
 
 @Injectable()
 export class TradeSpotService {
+  // Rate limit maps: telegramId -> array of timestamps (sliding window).
+  private readonly orderTimestamps = new Map<string, number[]>();
+  private readonly cancelTimestamps = new Map<string, number[]>();
+
+  // In-memory caches — shared across ALL connected users.
+  private tickerCache: { data: any; ts: number } = { data: null, ts: 0 };
+  private bookCache: { data: any; ts: number; depth: number } = { data: null, ts: 0, depth: 0 };
+  private tradesCache: { data: any; ts: number; limit: number } = { data: null, ts: 0, limit: 0 };
+
   constructor(
     @InjectModel(Trade.name) private readonly tradeModel: Model<Trade>,
     @InjectModel(LiquidityPool.name)
     private readonly poolModel: Model<LiquidityPool>,
-    @InjectModel(OpenOrder.name)
-    private readonly orderModel: Model<OpenOrder>,
+    @InjectModel(OpenOrder.name) private readonly orderModel: Model<OpenOrder>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
   ) { }
+
+  // ── Rate limit helpers (in-memory sliding window) ─────────────────────
+  private evictRateLimit(map: Map<string, number[]>, telegramId: string, now: number): void {
+    const ts = map.get(telegramId);
+    if (!ts) return;
+    const cutoff = now - RATE_WINDOW_MS;
+    const filtered = ts.filter((t) => t > cutoff);
+    if (filtered.length === 0) map.delete(telegramId);
+    else map.set(telegramId, filtered);
+  }
+
+  private checkRateLimit(map: Map<string, number[]>, telegramId: string, limit: number, now: number): string | null {
+    this.evictRateLimit(map, telegramId, now);
+    const ts = map.get(telegramId) || [];
+    if (ts.length >= limit) return "Too many requests. Please slow down.";
+    ts.push(now);
+    map.set(telegramId, ts);
+    return null; // OK
+  }
 
   // ── Pool (platform liquidity + market state) ────────────────────────────
   async getPool(): Promise<LiquidityPool> {
@@ -84,36 +119,23 @@ export class TradeSpotService {
     return pool;
   }
 
-  // ── Ticker: last price + 24h stats ──────────────────────────────────────
+  // ── Ticker: last price + 24h stats (pre-computed on pool, cached 3s) ──
   async getTicker() {
-    const pool = await this.getPool();
-    const since = new Date(Date.now() - 24 * 3600 * 1000);
-    const windowTrades = await this.tradeModel
-      .find({ createdAt: { $gte: since } })
-      .sort({ createdAt: 1 })
-      .select("price amount")
-      .lean()
-      .exec();
+    const now = Date.now();
+    if (this.tickerCache.data && now - this.tickerCache.ts < TICKER_CACHE_MS) {
+      return this.tickerCache.data;
+    }
 
-    let open: number | null = null;
-    let close: number = pool.lastMid;
-    let high = -Infinity;
-    let low = Infinity;
-    let volume = 0;
-    for (const t of windowTrades) {
-      if (open === null) open = t.price;
-      close = t.price;
-      high = Math.max(high, t.price);
-      low = Math.min(low, t.price);
-      volume += t.amount;
-    }
-    if (open === null) {
-      open = pool.lastMid;
-      high = low = pool.lastMid;
-    }
+    const pool = await this.getPool();
+    const close = pool.lastMid;
+    const open = pool.open24h || close;
+    const high = pool.high24h || close;
+    const low = pool.low24h === Infinity ? close : (pool.low24h || close);
+    const volume = pool.volume24h || 0;
+    const quoteVolume = pool.quoteVolume24h || 0;
     const changePct = open ? ((close - open) / open) * 100 : 0;
 
-    return {
+    const result = {
       success: true,
       pair: PAIR,
       base: BASE,
@@ -123,19 +145,25 @@ export class TradeSpotService {
       high: round8(high),
       low: round8(low),
       volume: round2(volume),
-      quoteVolume: round2(volume * close),
+      quoteVolume: round2(quoteVolume),
       feePct: pool.feePct,
       spreadPct: pool.spreadPct,
     };
+    this.tickerCache = { data: result, ts: now };
+    return result;
   }
 
-  // ── Order book: synthetic ladder around the real-time mid ───────────────
+  // ── Order book: synthetic ladder (cached 3s, shared across users) ──────
   async getOrderBook(depth = 10) {
+    const now = Date.now();
+    const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
+    if (this.bookCache.data && now - this.bookCache.ts < BOOK_CACHE_MS && this.bookCache.depth === clamped) {
+      return this.bookCache.data;
+    }
     const pool = await this.getPool();
     const mid = pool.lastMid;
     const half = pool.spreadPct / 2;
     const step = 0.0012; // 0.12% between consecutive levels
-    const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
 
     const asks: { price: number; amount: number }[] = [];
     const bids: { price: number; amount: number }[] = [];
@@ -159,7 +187,7 @@ export class TradeSpotService {
     const totalBid = bids.reduce((acc, l) => acc + l.amount, 0);
     const bidShare = totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
 
-    return {
+    const result = {
       success: true,
       pair: PAIR,
       mid: round8(mid),
@@ -168,18 +196,24 @@ export class TradeSpotService {
       bids,
       bidShare: round4(bidShare),
     };
+    this.bookCache = { data: result, ts: now, depth: clamped };
+    return result;
   }
 
-  // ── Trade history feed ──────────────────────────────────────────────────
+  // ── Trade history feed (cached 5s, shared across users) ────────────────
   async getTrades(limit = 30) {
+    const now = Date.now();
     const n = Math.max(1, Math.min(100, Math.floor(limit || 30)));
+    if (this.tradesCache.data && now - this.tradesCache.ts < TRADES_CACHE_MS && this.tradesCache.limit === n) {
+      return this.tradesCache.data;
+    }
     const trades = await this.tradeModel
       .find()
       .sort({ createdAt: -1 })
       .limit(n)
       .lean<any>()
       .exec();
-    return {
+    const result = {
       success: true,
       trades: trades.map((t) => ({
         id: String(t._id),
@@ -192,6 +226,8 @@ export class TradeSpotService {
         time: t.createdAt,
       })),
     };
+    this.tradesCache = { data: result, ts: now, limit: n };
+    return result;
   }
 
   // ── Market stats (MM bot + platform pool) ───────────────────────────────
@@ -395,6 +431,10 @@ export class TradeSpotService {
     telegramId: string,
     body: { side?: string; type?: string; amount?: number; price?: number },
   ) {
+    // ── Rate limit: max ORDER_RATE_LIMIT orders per minute ──────────────
+    const rateErr = this.checkRateLimit(this.orderTimestamps, telegramId, ORDER_RATE_LIMIT, Date.now());
+    if (rateErr) return { success: false, error: rateErr };
+
     const pool = await this.getPool();
     const side = String(body.side || "").toUpperCase();
     if (side !== "BUY" && side !== "SELL")
@@ -576,9 +616,22 @@ export class TradeSpotService {
       source,
       ...(source === "USER" ? { telegramId } : {}),
     });
+
+    // ── Update 24h pre-computed stats on the pool (eliminates full scan) ─
+    const quoteAmt = round4(amount * price);
     await this.poolModel
-      .updateOne({ pair: PAIR }, { $inc: { lifetimeVolume: amount } })
+      .updateOne(
+        { pair: PAIR },
+        {
+          $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: quoteAmt },
+          $max: { high24h: price },
+          $min: { low24h: price },
+        },
+      )
       .exec();
+    // Invalidate caches so next poll picks up fresh data.
+    this.tickerCache = { data: null, ts: 0 };
+    this.tradesCache = { data: null, ts: 0, limit: 0 };
 
     return {
       success: true,
@@ -624,6 +677,10 @@ export class TradeSpotService {
   }
 
   async cancelOrder(telegramId: string, orderId: string) {
+    // ── Rate limit: max CANCEL_RATE_LIMIT cancels per minute ────────────
+    const rateErr = this.checkRateLimit(this.cancelTimestamps, telegramId, CANCEL_RATE_LIMIT, Date.now());
+    if (rateErr) return { success: false, error: rateErr };
+
     const order = await this.orderModel
       .findOneAndUpdate(
         { _id: orderId, telegramId, status: "OPEN" },
@@ -793,15 +850,29 @@ export class TradeSpotService {
       trades.push(trade);
     }
 
+    // ── Daily 24h stats reset: if lastReset >24h ago, reset counters ────
+    const now = Date.now();
+    const shouldResetDay = !pool.dayResetAt || (now - pool.dayResetAt.getTime()) > 24 * 3600_000;
+    const updateOps: Record<string, any> = {
+      $inc: { lifetimeVolume: trades.reduce((a, t) => a + t.amount, 0), botRunCount: 1 },
+      $set: { lastBotRunAt: new Date() },
+    };
+    if (shouldResetDay && trades.length > 0) {
+      const lastPrice = trades[trades.length - 1].price;
+      updateOps.$set.high24h = lastPrice;
+      updateOps.$set.low24h = lastPrice;
+      updateOps.$set.volume24h = 0;
+      updateOps.$set.quoteVolume24h = 0;
+      updateOps.$set.open24h = lastPrice;
+      updateOps.$set.dayResetAt = new Date();
+    }
     await this.poolModel
-      .updateOne(
-        { pair: PAIR },
-        {
-          $inc: { lifetimeVolume: trades.reduce((a, t) => a + t.amount, 0), botRunCount: 1 },
-          $set: { lastBotRunAt: new Date() },
-        },
-      )
+      .updateOne({ pair: PAIR }, updateOps)
       .exec();
+    // Invalidate caches after bot cycle.
+    this.tickerCache = { data: null, ts: 0 };
+    this.bookCache = { data: null, ts: 0, depth: 0 };
+    this.tradesCache = { data: null, ts: 0, limit: 0 };
 
     return { count: trades.length, trades };
   }

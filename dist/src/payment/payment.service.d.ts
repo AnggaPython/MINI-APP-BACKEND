@@ -1,6 +1,6 @@
 import { UsersService } from "../users/users.service";
 import { Model } from "mongoose";
-import { Transaction, TransactionDocument } from "./schemas/transaction.schema";
+import { TransactionDocument } from "./schemas/transaction.schema";
 import { AdminService } from "../admin/admin.service";
 import { CircularCasinoService } from "../admin/circular-casino.service";
 export declare class PaymentService {
@@ -78,13 +78,7 @@ export declare class PaymentService {
     }>;
     getTransactions(telegramId: string): Promise<{
         success: boolean;
-        transactions: (import("mongoose").Document<unknown, {}, TransactionDocument, {}, import("mongoose").DefaultSchemaOptions> & Transaction & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        })[];
+        transactions: any;
     }>;
     syncPendingDeposit(orderId: string, telegramId: string): Promise<{
         success: boolean;
