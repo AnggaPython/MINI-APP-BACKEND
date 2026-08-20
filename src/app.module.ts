@@ -17,6 +17,8 @@ import { TradeSpotModule } from "./trade-spot/trade-spot.module";
 import { CaseBoxModule } from "./case-box/case-box.module";
 import { BuffItemCollectionsModule } from "./buff-item-collections/buff-item-collections.module";
 import { AuctionHouseModule } from "./auction-house/auction-house.module";
+import { LevelingModule } from "./leveling-miner/leveling.module";
+import { PickaxeUpgradeModule } from "./pickaxe-upgraded/pickaxe-upgrade.module";
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { AuctionHouseModule } from "./auction-house/auction-house.module";
     CaseBoxModule,
     BuffItemCollectionsModule,
     AuctionHouseModule,
+    LevelingModule,
+    PickaxeUpgradeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

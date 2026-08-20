@@ -15,8 +15,8 @@ import { TradeSpotService } from "./trade-spot.service";
  *   • Every `botIntervalMinutes` (default 15, admin-tunable) it prints 10
  *     trades — 5 buys and 5 sells — with random-but-sensible amounts.
  *   • Every execution is priced at the real-time MIDDLE of the spread
- *     (which itself drifts within a tight 9.5–10.5 band around the
- *     1 ELIXIR = 10 ELIXCOIN reference). Because buys and sells are symmetric
+ *     (which itself drifts within a tight 0.148–0.151 band around the
+ *     1 ELIXCOIN ≈ 0.15 ELIXIR reference). Because buys and sells are symmetric
  *     at the same mid, the bot has zero directional bias — it can never pump
  *     or dump the price, so it never harms users.   *   • The platform keeps the 1.5% fee on every one of these prints.
  *

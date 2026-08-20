@@ -10,6 +10,7 @@ import {
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
+import { LevelingService, STAR_XP_PER_TIER, getLevelMultiplier } from "../leveling-miner/leveling.service";
 
 /**
  * Server-authoritative balance tables.
@@ -40,8 +41,8 @@ const TIER_CONFIG: Record<StoneTier, TierConfig> = {
     hpMax: 80,
     weight: 85000,
     rewards: {
-      IRON: [500, 10000],
-      COPPER: [250, 5000],
+      IRON: [10, 100],
+      COPPER: [5, 50],
     },
   },
   Medium: {
@@ -49,8 +50,8 @@ const TIER_CONFIG: Record<StoneTier, TierConfig> = {
     hpMax: 160,
     weight: 97000,
     rewards: {
-      SILVER: [100, 2000],
-      GOLD: [5, 10],
+      SILVER: [5, 40],
+      GOLD: [1, 3],
     },
   },
   Rare: {
@@ -58,8 +59,8 @@ const TIER_CONFIG: Record<StoneTier, TierConfig> = {
     hpMax: 360,
     weight: 100000,
     rewards: {
-      GOLD: [10, 50],
-      DIAMOND: [5, 10],
+      GOLD: [2, 10],
+      DIAMOND: [1, 3],
     },
   },
 };
@@ -70,9 +71,14 @@ const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — claimed stones
 const HISTORY_LIMIT = 50;
 
 // ── Anti-exploit constants (mirrors case-box, tuned for miner-stone) ──────
-// Minimum ms per HP point. Frontend enforces 1500ms between hits, but the
-// server is more lenient (800ms) to account for network + page load time.
-const MIN_HIT_TIME_PER_HP_MS = 800;
+// Frontend enforces 1500ms between hits (hard throttle). Each hit removes
+// pickaxe.power + ATK buff HP. The server doesn't know the player's ATK,
+// so we compute the absolute fastest a legitimate client could destroy:
+//   minHits = ceil(maxHp / MAX_PLAYER_ATK)
+//   minTime = minHits * HIT_INTERVAL_MS
+// MAX_PLAYER_ATK covers Mythic (60) + generous ATK buff ceiling.
+const MAX_PLAYER_ATK = 120;
+const HIT_INTERVAL_MS = 1500;
 
 // Server-side cooldown between stones (matches frontend 2-minute auto-spawn).
 const MINER_COOLDOWN_MS = 120_000;
@@ -94,11 +100,11 @@ const ZONK_CHANCE = 0.1;
 // Common drops, so they are the cheapest; DIAMOND is the rarest and dearest).
 // Expected SELL value per stone: Common ≈ 46 · Medium ≈ 112 · Rare ≈ 180.
 export const ELIX_RATES: Record<string, number> = {
-  IRON: 0.00005,
-  COPPER: 0.000075,
+  IRON: 0.005,
+  COPPER: 0.01,
   SILVER: 0.1,
   GOLD: 1,
-  DIAMOND: 20,
+  DIAMOND: 10,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -117,35 +123,19 @@ export const PICKAXE_TIERS = [
 
 export type PickaxeTier = (typeof PICKAXE_TIERS)[number];
 
-export const PICKAXE_COSTS: Record<
-  Exclude<PickaxeTier, "Common">,
-  { GOLD: number; DIAMOND: number }
-> = {
-  Uncommon: { GOLD: 1000, DIAMOND: 10 },
-  Rare: { GOLD: 5000, DIAMOND: 50 },
-  Epic: { GOLD: 20000, DIAMOND: 200 },
-  Legendary: { GOLD: 100000, DIAMOND: 1000 },
-  Mythic: { GOLD: 500000, DIAMOND: 5000 },
-};
-
-const PICKAXE_PREV: Record<Exclude<PickaxeTier, "Common">, PickaxeTier> = {
-  Uncommon: "Common",
-  Rare: "Uncommon",
-  Epic: "Rare",
-  Legendary: "Epic",
-  Mythic: "Legendary",
-};
-
 // Repair costs — each tier is mended with the resources its stones drop:
 //   Common → IRON · Uncommon → SILVER · Rare+ → GOLD (Mythic also needs DIAMOND)
 // Server-authoritative; the frontend only mirrors this for display.
 const PICKAXE_REPAIR_COSTS: Record<PickaxeTier, Record<string, number>> = {
-  Common: { IRON: 1000 },
-  Uncommon: { SILVER: 800 },
-  Rare: { GOLD: 150 },
-  Epic: { GOLD: 500 },
-  Legendary: { GOLD: 2000 },
-  Mythic: { GOLD: 5000, DIAMOND: 50 },
+  // Low tier: IRON + COPPER only
+  Common:    { IRON: 100, COPPER: 50 },
+  Uncommon:  { IRON: 150, COPPER: 80, SILVER: 20 },
+  // Mid tier: add SILVER + small GOLD
+  Rare:      { IRON: 120, COPPER: 60, SILVER: 60, GOLD: 5 },
+  Epic:      { IRON: 100, COPPER: 50, SILVER: 80, GOLD: 10 },
+  // High tier: all resources, balanced proportions
+  Legendary: { IRON: 80, COPPER: 40, SILVER: 60, GOLD: 15, DIAMOND: 1 },
+  Mythic:    { IRON: 60, COPPER: 30, SILVER: 50, GOLD: 20, DIAMOND: 3 },
 };
 
 // The 5 mining resources (used to shape the balance payload returned to clients)
@@ -173,6 +163,7 @@ export class MinerStoneService {
     private userModel: Model<UserDocument>,
     private readonly usersService: UsersService,
     private readonly buffCollectionsService: BuffItemCollectionsService,
+    private readonly levelingService: LevelingService,
   ) { }
 
   /** Evict stale destroy timestamps older than the rate window. */
@@ -243,6 +234,14 @@ export class MinerStoneService {
       };
     }
 
+    // Fetch user level for HP scaling
+    let levelMultiplier = 1;
+    try {
+      const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+      const userLevel = (userDoc as any)?.level || 1;
+      levelMultiplier = getLevelMultiplier(userLevel);
+    } catch { /* leveling unavailable — use base multiplier */ }
+
     // Weighted tier roll: most spawns are Common, Medium/Rare only sometimes
     const clientSeed = `${telegramId}:${now}`;
     const tierRoll = this.roll01(clientSeed, "tier");
@@ -251,10 +250,11 @@ export class MinerStoneService {
     else if (tierRoll < TIER_CONFIG.Medium.weight / 100000) tier = "Medium";
     else tier = "Rare";
 
-    // MPa roll within the tier band
+    // MPa roll within the tier band, scaled by level multiplier
     const cfg = TIER_CONFIG[tier];
     const hpRoll = this.roll01(clientSeed, "hp");
-    const maxHp = this.round2(cfg.hpMin + (cfg.hpMax - cfg.hpMin) * hpRoll);
+    const baseHp = cfg.hpMin + (cfg.hpMax - cfg.hpMin) * hpRoll;
+    const maxHp = this.round2(baseHp * levelMultiplier);
 
     // ZONK roll — decided here at spawn, fixed for the stone's whole life
     const zonk = this.roll01(clientSeed, "zonk") < ZONK_CHANCE;
@@ -276,81 +276,6 @@ export class MinerStoneService {
         tier: stone.tier,
         maxHp: stone.maxHp,
         zonk: stone.zonk,
-      },
-    };
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // POST /miner-stone/purchase-pickaxe — unlock the next pickaxe tier
-  // ─────────────────────────────────────────────────────────────
-  async purchasePickaxe(telegramId: string, tier: string) {
-    const cost = PICKAXE_COSTS[tier as Exclude<PickaxeTier, "Common">];
-    if (!cost) {
-      return { success: false, error: "Invalid pickaxe tier" };
-    }
-
-    const user = await this.usersService.findByTelegramId(telegramId);
-    if (!user) {
-      return {
-        success: false,
-        error: "User account not found. Please reload the app.",
-      };
-    }
-
-    const owned = user.ownedPickaxes?.length ? user.ownedPickaxes : ["Common"];
-    if (owned.includes(tier)) {
-      return { success: false, error: "Pickaxe already owned" };
-    }
-
-    // Strict unlock chain: Rare requires Uncommon, Epic requires Rare, etc.
-    const prev = PICKAXE_PREV[tier as Exclude<PickaxeTier, "Common">];
-    if (!owned.includes(prev)) {
-      return {
-        success: false,
-        error: `Unlock ${prev} pickaxe first`,
-      };
-    }
-
-    // ONE atomic operation: deduct GOLD + DIAMOND and grant ownership.
-    // Balance guards live inside the query, so a race can never double-spend
-    // or grant the pickaxe without paying (findOneAndUpdate is atomic).
-    const updated = await this.userModel
-      .findOneAndUpdate(
-        {
-          telegramId,
-          ownedPickaxes: { $nin: [tier] },
-          "cryptoBalances.GOLD": { $gte: cost.GOLD },
-          "cryptoBalances.DIAMOND": { $gte: cost.DIAMOND },
-        },
-        {
-          $inc: {
-            "cryptoBalances.GOLD": -cost.GOLD,
-            "cryptoBalances.DIAMOND": -cost.DIAMOND,
-          },
-          // Idempotent: new users already have Common; legacy docs missing the
-          // field get it backfilled here so ownership is never truncated.
-          $addToSet: { ownedPickaxes: { $each: ["Common", tier] } },
-        },
-        { returnDocument: "after" },
-      )
-      .exec();
-
-    if (!updated) {
-      return {
-        success: false,
-        error: "Insufficient Gold/Diamond or pickaxe already owned",
-      };
-    }
-
-    return {
-      success: true,
-      tier,
-      ownedPickaxes: updated.ownedPickaxes?.length
-        ? updated.ownedPickaxes
-        : ["Common", tier],
-      balances: {
-        GOLD: updated.cryptoBalances?.GOLD || 0,
-        DIAMOND: updated.cryptoBalances?.DIAMOND || 0,
       },
     };
   }
@@ -466,7 +391,10 @@ export class MinerStoneService {
     }
 
     // ── Time-gate: reject if the user mined the stone too fast ─────────────
-    const minRequiredTime = pending.maxHp * MIN_HIT_TIME_PER_HP_MS;
+    // Calculate minimum real time based on the frontend's hit mechanics:
+    // 1500ms per hit, best-case ATK = 120 (Mythic + buffs).
+    const minHits = Math.ceil(pending.maxHp / MAX_PLAYER_ATK);
+    const minRequiredTime = minHits * HIT_INTERVAL_MS;
     const stoneAge = now - new Date((pending as any).createdAt).getTime();
     if (stoneAge < minRequiredTime) {
       return {
@@ -500,7 +428,15 @@ export class MinerStoneService {
     userTimestamps.push(now);
     this.destroyTimestamps.set(telegramId, userTimestamps);
 
-    // ZONK stone — no loot, nothing to claim
+    // ── Leveling: award XP and stars for every destroyed stone (incl. ZONK) ─
+    let starResult: { starCount: number; xpAwarded: number; level: number; levelUp: boolean; newLevel: number; pickaxeGrants: string[]; pendingStars: number; lockedLevel: number | null };
+    try {
+      starResult = await this.levelingService.awardStoneXp(telegramId, stone.tier);
+    } catch {
+      starResult = { starCount: Math.floor(Math.random() * 5) + 1, xpAwarded: 0, level: 1, levelUp: false, newLevel: 1, pickaxeGrants: [], pendingStars: 0, lockedLevel: null };
+    }
+
+    // ZONK stone — no loot, nothing to claim (but stars still awarded above)
     if (stone.zonk) {
       await this.miningStoneModel
         .updateOne({ _id: stone._id }, { $set: { rewards: {} } })
@@ -515,23 +451,42 @@ export class MinerStoneService {
           maxHp: stone.maxHp,
         },
         rewards: {},
+        starCount: starResult.starCount,
+        xpAwarded: starResult.xpAwarded,
+        level: starResult.level,
+        levelUp: starResult.levelUp,
+        newLevel: starResult.newLevel,
+        pickaxeGrants: starResult.pickaxeGrants,
+        pendingStars: starResult.pendingStars,
+        lockedLevel: starResult.lockedLevel,
       };
     }
 
     // Higher MPa stone ⇒ quality closer to 1 ⇒ larger rewards within the band
     const cfg = TIER_CONFIG[stone.tier];
+
+    // Level multiplier scales both quality range and reward amounts
+    const userLevel = starResult.level;
+    const levelMultiplier = getLevelMultiplier(userLevel);
+
+    // Quality uses the level-scaled HP range (stone.maxHp was already scaled at spawn)
+    const scaledHpMin = cfg.hpMin * levelMultiplier;
+    const scaledHpMax = cfg.hpMax * levelMultiplier;
     const quality = Math.max(
       0,
-      Math.min(1, (stone.maxHp - cfg.hpMin) / (cfg.hpMax - cfg.hpMin)),
+      Math.min(1, (stone.maxHp - scaledHpMin) / (scaledHpMax - scaledHpMin)),
     );
 
     const rewards: Record<string, number> = {};
     for (const [resource, [min, max]] of Object.entries(cfg.rewards)) {
-      const point = min + (max - min) * quality;
+      // Scale reward range by level multiplier
+      const scaledMin = Math.round(min * levelMultiplier);
+      const scaledMax = Math.round(max * levelMultiplier);
+      const point = scaledMin + (scaledMax - scaledMin) * quality;
       const jitter = 0.75 + Math.random() * 0.5; // every claim differs
       rewards[resource] = Math.max(
-        min,
-        Math.min(max, Math.round(point * jitter)),
+        scaledMin,
+        Math.min(scaledMax, Math.round(point * jitter)),
       );
     }
 
@@ -551,6 +506,15 @@ export class MinerStoneService {
         maxHp: stone.maxHp,
       },
       rewards,
+      starCount: starResult.starCount,
+      xpAwarded: starResult.xpAwarded,
+      level: starResult.level,
+      levelUp: starResult.levelUp,
+      newLevel: starResult.newLevel,
+      pickaxeGrants: starResult.pickaxeGrants,
+      pendingStars: starResult.pendingStars,
+      lockedLevel: starResult.lockedLevel,
+      levelMultiplier,
     };
   }
 

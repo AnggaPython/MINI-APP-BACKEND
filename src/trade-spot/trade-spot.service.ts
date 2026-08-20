@@ -7,12 +7,15 @@ import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
 
 // ── Pair constants ────────────────────────────────────────────────────────
-export const PAIR = "ELIXIR/ELIXCOIN";
-export const BASE = "ELIXIR";
-export const QUOTE = "ELIXCOIN";
+export const PAIR = "ELIXCOIN/ELIXIR";
+export const BASE = "ELIXCOIN";
+export const QUOTE = "ELIXIR";
 
-/** Reference price: 1.00000000 ELIXIR = 10.00000000 ELIXCOIN. */
-export const BASE_PRICE = 10;
+/**
+ * Reference price: 1 ELIXCOIN = 0.14872647389 ELIXIR ≈ 0.15 ELIXIR.
+ * 1 ELIXIR = 1 / 0.14872647389 ≈ 6.724 ELIXCOIN.
+ */
+export const BASE_PRICE = 0.14872647389; // ≈ 0.15 ELIXIR per ELIXCOIN
 
 /** Flat platform fee per transaction (1.5%). */
 export const FEE_PCT = 0.015;
@@ -20,19 +23,18 @@ export const FEE_PCT = 0.015;
 /** Full quoted spread (0.4% → ±0.2% around mid). */
 export const SPREAD_PCT = 0.004;
 
-/** Where the user's ELIXCOIN quote balance lives. */
-export const QUOTE_BALANCE_KEY = "ELIXCOIN";
+/** ELIXCOIN balance lives in cryptoBalances.ELIXCOIN */
+export const ELIXCOIN_KEY = "ELIXCOIN";
 
 /**
  * Random-walk bounds so the market breathes but never drifts away.
- * MID_MIN is floored at 10 — the real-money redemption peg of ELIXIR
- * (10,000 ELIXIR = $1 = 100,000 ELIXCOIN ⇒ 1 ELIXIR = 10 ELIXCOIN). If the
- * mid ever fell below 10, users could buy ELIXIR cheap and redeem it for its
- * full dollar value — an instant arbitrage that drains the redemption pool.
- * The 1.5% fee adds a natural extra guard on top of this floor.
+ * Mid price = ELIXIR per 1 ELIXCOIN (≈ 0.15).
+ * If mid drifts too low, ELIXCOIN becomes too cheap → arbitrage.
+ * If mid drifts too high, ELIXCOIN becomes too expensive → users flee.
+ * The 1.5% fee adds a natural extra guard.
  */
-export const MID_MIN = 10;
-export const MID_MAX = 10.5;
+export const MID_MIN = 0.148;
+export const MID_MAX = 0.151;
 
 const round8 = (n: number) => Math.round(n * 1e8) / 1e8;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -100,11 +102,11 @@ export class TradeSpotService {
   async getPool(): Promise<LiquidityPool> {
     let pool = await this.poolModel.findOne({ pair: PAIR }).exec();
     if (!pool) {
-      // Admin pre-installs liquidity: 1M ELIXIR against 10M ELIXCOIN at mid 10.
+      // Admin pre-installs liquidity: ~6.7M ELIXCOIN against 1M ELIXIR at mid ≈ 0.1487.
       pool = await this.poolModel.create({
         pair: PAIR,
-        elixirReserve: 1_000_000,
-        elixcoinReserve: 10_000_000,
+        elixcoinReserve: 6_724_000, // 6,724,000 ELIXCOIN
+        elixirReserve: 1_000_000,   // 1,000,000 ELIXIR
         lastMid: BASE_PRICE,
         spreadPct: SPREAD_PCT,
         feePct: FEE_PCT,
@@ -421,8 +423,8 @@ export class TradeSpotService {
       success: true,
       base: BASE,
       quote: QUOTE,
+      elixcoin: round4((user?.cryptoBalances as Record<string, number> | undefined)?.[ELIXCOIN_KEY] || 0),
       elixir: round4(user?.elixirBalance || 0),
-      elixcoin: round4((user?.cryptoBalances as Record<string, number> | undefined)?.[QUOTE_BALANCE_KEY] || 0),
     };
   }
 
@@ -503,10 +505,9 @@ export class TradeSpotService {
    * The platform pool is the counterparty — its reserves are guarded the same
    * way, and it keeps the 1.5% fee plus the spread slip.
    *
-   * Fee currency rule (so users are never confused about which coin the tax
-   * is paid in): the fee is always charged in the currency the user RECEIVES.
-   *   • BUY  (spend ELIXCOIN → receive ELIXIR)  → fee is ELIXIR
-   *   • SELL (spend ELIXIR → receive ELIXCOIN)  → fee is ELIXCOIN
+   * Fee currency rule: the fee is always charged in the currency the user RECEIVES.
+   *   • BUY  (spend ELIXIR → receive ELIXCOIN)  → fee is ELIXCOIN
+   *   • SELL (spend ELIXCOIN → receive ELIXIR)  → fee is ELIXIR
    */
   private async executeFill(
     telegramId: string,
@@ -518,37 +519,36 @@ export class TradeSpotService {
     if (source === "USER" && !telegramId)
       return { success: false, error: "Missing account" };
 
-    const total = round4(amount * price); // quote (ELIXCOIN) value of the trade
+    const total = round4(amount * price); // quote (ELIXIR) value of the trade
     const pool = await this.getPool();
-    const userKey = `cryptoBalances.${QUOTE_BALANCE_KEY}`;
     let updated: any = null;
     let fee = 0;
-    let feeCurrency: "ELIXIR" | "ELIXCOIN" = QUOTE_BALANCE_KEY;
+    let feeCurrency: "ELIXIR" | "ELIXCOIN" = BASE;
 
     if (side === "BUY") {
-      // User spends ELIXCOIN (total), receives ELIXIR minus the 1.5% fee
-      // charged in ELIXIR — the currency they receive.
-      fee = round4(amount * FEE_PCT); // ELIXIR
+      // BUY ELIXCOIN: user spends ELIXIR (total), receives ELIXCOIN (amount) minus fee.
+      // Fee charged in ELIXCOIN — the currency they receive.
+      fee = round4(amount * FEE_PCT); // ELIXCOIN
       feeCurrency = BASE;
-      const receivedElixir = round4(amount - fee);
+      const receivedElixcoin = round4(amount - fee);
       updated = await this.userModel
         .findOneAndUpdate(
-          { telegramId, [userKey]: { $gte: total } },
-          { $inc: { [userKey]: -total, elixirBalance: receivedElixir } },
-          { new: true },
+          { telegramId, elixirBalance: { $gte: total } },
+          { $inc: { elixirBalance: -total, [`cryptoBalances.${ELIXCOIN_KEY}`]: receivedElixcoin } },
+          { returnDocument: "after" },
         )
         .exec();
       if (!updated)
         return { success: false, error: `Insufficient ${QUOTE} balance` };
 
-      // Pool sells ELIXIR — guarded so reserves can never go negative.
+      // Pool sells ELIXCOIN, receives ELIXIR.
       const poolUpd = await this.poolModel
         .findOneAndUpdate(
-          { pair: PAIR, elixirReserve: { $gte: amount } },
+          { pair: PAIR, elixcoinReserve: { $gte: amount } },
           {
             $inc: {
-              elixirReserve: -amount,
-              elixcoinReserve: total,
+              elixcoinReserve: -amount,
+              elixirReserve: total,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
             },
@@ -556,26 +556,26 @@ export class TradeSpotService {
         )
         .exec();
       if (!poolUpd) {
-        // Roll back the user charge to keep the books exact.
+        // Roll back the user charge.
         await this.userModel
           .updateOne(
             { telegramId },
-            { $inc: { [userKey]: total, elixirBalance: -receivedElixir } },
+            { $inc: { elixirBalance: total, [`cryptoBalances.${ELIXCOIN_KEY}`]: -receivedElixcoin } },
           )
           .exec();
         return { success: false, error: "Insufficient platform liquidity" };
       }
     } else {
-      // User spends ELIXIR (amount), receives ELIXCOIN minus the 1.5% fee
-      // charged in ELIXCOIN — the currency they receive.
-      fee = round4(total * FEE_PCT); // ELIXCOIN
-      feeCurrency = QUOTE_BALANCE_KEY;
+      // SELL ELIXCOIN: user spends ELIXCOIN (amount), receives ELIXIR (proceeds) minus fee.
+      // Fee charged in ELIXIR — the currency they receive.
+      fee = round4(total * FEE_PCT); // ELIXIR
+      feeCurrency = QUOTE;
       const proceeds = round4(total - fee);
       updated = await this.userModel
         .findOneAndUpdate(
-          { telegramId, elixirBalance: { $gte: amount } },
-          { $inc: { elixirBalance: -amount, [userKey]: proceeds } },
-          { new: true },
+          { telegramId, [`cryptoBalances.${ELIXCOIN_KEY}`]: { $gte: amount } },
+          { $inc: { [`cryptoBalances.${ELIXCOIN_KEY}`]: -amount, elixirBalance: proceeds } },
+          { returnDocument: "after" },
         )
         .exec();
       if (!updated)
@@ -583,11 +583,11 @@ export class TradeSpotService {
 
       const poolUpd = await this.poolModel
         .findOneAndUpdate(
-          { pair: PAIR, elixcoinReserve: { $gte: proceeds } },
+          { pair: PAIR, elixirReserve: { $gte: proceeds } },
           {
             $inc: {
-              elixirReserve: amount,
-              elixcoinReserve: -proceeds,
+              elixcoinReserve: amount,
+              elixirReserve: -proceeds,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: Math.abs(pool.lastMid - price) * amount,
             },
@@ -598,7 +598,7 @@ export class TradeSpotService {
         await this.userModel
           .updateOne(
             { telegramId },
-            { $inc: { elixirBalance: amount, [userKey]: -proceeds } },
+            { $inc: { [`cryptoBalances.${ELIXCOIN_KEY}`]: amount, elixirBalance: -proceeds } },
           )
           .exec();
         return { success: false, error: "Insufficient platform liquidity" };
@@ -646,8 +646,8 @@ export class TradeSpotService {
         source,
       },
       balances: {
+        elixcoin: round4(updated.cryptoBalances?.[ELIXCOIN_KEY] || 0),
         elixir: round4(updated.elixirBalance),
-        elixcoin: round4(updated.cryptoBalances?.[QUOTE_BALANCE_KEY] || 0),
       },
       message:
         source === "USER"
@@ -685,7 +685,7 @@ export class TradeSpotService {
       .findOneAndUpdate(
         { _id: orderId, telegramId, status: "OPEN" },
         { $set: { status: "CANCELLED" } },
-        { new: true },
+        { returnDocument: "after" },
       )
       .exec();
     if (!order) return { success: false, error: "Order not found or already closed" };
@@ -788,50 +788,51 @@ export class TradeSpotService {
 
     const trades: any[] = [];
     for (const side of sides) {
-      // Log-uniform random amount (50–1,200 ELIXIR): small trades frequent,
-      // occasionally a bigger one — always bounded by pool liquidity so the
-      // platform reserves can never be drained by the bot itself.
-      let amount = this.randomAmount();
+      // Log-uniform random amount (50–1,200 ELIXCOIN): small trades frequent,
+      // occasionally a bigger one — always bounded by pool liquidity.
+      let amount = this.randomAmount(); // ELIXCOIN amount (BASE)
       const maxByReserve =
         side === "BUY"
-          ? pool.elixirReserve * 0.04
-          : (pool.elixcoinReserve / mid) * 0.04;
+          ? pool.elixcoinReserve * 0.04
+          : (pool.elixirReserve / mid) * 0.04;
       amount = Math.max(10, Math.min(amount, maxByReserve));
       amount = round2(amount);
 
-      const price = round8(mid); // exactly at the middle of the spread
-      const total = round4(amount * price);
+      const price = round8(mid); // ELIXIR per ELIXCOIN
+      const total = round4(amount * price); // ELIXIR value
       const fee = round4(total * FEE_PCT);
 
       // Bot fills never touch a user account — only pool + trade history.
       if (side === "BUY") {
+        // Bot buys ELIXCOIN: pool sells ELIXCOIN, receives ELIXIR + fee.
         const upd = await this.poolModel
           .findOneAndUpdate(
-            { pair: PAIR, elixirReserve: { $gte: amount } },
+            { pair: PAIR, elixcoinReserve: { $gte: amount } },
             {
               $inc: {
-                elixirReserve: -amount,
-                elixcoinReserve: total + fee,
+                elixcoinReserve: -amount,
+                elixirReserve: total + fee,
                 platformFeesAccumulated: fee,
               },
             },
-            { new: true },
+            { returnDocument: "after" },
           )
           .exec();
         if (!upd) continue;
       } else {
+        // Bot sells ELIXCOIN: pool buys ELIXCOIN, pays ELIXIR minus fee.
         const proceeds = round4(total - fee);
         const upd = await this.poolModel
           .findOneAndUpdate(
-            { pair: PAIR, elixcoinReserve: { $gte: proceeds } },
+            { pair: PAIR, elixirReserve: { $gte: proceeds } },
             {
               $inc: {
-                elixirReserve: amount,
-                elixcoinReserve: -proceeds,
+                elixcoinReserve: amount,
+                elixirReserve: -proceeds,
                 platformFeesAccumulated: fee,
               },
             },
-            { new: true },
+            { returnDocument: "after" },
           )
           .exec();
         if (!upd) continue;
@@ -844,7 +845,7 @@ export class TradeSpotService {
         amount,
         total,
         fee,
-        feeCurrency: "ELIXCOIN",
+        feeCurrency: side === "BUY" ? BASE : QUOTE,
         source: "BOT",
       });
       trades.push(trade);

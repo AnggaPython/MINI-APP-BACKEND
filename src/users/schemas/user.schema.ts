@@ -32,6 +32,26 @@ export class User {
   @Prop({ default: 0 })
   exp: number;
 
+  @Prop({ default: 1 })
+  level: number;
+
+  // ── Leveling material system ──────────────────────────────────────────
+  // Stars held when level is locked (pending material craft)
+  @Prop({ default: 0 })
+  pendingStars: number;
+
+  // Level that requires material craft to unlock (null = no locked level)
+  @Prop({ type: Number, default: null })
+  lockedLevel: number | null;
+
+  // Material tools inventory: { "Rusty Nail": 3, "Steel Alloy": 1, ... }
+  @Prop({ type: Object, default: {} })
+  materials: Record<string, number>;
+
+  // Pickaxe upgrade levels: { "Common": 5, "Uncommon": 0, ... }
+  @Prop({ type: Object, default: {} })
+  pickaxeUpgrades: Record<string, number>;
+
   @Prop({ type: [String], default: [] })
   claimedVipRanks: string[];
 

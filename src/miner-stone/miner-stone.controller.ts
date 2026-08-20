@@ -28,25 +28,6 @@ export class MinerStoneController {
   }
 
   /**
-   * Unlock a higher pickaxe tier by spending GOLD + DIAMOND.
-   * Server-authoritative: validates the unlock chain, checks balances, and
-   * deducts + grants ownership in ONE atomic database operation.
-   */
-  @Post("purchase-pickaxe")
-  async purchasePickaxe(
-    @User("telegramId") telegramId: string,
-    @Body() body: { tier?: string },
-  ) {
-    if (!telegramId || !body?.tier) {
-      return { success: false, error: "Missing tier" };
-    }
-    return await this.minerStoneService.purchasePickaxe(
-      telegramId,
-      String(body.tier),
-    );
-  }
-
-  /**
    * Repair a pickaxe by spending resources (IRON/SILVER/GOLD/DIAMOND per tier).
    * Server-authoritative: validates ownership + balance and deducts atomically;
    * the client only resets its local durability display after a success.

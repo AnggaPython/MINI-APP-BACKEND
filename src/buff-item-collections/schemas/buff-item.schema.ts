@@ -50,7 +50,7 @@ export class BuffItem {
    * Reference to the frontend collection item ID (e.g. "guci-tanah-liat").
    * Links the SVG visual to this buff item.
    */
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   collectionItemId: string;
 
   /**

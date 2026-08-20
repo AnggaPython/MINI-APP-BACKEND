@@ -11,6 +11,7 @@ import {
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
+import { LevelingService, getLevelMultiplier } from "../leveling-miner/leveling.service";
 
 // ─────────────────────────────────────────────────────────────
 // MULTI-LAYER RNG — server-authoritative case-box loot table.
@@ -90,9 +91,9 @@ export const MATERIAL_AMOUNTS: Record<CaseTier, [number, number]> = {
 
 /** maxHp bands per spawned case tier — the lock takes this many hits. */
 export const CASE_HP_BANDS: Record<CaseTier, [number, number]> = {
-  COMMON: [12, 24],
-  MEDIUM: [18, 36],
-  RARE: [27, 54],
+  COMMON: [180, 200],
+  MEDIUM: [200, 250],
+  RARE: [250, 400],
 };
 
 /**
@@ -196,11 +197,14 @@ const OPENED_CASE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — opened cases pow
 const HISTORY_LIMIT = 50;
 
 // ── Anti-exploit constants ────────────────────────────────────────────────
-// Minimum ms per HP point when opening a case. Frontend enforces 1.7s between
-// hits (HIT_DELAY_MS), but the server is more lenient (800ms) to account for
-// network latency and page-load time. A bot that opens a 24-HP case in under
-// 19 seconds (24 × 800ms) will be rejected.
-const MIN_HIT_TIME_PER_HP_MS = 800;
+// Frontend enforces 1700ms between hits (HIT_DELAY_MS). Each hit removes
+// pickaxe.power + ATK buff HP. The server doesn't know the player's ATK,
+// so we compute the absolute fastest a legitimate client could break the lock:
+//   minHits = ceil(maxHp / MAX_PLAYER_ATK)
+//   minTime = minHits * HIT_INTERVAL_MS
+// MAX_PLAYER_ATK covers Mythic (60) + generous ATK buff ceiling.
+const MAX_PLAYER_ATK = 120;
+const HIT_INTERVAL_MS = 1700; // matches frontend HIT_DELAY_MS
 
 // Server-side cooldown between cases (matches frontend COOLDOWN_MS = 78s).
 // Enforced by checking the last claimed case's claimedAt timestamp.
@@ -231,6 +235,7 @@ export class CaseBoxService {
     private readonly userModel: Model<UserDocument>,
     private readonly usersService: UsersService,
     private readonly buffCollectionsService: BuffItemCollectionsService,
+    private readonly levelingService: LevelingService,
   ) { }
 
   /** Evict stale destroy timestamps older than the rate window. */
@@ -309,15 +314,24 @@ export class CaseBoxService {
       };
     }
 
+    // Fetch user level for HP scaling
+    let levelMultiplier = 1;
+    try {
+      const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+      const userLevel = (userDoc as any)?.level || 1;
+      levelMultiplier = getLevelMultiplier(userLevel);
+    } catch { /* leveling unavailable — use base multiplier */ }
+
     // Spawned case rarity — cosmetic (which case SVG) + HP band.
     const clientSeed = `${telegramId}:${now}`;
     const tierRoll = this.roll01(clientSeed, "case-tier");
     const tier = this.weightedPick(tierRoll, CASE_TIER_WEIGHTS) as CaseTier;
 
-    // maxHp within the tier band.
+    // maxHp within the tier band, scaled by level multiplier.
     const hpRoll = this.roll01(clientSeed, "case-hp");
     const [hpMin, hpMax] = CASE_HP_BANDS[tier];
-    const maxHp = Math.round(hpMin + (hpMax - hpMin) * hpRoll);
+    const baseHp = hpMin + (hpMax - hpMin) * hpRoll;
+    const maxHp = Math.round(baseHp * levelMultiplier);
 
     // Unique case ID comes from the database (_id).
     const box = await new this.caseBoxModel({
@@ -375,9 +389,10 @@ export class CaseBoxService {
     }
 
     // ── Time-gate: reject if the user opened the case too fast ────────────
-    // The fastest possible legitimate time is maxHp × MIN_HIT_TIME_PER_HP_MS.
-    // Bots that skip hits will be caught here.
-    const minRequiredTime = pending.maxHp * MIN_HIT_TIME_PER_HP_MS;
+    // Calculate minimum real time based on the frontend's hit mechanics:
+    // 1700ms per hit, best-case ATK = 120 (Mythic + buffs).
+    const minHits = Math.ceil(pending.maxHp / MAX_PLAYER_ATK);
+    const minRequiredTime = minHits * HIT_INTERVAL_MS;
     const caseAge = now - new Date((pending as any).createdAt).getTime();
     if (caseAge < minRequiredTime) {
       return {
@@ -434,9 +449,18 @@ export class CaseBoxService {
     if (outcome === "ZONK") {
       loot = null;
     } else if (outcome === "ELIXCOIN") {
-      // ECONOMY buff: multiply ELIXCOIN drop amount
+      // ECONOMY buff + level multiplier: multiply ELIXCOIN drop amount
+      // Fetch user level for reward scaling
+      let levelMult = 1;
+      try {
+        const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+        const userLevel = (userDoc as any)?.level || 1;
+        levelMult = getLevelMultiplier(userLevel);
+      } catch { /* leveling unavailable */ }
       const [min, max] = ELIXCOIN_BANDS[box.tier];
-      const base = Math.floor(min + Math.random() * (max - min + 1));
+      const scaledMin = Math.round(min * levelMult);
+      const scaledMax = Math.round(max * levelMult);
+      const base = Math.floor(scaledMin + Math.random() * (scaledMax - scaledMin + 1));
       const amount = Math.round(base * economyMultiplier);
       loot = { ELIXCOIN: amount };
     } else if (outcome === "MATERIAL") {
@@ -461,8 +485,17 @@ export class CaseBoxService {
         loot = { [grantResult.buffItem.name]: 1 };
       } else {
         // Fallback: if collection is complete or grant failed, give ELIXCOIN
+        // Fetch user level for reward scaling
+        let levelMultFallback = 1;
+        try {
+          const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+          const userLevel = (userDoc as any)?.level || 1;
+          levelMultFallback = getLevelMultiplier(userLevel);
+        } catch { /* leveling unavailable */ }
         const [min, max] = ELIXCOIN_BANDS[box.tier];
-        const base = Math.floor(min + Math.random() * (max - min + 1));
+        const scaledMinFb = Math.round(min * levelMultFallback);
+        const scaledMaxFb = Math.round(max * levelMultFallback);
+        const base = Math.floor(scaledMinFb + Math.random() * (scaledMaxFb - scaledMinFb + 1));
         const amount = Math.round(base * economyMultiplier);
         loot = { ELIXCOIN: amount };
       }
@@ -488,6 +521,22 @@ export class CaseBoxService {
       )
       .exec();
 
+    // ── Leveling: award XP and stars for every destroyed case ─────────────
+    let starResult: { starCount: number; xpAwarded: number; level: number; levelUp: boolean; newLevel: number; pickaxeGrants: string[]; pendingStars: number; lockedLevel: number | null };
+    try {
+      starResult = await this.levelingService.awardCaseXp(telegramId, pending.tier);
+    } catch {
+      starResult = { starCount: Math.floor(Math.random() * 5) + 1, xpAwarded: 0, level: 1, levelUp: false, newLevel: 1, pickaxeGrants: [], pendingStars: 0, lockedLevel: null };
+    }
+
+    // Level multiplier for display
+    let levelMultiplier = 1;
+    try {
+      const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+      const userLevel = (userDoc as any)?.level || 1;
+      levelMultiplier = getLevelMultiplier(userLevel);
+    } catch { /* leveling unavailable */ }
+
     return {
       success: true,
       caseId: box._id.toString(),
@@ -498,6 +547,15 @@ export class CaseBoxService {
       buffGranted: outcome === "BUFF" ? buffGranted : undefined,
       economyMultiplier: economyMultiplier > 1 ? economyMultiplier : undefined,
       droprateBonus: droprateBonus > 0 ? droprateBonus : undefined,
+      starCount: starResult.starCount,
+      xpAwarded: starResult.xpAwarded,
+      level: starResult.level,
+      levelUp: starResult.levelUp,
+      newLevel: starResult.newLevel,
+      pickaxeGrants: starResult.pickaxeGrants,
+      pendingStars: starResult.pendingStars,
+      lockedLevel: starResult.lockedLevel,
+      levelMultiplier,
     };
   }
 

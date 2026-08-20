@@ -6,6 +6,7 @@ import { CaseBox, CaseBoxSchema } from "./schemas/case-box.schema";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import { UsersModule } from "../users/users.module";
 import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-collections.module";
+import { LevelingModule } from "../leveling-miner/leveling.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-co
     ]),
     UsersModule,
     BuffItemCollectionsModule,
+    LevelingModule,
   ],
   controllers: [CaseBoxController],
   providers: [CaseBoxService],

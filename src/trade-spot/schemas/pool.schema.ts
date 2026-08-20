@@ -4,12 +4,13 @@ import { Document } from "mongoose";
 export type LiquidityPoolDocument = LiquidityPool & Document;
 
 /**
- * The platform's liquidity pool for the ELIXIR/ELIXCOIN pair.
+ * The platform's liquidity pool for the ELIXCOIN/ELIXIR pair.
  *
- * The platform/admin pre-installs both reserves (1 ELIXIR = 10 ELIXCOIN at
- * the reference mid), quotes a bid/ask spread around the real-time mid, and
- * captures profit from (a) the spread slip on every user fill and (b) a flat
- * 1.5% fee on every transaction — user AND market-maker bot alike.
+ * The platform/admin pre-installs both reserves (1 ELIXCOIN ≈ 0.15 ELIXIR at
+ * the reference mid ≈ 0.14872647389), quotes a bid/ask spread around the
+ * real-time mid, and captures profit from (a) the spread slip on every user
+ * fill and (b) a flat 1.5% fee on every transaction — user AND market-maker
+ * bot alike.
  *
  * The market-maker bot trades against this pool at the exact mid price, so
  * its synthetic volume never moves the price (no pump / no dump).
@@ -17,18 +18,18 @@ export type LiquidityPoolDocument = LiquidityPool & Document;
 @Schema({ timestamps: true })
 export class LiquidityPool {
   @Prop({ required: true, unique: true })
-  pair: string; // "ELIXIR/ELIXCOIN"
-
-  /** Platform ELIXIR inventory. */
-  @Prop({ default: 0 })
-  elixirReserve: number;
+  pair: string; // "ELIXCOIN/ELIXIR"
 
   /** Platform ELIXCOIN inventory. */
   @Prop({ default: 0 })
   elixcoinReserve: number;
 
-  /** Real-time mid price — ELIXCOIN per 1 ELIXIR (reference 10.00000000). */
-  @Prop({ default: 10 })
+  /** Platform ELIXIR inventory. */
+  @Prop({ default: 0 })
+  elixirReserve: number;
+
+  /** Real-time mid price — ELIXIR per 1 ELIXCOIN (reference ≈ 0.14872647389). */
+  @Prop({ default: 0.14872647389 })
   lastMid: number;
 
   /** Full quoted spread as a fraction (e.g. 0.004 = 0.4%). */
