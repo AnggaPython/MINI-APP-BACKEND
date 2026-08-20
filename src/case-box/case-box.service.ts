@@ -390,9 +390,10 @@ export class CaseBoxService {
 
     // ── Time-gate: reject if the user opened the case too fast ────────────
     // Calculate minimum real time based on the frontend's hit mechanics:
-    // 1700ms per hit, best-case ATK = 120 (Mythic + buffs).
+    // First hit is at T=0, so N hits require at least (N-1) * 1700ms.
+    // 500ms buffer added to tolerate minor network/client clock skews.
     const minHits = Math.ceil(pending.maxHp / MAX_PLAYER_ATK);
-    const minRequiredTime = minHits * HIT_INTERVAL_MS;
+    const minRequiredTime = Math.max(0, (minHits - 1) * HIT_INTERVAL_MS - 500);
     const caseAge = now - new Date((pending as any).createdAt).getTime();
     if (caseAge < minRequiredTime) {
       return {

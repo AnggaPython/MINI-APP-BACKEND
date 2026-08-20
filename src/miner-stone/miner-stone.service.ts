@@ -128,14 +128,14 @@ export type PickaxeTier = (typeof PICKAXE_TIERS)[number];
 // Server-authoritative; the frontend only mirrors this for display.
 const PICKAXE_REPAIR_COSTS: Record<PickaxeTier, Record<string, number>> = {
   // Low tier: IRON + COPPER only
-  Common:    { IRON: 100, COPPER: 50 },
-  Uncommon:  { IRON: 150, COPPER: 80, SILVER: 20 },
+  Common: { IRON: 100, COPPER: 50 },
+  Uncommon: { IRON: 150, COPPER: 80, SILVER: 20 },
   // Mid tier: add SILVER + small GOLD
-  Rare:      { IRON: 120, COPPER: 60, SILVER: 60, GOLD: 5 },
-  Epic:      { IRON: 100, COPPER: 50, SILVER: 80, GOLD: 10 },
+  Rare: { IRON: 120, COPPER: 60, SILVER: 60, GOLD: 5 },
+  Epic: { IRON: 100, COPPER: 50, SILVER: 80, GOLD: 10 },
   // High tier: all resources, balanced proportions
   Legendary: { IRON: 80, COPPER: 40, SILVER: 60, GOLD: 15, DIAMOND: 1 },
-  Mythic:    { IRON: 60, COPPER: 30, SILVER: 50, GOLD: 20, DIAMOND: 3 },
+  Mythic: { IRON: 60, COPPER: 30, SILVER: 50, GOLD: 20, DIAMOND: 3 },
 };
 
 // The 5 mining resources (used to shape the balance payload returned to clients)
@@ -392,9 +392,10 @@ export class MinerStoneService {
 
     // ── Time-gate: reject if the user mined the stone too fast ─────────────
     // Calculate minimum real time based on the frontend's hit mechanics:
-    // 1500ms per hit, best-case ATK = 120 (Mythic + buffs).
+    // First hit is at T=0, so N hits require at least (N-1) * 1500ms.
+    // 500ms buffer added to tolerate minor network/client clock skews.
     const minHits = Math.ceil(pending.maxHp / MAX_PLAYER_ATK);
-    const minRequiredTime = minHits * HIT_INTERVAL_MS;
+    const minRequiredTime = Math.max(0, (minHits - 1) * HIT_INTERVAL_MS - 500);
     const stoneAge = now - new Date((pending as any).createdAt).getTime();
     if (stoneAge < minRequiredTime) {
       return {
@@ -661,18 +662,18 @@ export class MinerStoneService {
               { $inc: inc },
             )
             .exec();
-        if (adRequired && !sold) {
-          return {
-            success: false,
-            adRequired: true,
-            error:
-              "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
-          };
+          if (adRequired && !sold) {
+            return {
+              success: false,
+              adRequired: true,
+              error:
+                "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap Sell again to retry.",
+            };
+          }
+          // Track ELIXCOIN as the credited amount for SELL
+          credited["ELIXCOIN"] = elixir;
         }
-        // Track ELIXCOIN as the credited amount for SELL
-        credited["ELIXCOIN"] = elixir;
       }
-    }
     }
 
     const fresh = await this.userModel.findOne({ telegramId }).exec();
