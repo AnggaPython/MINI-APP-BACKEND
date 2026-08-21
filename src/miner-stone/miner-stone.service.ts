@@ -80,8 +80,9 @@ const HISTORY_LIMIT = 50;
 const MAX_PLAYER_ATK = 120;
 const HIT_INTERVAL_MS = 1500;
 
-// Server-side cooldown between stones (matches frontend 2-minute auto-spawn).
-const MINER_COOLDOWN_MS = 120_000;
+// NOTE: Server-side cooldown removed — the frontend's 3-minute timer
+// is the sole timing mechanism. This avoids conflicts where the backend
+// cooldown rejects spawn calls and freezes the frontend countdown.
 
 // Rate limit: max destroy calls per user per time window.
 const DESTROY_RATE_LIMIT = 5;
@@ -152,9 +153,7 @@ export class MinerStoneService {
   // In-memory rate limit: telegramId -> array of destroy timestamps (sliding window).
   private readonly destroyTimestamps = new Map<string, number[]>();
 
-  // In-memory cooldown: telegramId -> last claim timestamp (ms).
-  // Lost on server restart — one extra spawn after restart is harmless.
-  private readonly lastClaimAt = new Map<string, number>();
+
 
   constructor(
     @InjectModel(MiningStone.name)
@@ -179,12 +178,7 @@ export class MinerStoneService {
     }
   }
 
-  /** Returns the remaining cooldown in ms (0 = no cooldown). Pure in-memory. */
-  private getCooldownLeft(telegramId: string, now: number): number {
-    const last = this.lastClaimAt.get(telegramId);
-    if (!last) return 0;
-    return Math.max(0, MINER_COOLDOWN_MS - (now - last));
-  }
+
 
   // ─────────────────────────────────────────────────────────────
   // Provably-fair HMAC-SHA256 RNG (same pattern as the Hi-Lo casino engine)
@@ -223,16 +217,7 @@ export class MinerStoneService {
       }
     }
 
-    // Server-side cooldown: reject if the user's last claimed stone was <2min ago.
-    // Pure in-memory — no DB query, zero cost.
-    const cooldownLeft = this.getCooldownLeft(telegramId, now);
-    if (cooldownLeft > 0) {
-      return {
-        success: false,
-        error: "Please wait before mining another stone.",
-        cooldownLeft,
-      };
-    }
+
 
     // Fetch user level for HP scaling
     let levelMultiplier = 1;
@@ -584,15 +569,8 @@ export class MinerStoneService {
       };
     }
 
-    // Record claim time in memory for server-side cooldown (zero DB cost).
-    this.lastClaimAt.set(telegramId, Date.now());
-    // Lazy cleanup — evict entries older than 2× cooldown.
-    if (this.lastClaimAt.size > 5000) {
-      const cutoff = Date.now() - MINER_COOLDOWN_MS * 2;
-      for (const [key, ts] of this.lastClaimAt) {
-        if (ts < cutoff) this.lastClaimAt.delete(key);
-      }
-    }
+// NOTE: Server-side cooldown tracking removed — the frontend's
+// 3-minute timer is the sole timing mechanism for stone respawn.
 
     // ── ECONOMY buff: percentage bonus on claimed resources ────────────
     let economyMultiplier = 1;
