@@ -7,7 +7,7 @@ export declare class Trade {
     amount: number;
     total: number;
     fee: number;
-    feeCurrency: "ELIXIR" | "ELIXCOIN";
+    feeCurrency: string;
     source: "BOT" | "USER";
     telegramId?: string;
 }
@@ -74,7 +74,7 @@ export declare const TradeSchema: import("mongoose").Schema<Trade, import("mongo
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
-    feeCurrency?: import("mongoose").SchemaDefinitionProperty<"ELIXIR" | "ELIXCOIN", Trade, Document<unknown, {}, Trade, {
+    feeCurrency?: import("mongoose").SchemaDefinitionProperty<string, Trade, Document<unknown, {}, Trade, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<Trade & {
         _id: import("mongoose").Types.ObjectId;

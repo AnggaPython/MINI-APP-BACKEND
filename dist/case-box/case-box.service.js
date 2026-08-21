@@ -319,7 +319,7 @@ let CaseBoxService = class CaseBoxService {
             return { success: false, error: "Case not found or already opened." };
         }
         const minHits = Math.ceil(pending.maxHp / MAX_PLAYER_ATK);
-        const minRequiredTime = minHits * HIT_INTERVAL_MS;
+        const minRequiredTime = Math.max(0, (minHits - 1) * HIT_INTERVAL_MS - 500);
         const caseAge = now - new Date(pending.createdAt).getTime();
         if (caseAge < minRequiredTime) {
             return {

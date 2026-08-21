@@ -21,35 +21,35 @@ let TradeSpotController = class TradeSpotController {
     constructor(tradeSpotService) {
         this.tradeSpotService = tradeSpotService;
     }
-    async ticker() {
-        return this.tradeSpotService.getTicker();
+    async ticker(pair) {
+        return this.tradeSpotService.getTicker(pair);
     }
-    async orderbook(depth) {
-        return this.tradeSpotService.getOrderBook(Number(depth) || 10);
+    async orderbook(depth, pair) {
+        return this.tradeSpotService.getOrderBook(Number(depth) || 10, pair);
     }
-    async trades(limit) {
-        return this.tradeSpotService.getTrades(Number(limit) || 30);
+    async trades(limit, pair) {
+        return this.tradeSpotService.getTrades(Number(limit) || 30, pair);
     }
-    async stats() {
-        return this.tradeSpotService.getStats();
+    async stats(pair) {
+        return this.tradeSpotService.getStats(pair);
     }
-    async info() {
-        return this.tradeSpotService.getInfo();
+    async info(pair) {
+        return this.tradeSpotService.getInfo(pair);
     }
-    async holdings(telegramId) {
+    async holdings(telegramId, pair) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
-        return this.tradeSpotService.getHoldings(telegramId);
+        return this.tradeSpotService.getHoldings(telegramId, pair);
     }
-    async openOrders(telegramId) {
+    async openOrders(telegramId, pair) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
-        return this.tradeSpotService.getOpenOrders(telegramId);
+        return this.tradeSpotService.getOpenOrders(telegramId, pair);
     }
-    async userTrades(telegramId, page, limit) {
+    async userTrades(telegramId, page, limit, pair) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
-        return this.tradeSpotService.getUserTrades(telegramId, Number(page) || 1, Number(limit) || 5);
+        return this.tradeSpotService.getUserTrades(telegramId, Number(page) || 1, Number(limit) || 5, pair);
     }
     async placeOrder(telegramId, body) {
         if (!telegramId)
@@ -66,48 +66,55 @@ let TradeSpotController = class TradeSpotController {
 exports.TradeSpotController = TradeSpotController;
 __decorate([
     (0, common_1.Get)("ticker"),
+    __param(0, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "ticker", null);
 __decorate([
     (0, common_1.Get)("orderbook"),
     __param(0, (0, common_1.Query)("depth")),
+    __param(1, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "orderbook", null);
 __decorate([
     (0, common_1.Get)("trades"),
     __param(0, (0, common_1.Query)("limit")),
+    __param(1, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "trades", null);
 __decorate([
     (0, common_1.Get)("stats"),
+    __param(0, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "stats", null);
 __decorate([
     (0, common_1.Get)("info"),
+    __param(0, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "info", null);
 __decorate([
     (0, common_1.Get)("holdings"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "holdings", null);
 __decorate([
     (0, common_1.Get)("open-orders"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "openOrders", null);
 __decorate([
@@ -115,8 +122,9 @@ __decorate([
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
     __param(1, (0, common_1.Query)("page")),
     __param(2, (0, common_1.Query)("limit")),
+    __param(3, (0, common_1.Query)("pair")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "userTrades", null);
 __decorate([

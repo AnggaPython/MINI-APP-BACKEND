@@ -20,13 +20,29 @@ export class LiquidityPool {
   @Prop({ required: true, unique: true })
   pair: string; // "ELIXCOIN/ELIXIR"
 
-  /** Platform ELIXCOIN inventory. */
+  /** Legacy: Platform ELIXCOIN inventory. Use baseReserve for new pairs. */
   @Prop({ default: 0 })
   elixcoinReserve: number;
 
-  /** Platform ELIXIR inventory. */
+  /** Legacy: Platform ELIXIR inventory. Use quoteReserve for new pairs. */
   @Prop({ default: 0 })
   elixirReserve: number;
+
+  /** Platform Base inventory (Generic). */
+  @Prop({ default: 0 })
+  baseReserve: number;
+
+  /** Platform Quote inventory (Generic). */
+  @Prop({ default: 0 })
+  quoteReserve: number;
+
+  /** The AI minimum bound for this pair. */
+  @Prop({ default: 0 })
+  midMin: number;
+
+  /** The AI maximum bound for this pair. */
+  @Prop({ default: Infinity })
+  midMax: number;
 
   /** Real-time mid price — ELIXIR per 1 ELIXCOIN (reference ≈ 0.14872647389). */
   @Prop({ default: 0.14872647389 })

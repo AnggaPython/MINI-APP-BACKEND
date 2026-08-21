@@ -309,7 +309,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             return { success: false, error: "Stone not found or already claimed." };
         }
         const minHits = Math.ceil(pending.maxHp / MAX_PLAYER_ATK);
-        const minRequiredTime = minHits * HIT_INTERVAL_MS;
+        const minRequiredTime = Math.max(0, (minHits - 1) * HIT_INTERVAL_MS - 500);
         const stoneAge = now - new Date(pending.createdAt).getTime();
         if (stoneAge < minRequiredTime) {
             return {

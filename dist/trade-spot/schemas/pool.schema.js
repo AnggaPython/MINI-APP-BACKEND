@@ -15,6 +15,10 @@ let LiquidityPool = class LiquidityPool {
     pair;
     elixcoinReserve;
     elixirReserve;
+    baseReserve;
+    quoteReserve;
+    midMin;
+    midMax;
     lastMid;
     spreadPct;
     feePct;
@@ -45,6 +49,22 @@ __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
 ], LiquidityPool.prototype, "elixirReserve", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "baseReserve", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "quoteReserve", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "midMin", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: Infinity }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "midMax", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0.14872647389 }),
     __metadata("design:type", Number)

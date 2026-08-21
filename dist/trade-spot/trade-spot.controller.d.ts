@@ -2,10 +2,10 @@ import { TradeSpotService } from "./trade-spot.service";
 export declare class TradeSpotController {
     private readonly tradeSpotService;
     constructor(tradeSpotService: TradeSpotService);
-    ticker(): Promise<any>;
-    orderbook(depth?: string): Promise<any>;
-    trades(limit?: string): Promise<any>;
-    stats(): Promise<{
+    ticker(pair?: string): Promise<any>;
+    orderbook(depth?: string, pair?: string): Promise<any>;
+    trades(limit?: string, pair?: string): Promise<any>;
+    stats(pair?: string): Promise<{
         success: boolean;
         lastBotRunAt: Date;
         botRunCount: number;
@@ -15,13 +15,13 @@ export declare class TradeSpotController {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;
     }>;
-    info(): Promise<{
+    info(pair?: string): Promise<{
         success: boolean;
         pair: string;
         base: string;
@@ -46,37 +46,34 @@ export declare class TradeSpotController {
             spreadProfit: number;
         };
         pool: {
-            elixirReserve: number;
-            elixcoinReserve: number;
+            quoteReserve: number;
+            baseReserve: number;
             lastMid: number;
             feePct: number;
             spreadPct: number;
         };
-        hourly: {
-            hour: number;
-            label: string;
-            volume: number;
-            count: number;
-        }[];
+        hourly: any[];
     }>;
-    holdings(telegramId: string): Promise<{
+    holdings(telegramId: string, pair?: string): Promise<{
         success: boolean;
         base: string;
         quote: string;
+        baseBalance: number;
+        quoteBalance: number;
         elixcoin: number;
         elixir: number;
     } | {
         success: boolean;
         error: string;
     }>;
-    openOrders(telegramId: string): Promise<{
+    openOrders(telegramId: string, pair?: string): Promise<{
         success: boolean;
         orders: any;
     } | {
         success: boolean;
         error: string;
     }>;
-    userTrades(telegramId: string, page?: string, limit?: string): Promise<{
+    userTrades(telegramId: string, page?: string, limit?: string, pair?: string): Promise<{
         success: boolean;
         trades: any;
         page: number;
@@ -101,10 +98,12 @@ export declare class TradeSpotController {
             amount: number;
             total: number;
             fee: number;
-            feeCurrency: "ELIXIR" | "ELIXCOIN";
+            feeCurrency: string;
             source: "USER" | "BOT";
         };
         balances: {
+            baseBalance: number;
+            quoteBalance: number;
             elixcoin: number;
             elixir: number;
         };

@@ -35,10 +35,10 @@ export class Trade {
 
   /**
    * Currency the fee was charged in: the currency the user RECEIVES.
-   * BUY (spend ELIXCOIN → receive ELIXIR) → "ELIXIR" · SELL → "ELIXCOIN".
+   * BUY (spend quote → receive base) → base · SELL (spend base → receive quote) → quote.
    */
-  @Prop({ required: true, default: "ELIXCOIN", enum: ["ELIXIR", "ELIXCOIN"] })
-  feeCurrency: "ELIXIR" | "ELIXCOIN";
+  @Prop({ required: true })
+  feeCurrency: string;
 
   /** "BOT" = market-maker background volume · "USER" = real user order. */
   @Prop({ required: true, default: "USER", enum: ["BOT", "USER"] })

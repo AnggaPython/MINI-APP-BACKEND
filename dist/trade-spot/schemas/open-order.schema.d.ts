@@ -2,6 +2,7 @@ import { Document } from "mongoose";
 export type OpenOrderDocument = OpenOrder & Document;
 export declare class OpenOrder {
     telegramId: string;
+    pair: string;
     side: "BUY" | "SELL";
     price: number;
     amount: number;
@@ -18,6 +19,15 @@ export declare const OpenOrderSchema: import("mongoose").Schema<OpenOrder, impor
     id: string;
 }>, {
     telegramId?: import("mongoose").SchemaDefinitionProperty<string, OpenOrder, Document<unknown, {}, OpenOrder, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    pair?: import("mongoose").SchemaDefinitionProperty<string, OpenOrder, Document<unknown, {}, OpenOrder, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
         _id: import("mongoose").Types.ObjectId;

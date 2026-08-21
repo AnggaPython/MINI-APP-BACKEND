@@ -3,15 +3,9 @@ import { Trade } from "./schemas/trade.schema";
 import { LiquidityPool } from "./schemas/pool.schema";
 import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
-export declare const PAIR = "ELIXCOIN/ELIXIR";
-export declare const BASE = "ELIXCOIN";
-export declare const QUOTE = "ELIXIR";
-export declare const BASE_PRICE = 0.14872647389;
+export declare const DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 export declare const FEE_PCT = 0.015;
 export declare const SPREAD_PCT = 0.004;
-export declare const ELIXCOIN_KEY = "ELIXCOIN";
-export declare const MID_MIN = 0.148;
-export declare const MID_MAX = 0.151;
 export declare class TradeSpotService {
     private readonly tradeModel;
     private readonly poolModel;
@@ -25,11 +19,12 @@ export declare class TradeSpotService {
     constructor(tradeModel: Model<Trade>, poolModel: Model<LiquidityPool>, orderModel: Model<OpenOrder>, userModel: Model<User>);
     private evictRateLimit;
     private checkRateLimit;
-    getPool(): Promise<LiquidityPool>;
-    getTicker(): Promise<any>;
-    getOrderBook(depth?: number): Promise<any>;
-    getTrades(limit?: number): Promise<any>;
-    getStats(): Promise<{
+    getAllActivePools(): Promise<LiquidityPool[]>;
+    getPool(pair?: string): Promise<LiquidityPool>;
+    getTicker(pair?: string): Promise<any>;
+    getOrderBook(depth?: number, pair?: string): Promise<any>;
+    getTrades(limit?: number, pair?: string): Promise<any>;
+    getStats(pair?: string): Promise<{
         success: boolean;
         lastBotRunAt: Date;
         botRunCount: number;
@@ -39,13 +34,13 @@ export declare class TradeSpotService {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;
     }>;
-    getInfo(): Promise<{
+    getInfo(pair?: string): Promise<{
         success: boolean;
         pair: string;
         base: string;
@@ -70,20 +65,15 @@ export declare class TradeSpotService {
             spreadProfit: number;
         };
         pool: {
-            elixirReserve: number;
-            elixcoinReserve: number;
+            quoteReserve: number;
+            baseReserve: number;
             lastMid: number;
             feePct: number;
             spreadPct: number;
         };
-        hourly: {
-            hour: number;
-            label: string;
-            volume: number;
-            count: number;
-        }[];
+        hourly: any[];
     }>;
-    getBotStatus(): Promise<{
+    getBotStatus(pair?: string): Promise<{
         enabled: boolean;
         intervalMinutes: number;
         lastBotRunAt: Date;
@@ -96,13 +86,14 @@ export declare class TradeSpotService {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;
     }>;
     updateBotConfig(body: {
+        pair?: string;
         enabled?: boolean;
         intervalMinutes?: number;
     }): Promise<{
@@ -118,8 +109,8 @@ export declare class TradeSpotService {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;
@@ -127,14 +118,17 @@ export declare class TradeSpotService {
         success: boolean;
         error: string;
     }>;
-    getHoldings(telegramId: string): Promise<{
+    getHoldings(telegramId: string, pair?: string): Promise<{
         success: boolean;
         base: string;
         quote: string;
+        baseBalance: number;
+        quoteBalance: number;
         elixcoin: number;
         elixir: number;
     }>;
     placeOrder(telegramId: string, body: {
+        pair?: string;
         side?: string;
         type?: string;
         amount?: number;
@@ -148,10 +142,12 @@ export declare class TradeSpotService {
             amount: number;
             total: number;
             fee: number;
-            feeCurrency: "ELIXIR" | "ELIXCOIN";
+            feeCurrency: string;
             source: "USER" | "BOT";
         };
         balances: {
+            baseBalance: number;
+            quoteBalance: number;
             elixcoin: number;
             elixir: number;
         };
@@ -177,7 +173,7 @@ export declare class TradeSpotService {
         error?: undefined;
     }>;
     private executeFill;
-    getOpenOrders(telegramId: string): Promise<{
+    getOpenOrders(telegramId: string, pair?: string): Promise<{
         success: boolean;
         orders: any;
     }>;
@@ -196,7 +192,7 @@ export declare class TradeSpotService {
         };
         error?: undefined;
     }>;
-    getUserTrades(telegramId: string, page?: number, limit?: number): Promise<{
+    getUserTrades(telegramId: string, page?: number, limit?: number, pair?: string): Promise<{
         success: boolean;
         trades: any;
         page: number;
@@ -204,11 +200,10 @@ export declare class TradeSpotService {
         hasMore: boolean;
         total: number;
     }>;
-    matchOpenOrders(): Promise<any[]>;
-    driftMid(): Promise<void>;
-    botCycle(): Promise<{
+    matchOpenOrders(pair?: string): Promise<any[]>;
+    driftMid(pair?: string): Promise<void>;
+    botCycle(pair?: string): Promise<{
         count: number;
         trades: any[];
     }>;
-    private randomAmount;
 }

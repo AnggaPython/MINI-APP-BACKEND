@@ -4,6 +4,10 @@ export declare class LiquidityPool {
     pair: string;
     elixcoinReserve: number;
     elixirReserve: number;
+    baseReserve: number;
+    quoteReserve: number;
+    midMin: number;
+    midMax: number;
     lastMid: number;
     spreadPct: number;
     feePct: number;
@@ -49,6 +53,42 @@ export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPoo
         id: string;
     }>> | undefined;
     elixirReserve?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    baseReserve?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    quoteReserve?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    midMin?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    midMax?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
         _id: import("mongoose").Types.ObjectId;

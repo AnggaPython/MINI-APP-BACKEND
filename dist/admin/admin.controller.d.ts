@@ -213,8 +213,8 @@ export declare class AdminController {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;
@@ -235,8 +235,8 @@ export declare class AdminController {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;
@@ -261,8 +261,8 @@ export declare class AdminController {
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
-        elixirReserve: number;
-        elixcoinReserve: number;
+        quoteReserve: number;
+        baseReserve: number;
         lastMid: number;
         feePct: number;
         spreadPct: number;

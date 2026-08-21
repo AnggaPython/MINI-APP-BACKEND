@@ -13,6 +13,9 @@ export class OpenOrder {
   @Prop({ required: true, index: true })
   telegramId: string;
 
+  @Prop({ default: "ELIXCOIN/ELIXIR" })
+  pair: string;
+
   @Prop({ required: true, enum: ["BUY", "SELL"] })
   side: "BUY" | "SELL";
 

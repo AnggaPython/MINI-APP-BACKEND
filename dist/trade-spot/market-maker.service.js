@@ -15,7 +15,7 @@ const trade_spot_service_1 = require("./trade-spot.service");
 let MarketMakerService = class MarketMakerService {
     tradeSpotService;
     intervalId = null;
-    running = false;
+    running = new Set();
     constructor(tradeSpotService) {
         this.tradeSpotService = tradeSpotService;
     }
@@ -24,7 +24,7 @@ let MarketMakerService = class MarketMakerService {
         this.intervalId = setInterval(() => {
             this.tick().catch((e) => console.error("[MM Bot] tick failed:", e?.message));
         }, 10_000);
-        console.log("[MM Bot] armed — 10 trades (5 buy / 5 sell) per cycle, config-driven cooldown (default 15 min), trades priced at the real-time mid");
+        console.log("[MM Bot] armed — running cycles concurrently for all botEnabled pools");
     }
     onModuleDestroy() {
         if (this.intervalId)
@@ -32,34 +32,37 @@ let MarketMakerService = class MarketMakerService {
         this.intervalId = null;
     }
     async tick() {
-        const pool = await this.tradeSpotService.getPool();
-        if (pool.botEnabled === false)
-            return;
-        const intervalMs = (pool.botIntervalMinutes ?? 15) * 60_000;
-        const last = pool.lastBotRunAt ? pool.lastBotRunAt.getTime() : 0;
-        if (Date.now() - last >= intervalMs) {
-            await this.runCycle();
+        const pools = await this.tradeSpotService.getAllActivePools();
+        for (const pool of pools) {
+            if (pool.botEnabled === false)
+                continue;
+            const intervalMs = (pool.botIntervalMinutes ?? 15) * 60_000;
+            const last = pool.lastBotRunAt ? pool.lastBotRunAt.getTime() : 0;
+            if (Date.now() - last >= intervalMs) {
+                this.runCycle(pool.pair).catch(e => console.error(`[MM Bot] cycle failed for ${pool.pair}:`, e?.message));
+            }
         }
     }
-    async runNow() {
-        if (this.running)
+    async runNow(pair = "ELIXCOIN/ELIXIR") {
+        if (this.running.has(pair))
             return { ran: false, count: 0 };
-        const count = await this.runCycle();
+        const count = await this.runCycle(pair);
         return { ran: true, count };
     }
-    async runCycle() {
-        if (this.running)
+    async runCycle(pair = "ELIXCOIN/ELIXIR") {
+        if (this.running.has(pair))
             return 0;
-        this.running = true;
+        this.running.add(pair);
         try {
-            await this.tradeSpotService.driftMid();
-            const fills = await this.tradeSpotService.matchOpenOrders();
-            const { count } = await this.tradeSpotService.botCycle();
-            console.log(`[MM Bot] cycle done — ${count} trades (mid ${(await this.tradeSpotService.getPool()).lastMid.toFixed(8)}), ${fills.length} user limit order(s) filled`);
+            await this.tradeSpotService.driftMid(pair);
+            const fills = await this.tradeSpotService.matchOpenOrders(pair);
+            const { count } = await this.tradeSpotService.botCycle(pair);
+            const pool = await this.tradeSpotService.getPool(pair);
+            console.log(`[MM Bot] cycle done for ${pair} — ${count} trades (mid ${pool.lastMid.toFixed(8)}), ${fills.length} user limit order(s) filled`);
             return count;
         }
         finally {
-            this.running = false;
+            this.running.delete(pair);
         }
     }
 };

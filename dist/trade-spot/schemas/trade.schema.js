@@ -48,7 +48,7 @@ __decorate([
     __metadata("design:type", Number)
 ], Trade.prototype, "fee", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, default: "ELIXCOIN", enum: ["ELIXIR", "ELIXCOIN"] }),
+    (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], Trade.prototype, "feeCurrency", void 0);
 __decorate([

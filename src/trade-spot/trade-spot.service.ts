@@ -7,34 +7,13 @@ import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
 
 // ── Pair constants ────────────────────────────────────────────────────────
-export const PAIR = "ELIXCOIN/ELIXIR";
-export const BASE = "ELIXCOIN";
-export const QUOTE = "ELIXIR";
-
-/**
- * Reference price: 1 ELIXCOIN = 0.14872647389 ELIXIR ≈ 0.15 ELIXIR.
- * 1 ELIXIR = 1 / 0.14872647389 ≈ 6.724 ELIXCOIN.
- */
-export const BASE_PRICE = 0.14872647389; // ≈ 0.15 ELIXIR per ELIXCOIN
+export const DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 
 /** Flat platform fee per transaction (1.5%). */
 export const FEE_PCT = 0.015;
 
 /** Full quoted spread (0.4% → ±0.2% around mid). */
 export const SPREAD_PCT = 0.004;
-
-/** ELIXCOIN balance lives in cryptoBalances.ELIXCOIN */
-export const ELIXCOIN_KEY = "ELIXCOIN";
-
-/**
- * Random-walk bounds so the market breathes but never drifts away.
- * Mid price = ELIXIR per 1 ELIXCOIN (≈ 0.15).
- * If mid drifts too low, ELIXCOIN becomes too cheap → arbitrage.
- * If mid drifts too high, ELIXCOIN becomes too expensive → users flee.
- * The 1.5% fee adds a natural extra guard.
- */
-export const MID_MIN = 0.148;
-export const MID_MAX = 0.151;
 
 const round8 = (n: number) => Math.round(n * 1e8) / 1e8;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -50,7 +29,9 @@ function mulberry32(seed: number) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}// ── Anti-exploit constants ────────────────────────────────────────────────
+}
+
+// ── Anti-exploit constants ────────────────────────────────────────────────
 const ORDER_RATE_LIMIT = 10;      // max orders per minute per user
 const CANCEL_RATE_LIMIT = 20;     // max cancels per minute per user
 const RATE_WINDOW_MS = 60_000;
@@ -66,10 +47,10 @@ export class TradeSpotService {
   private readonly orderTimestamps = new Map<string, number[]>();
   private readonly cancelTimestamps = new Map<string, number[]>();
 
-  // In-memory caches — shared across ALL connected users.
-  private tickerCache: { data: any; ts: number } = { data: null, ts: 0 };
-  private bookCache: { data: any; ts: number; depth: number } = { data: null, ts: 0, depth: 0 };
-  private tradesCache: { data: any; ts: number; limit: number } = { data: null, ts: 0, limit: 0 };
+  // In-memory caches — shared across ALL connected users. Keyed by pair.
+  private tickerCache = new Map<string, { data: any; ts: number }>();
+  private bookCache = new Map<string, { data: any; ts: number; depth: number }>();
+  private tradesCache = new Map<string, { data: any; ts: number; limit: number }>();
 
   constructor(
     @InjectModel(Trade.name) private readonly tradeModel: Model<Trade>,
@@ -98,37 +79,48 @@ export class TradeSpotService {
     return null; // OK
   }
 
+
+
   // ── Pool (platform liquidity + market state) ────────────────────────────
-  async getPool(): Promise<LiquidityPool> {
-    let pool = await this.poolModel.findOne({ pair: PAIR }).exec();
+  async getAllActivePools(): Promise<LiquidityPool[]> {
+    return this.poolModel.find({ botEnabled: true }).exec();
+  }
+
+  async getPool(pair: string = DEFAULT_PAIR): Promise<LiquidityPool> {
+    let pool = await this.poolModel.findOne({ pair }).exec();
     if (!pool) {
-      // Admin pre-installs liquidity: ~6.7M ELIXCOIN against 1M ELIXIR at mid ≈ 0.1487.
-      pool = await this.poolModel.create({
-        pair: PAIR,
-        elixcoinReserve: 6_724_000, // 6,724,000 ELIXCOIN
-        elixirReserve: 1_000_000,   // 1,000,000 ELIXIR
-        lastMid: BASE_PRICE,
-        spreadPct: SPREAD_PCT,
-        feePct: FEE_PCT,
-      });
+      if (pair === DEFAULT_PAIR) {
+        pool = await this.poolModel.create({
+          pair,
+          elixcoinReserve: 6_724_000,
+          elixirReserve: 1_000_000,
+          baseReserve: 6_724_000,
+          quoteReserve: 1_000_000,
+          lastMid: 0.14872647389,
+          spreadPct: SPREAD_PCT,
+          feePct: FEE_PCT,
+          midMin: 0.14700000,
+          midMax: 0.14899999,
+        });
+      } else {
+        throw new Error(`Pool for ${pair} not found`);
+      }
     } else if (pool.feePct !== FEE_PCT) {
-      // Keep legacy pools in sync with the current 1.5% fee.
       pool.feePct = FEE_PCT;
-      await this.poolModel
-        .updateOne({ pair: PAIR }, { $set: { feePct: FEE_PCT } })
-        .exec();
+      await this.poolModel.updateOne({ pair }, { $set: { feePct: FEE_PCT } }).exec();
     }
     return pool;
   }
 
   // ── Ticker: last price + 24h stats (pre-computed on pool, cached 3s) ──
-  async getTicker() {
+  async getTicker(pair: string = DEFAULT_PAIR) {
     const now = Date.now();
-    if (this.tickerCache.data && now - this.tickerCache.ts < TICKER_CACHE_MS) {
-      return this.tickerCache.data;
+    const cache = this.tickerCache.get(pair);
+    if (cache?.data && now - cache.ts < TICKER_CACHE_MS) {
+      return cache.data;
     }
 
-    const pool = await this.getPool();
+    const pool = await this.getPool(pair);
     const close = pool.lastMid;
     const open = pool.open24h || close;
     const high = pool.high24h || close;
@@ -136,12 +128,13 @@ export class TradeSpotService {
     const volume = pool.volume24h || 0;
     const quoteVolume = pool.quoteVolume24h || 0;
     const changePct = open ? ((close - open) / open) * 100 : 0;
+    const [base, quote] = pair.split("/");
 
     const result = {
       success: true,
-      pair: PAIR,
-      base: BASE,
-      quote: QUOTE,
+      pair,
+      base,
+      quote,
       last: round8(close),
       changePct: round4(changePct),
       high: round8(high),
@@ -151,18 +144,20 @@ export class TradeSpotService {
       feePct: pool.feePct,
       spreadPct: pool.spreadPct,
     };
-    this.tickerCache = { data: result, ts: now };
+    this.tickerCache.set(pair, { data: result, ts: now });
     return result;
   }
 
   // ── Order book: synthetic ladder (cached 3s, shared across users) ──────
-  async getOrderBook(depth = 10) {
+  async getOrderBook(depth = 10, pair = DEFAULT_PAIR) {
     const now = Date.now();
     const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
-    if (this.bookCache.data && now - this.bookCache.ts < BOOK_CACHE_MS && this.bookCache.depth === clamped) {
-      return this.bookCache.data;
+    const cache = this.bookCache.get(pair);
+
+    if (cache?.data && now - cache.ts < BOOK_CACHE_MS && cache.depth === clamped) {
+      return cache.data;
     }
-    const pool = await this.getPool();
+    const pool = await this.getPool(pair);
     const mid = pool.lastMid;
     const half = pool.spreadPct / 2;
     const step = 0.0012; // 0.12% between consecutive levels
@@ -170,47 +165,74 @@ export class TradeSpotService {
     const asks: { price: number; amount: number }[] = [];
     const bids: { price: number; amount: number }[] = [];
 
+    // Scale orderbook depth based on base asset supply representation
+    // Enforce a hard minimum of 10000 base depth just in case the pool is drained to a tiny decimal (e.g 0.001) where JS Truthy skips the || fallback.
+    const maxBookDepth = Math.max(10000, (pool.baseReserve || pool.elixcoinReserve) || 0);
+
     for (let i = 0; i < clamped; i++) {
       const taper = Math.pow(0.85, i); // deeper levels are thinner
       const rng = mulberry32(Math.round(mid * 1e6) + i * 7919);
 
       const askPrice = round8(mid * (1 + half + step * i));
-      const askAmount = round2(pool.elixirReserve * (0.01 + 0.03 * rng()) * taper);
-      asks.push({ price: askPrice, amount: Math.max(0.01, askAmount) });
+      const askAmount = round8(maxBookDepth * (0.005 + 0.01 * rng()) * taper);
+      asks.push({ price: askPrice, amount: Math.max(0.0001, askAmount) });
 
       const bidPrice = round8(mid * (1 - half - step * i));
-      const bidAmount = round2(
-        (pool.elixcoinReserve / mid) * (0.01 + 0.03 * rng()) * taper,
-      );
-      bids.push({ price: bidPrice, amount: Math.max(0.01, bidAmount) });
+      const bidAmount = round8(maxBookDepth * (0.005 + 0.01 * rng()) * taper);
+      bids.push({ price: bidPrice, amount: Math.max(0.0001, bidAmount) });
     }
 
-    const totalAsk = asks.reduce((acc, l) => acc + l.amount, 0);
-    const totalBid = bids.reduce((acc, l) => acc + l.amount, 0);
+    // [NEW] Merge active user Limit Orders into the AMM visual depth
+    const openOrders = await this.orderModel.find({ pair, status: "OPEN" }).lean().exec();
+    for (const o of openOrders) {
+      if (!isFinite(o.price) || o.price <= 0) continue;
+      const rem = (o.amount || 0) - (o.filledAmount || 0);
+      if (rem <= 0) continue;
+
+      const targetList = o.side === "SELL" ? asks : bids;
+      const match = targetList.find(x => x.price === o.price);
+      if (match) {
+        match.amount += rem;
+      } else {
+        targetList.push({ price: o.price, amount: rem });
+      }
+    }
+
+    // Sort to keep real order book logic: Asks (Lowest first), Bids (Highest first)
+    asks.sort((a, b) => a.price - b.price);
+    bids.sort((a, b) => b.price - a.price);
+
+    // Clamp to requested depth after injected users
+    const finAsks = asks.slice(0, clamped);
+    const finBids = bids.slice(0, clamped);
+
+    const totalAsk = finAsks.reduce((acc, l) => acc + l.amount, 0);
+    const totalBid = finBids.reduce((acc, l) => acc + l.amount, 0);
     const bidShare = totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
 
     const result = {
       success: true,
-      pair: PAIR,
+      pair,
       mid: round8(mid),
-      spread: round8(asks[0].price - bids[0].price),
-      asks,
-      bids,
-      bidShare: round4(bidShare),
+      spread: round8(finAsks[0]?.price - finBids[0]?.price || 0),
+      asks: finAsks,
+      bids: finBids,
+      bidShare: Math.max(0, Math.min(100, round2(bidShare)))
     };
-    this.bookCache = { data: result, ts: now, depth: clamped };
+    this.bookCache.set(pair, { data: result, ts: now, depth: clamped });
     return result;
   }
 
   // ── Trade history feed (cached 5s, shared across users) ────────────────
-  async getTrades(limit = 30) {
+  async getTrades(limit = 30, pair = DEFAULT_PAIR) {
     const now = Date.now();
     const n = Math.max(1, Math.min(100, Math.floor(limit || 30)));
-    if (this.tradesCache.data && now - this.tradesCache.ts < TRADES_CACHE_MS && this.tradesCache.limit === n) {
-      return this.tradesCache.data;
+    const cache = this.tradesCache.get(pair);
+    if (cache?.data && now - cache.ts < TRADES_CACHE_MS && cache.limit === n) {
+      return cache.data;
     }
     const trades = await this.tradeModel
-      .find()
+      .find({ pair })
       .sort({ createdAt: -1 })
       .limit(n)
       .lean<any>()
@@ -228,15 +250,15 @@ export class TradeSpotService {
         time: t.createdAt,
       })),
     };
-    this.tradesCache = { data: result, ts: now, limit: n };
+    this.tradesCache.set(pair, { data: result, ts: now, limit: n });
     return result;
   }
 
   // ── Market stats (MM bot + platform pool) ───────────────────────────────
-  async getStats() {
-    const pool = await this.getPool();
-    const botTrades = await this.tradeModel.countDocuments({ source: "BOT" }).exec();
-    const userTrades = await this.tradeModel.countDocuments({ source: "USER" }).exec();
+  async getStats(pair = DEFAULT_PAIR) {
+    const pool = await this.getPool(pair);
+    const botTrades = await this.tradeModel.countDocuments({ pair, source: "BOT" }).exec();
+    const userTrades = await this.tradeModel.countDocuments({ pair, source: "USER" }).exec();
     return {
       success: true,
       lastBotRunAt: pool.lastBotRunAt,
@@ -247,28 +269,22 @@ export class TradeSpotService {
       lifetimeVolume: round2(pool.lifetimeVolume),
       platformFeesAccumulated: round4(pool.platformFeesAccumulated),
       spreadProfitAccumulated: round4(pool.spreadProfitAccumulated),
-      elixirReserve: round2(pool.elixirReserve),
-      elixcoinReserve: round2(pool.elixcoinReserve),
+      quoteReserve: round2(pool.quoteReserve || pool.elixirReserve),
+      baseReserve: round2(pool.baseReserve || pool.elixcoinReserve),
       lastMid: round8(pool.lastMid),
       feePct: pool.feePct,
       spreadPct: pool.spreadPct,
     };
   }
 
-  // ── INFO: 24h totals + lifetime + chart data (ELIXIR & ELIXCOIN) ───────
-  /**
-   * Everything the frontend INFO panel needs in one call:
-   *   24h trade totals, lifetime totals, platform/pool state, and the raw
-   *   numbers for the donut + hourly bar charts. All figures are server-side
-   *   aggregates over the trade ledger — nothing client-supplied.
-   */
-  async getInfo() {
-    const pool = await this.getPool();
+  // ── INFO: 24h totals + lifetime + chart data ───────
+  async getInfo(pair = DEFAULT_PAIR) {
+    const pool = await this.getPool(pair);
     const since24 = new Date(Date.now() - 24 * 3600 * 1000);
 
     const agg24 = await this.tradeModel
       .aggregate([
-        { $match: { createdAt: { $gte: since24 } } },
+        { $match: { pair, createdAt: { $gte: since24 } } },
         {
           $group: {
             _id: null,
@@ -293,18 +309,12 @@ export class TradeSpotService {
       .exec();
     const a = agg24[0] || {};
 
-    // 24 hourly buckets aligned to the start of the 24h window (UTC hours).
     const buckets = await this.tradeModel
       .aggregate([
-        { $match: { createdAt: { $gte: since24 } } },
+        { $match: { pair, createdAt: { $gte: since24 } } },
         {
           $group: {
-            _id: {
-              $dateToString: {
-                format: "%Y-%m-%d %H",
-                date: "$createdAt",
-              },
-            },
+            _id: { $dateToString: { format: "%Y-%m-%d %H", date: "$createdAt" } },
             volume: { $sum: "$amount" },
             count: { $sum: 1 },
           },
@@ -316,12 +326,7 @@ export class TradeSpotService {
       bucketMap.set(String(b._id), { volume: b.volume, count: b.count });
     }
     const start = since24.getTime();
-    const hourly: {
-      hour: number;
-      label: string;
-      volume: number;
-      count: number;
-    }[] = [];
+    const hourly: any[] = [];
     for (let i = 0; i < 24; i++) {
       const t = new Date(start + i * 3600_000);
       const key = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")} ${String(t.getUTCHours()).padStart(2, "0")}`;
@@ -334,18 +339,15 @@ export class TradeSpotService {
       });
     }
 
-    const botTrades = await this.tradeModel
-      .countDocuments({ source: "BOT" })
-      .exec();
-    const userTrades = await this.tradeModel
-      .countDocuments({ source: "USER" })
-      .exec();
+    const botTrades = await this.tradeModel.countDocuments({ pair, source: "BOT" }).exec();
+    const userTrades = await this.tradeModel.countDocuments({ pair, source: "USER" }).exec();
+    const [base, quote] = pair.split("/");
 
     return {
       success: true,
-      pair: PAIR,
-      base: BASE,
-      quote: QUOTE,
+      pair,
+      base,
+      quote,
       last: round8(pool.lastMid),
       day: {
         trades: a.count || 0,
@@ -366,8 +368,8 @@ export class TradeSpotService {
         spreadProfit: round4(pool.spreadProfitAccumulated),
       },
       pool: {
-        elixirReserve: round2(pool.elixirReserve),
-        elixcoinReserve: round2(pool.elixcoinReserve),
+        quoteReserve: round2(pool.quoteReserve || pool.elixirReserve),
+        baseReserve: round2(pool.baseReserve || pool.elixcoinReserve),
         lastMid: round8(pool.lastMid),
         feePct: pool.feePct,
         spreadPct: pool.spreadPct,
@@ -377,14 +379,12 @@ export class TradeSpotService {
   }
 
   // ── Admin: market-maker bot status + control ───────────────────────────
-  async getBotStatus() {
-    const pool = await this.getPool();
-    const stats = await this.getStats();
+  async getBotStatus(pair = DEFAULT_PAIR) {
+    const pool = await this.getPool(pair);
+    const stats = await this.getStats(pair);
     const intervalMs = (pool.botIntervalMinutes ?? 15) * 60_000;
     const lastRun = pool.lastBotRunAt ? pool.lastBotRunAt.getTime() : null;
     return {
-      // Spread the full stats payload first so `success` / `lastBotRunAt` come
-      // from getStats, then override with the live control fields below.
       ...stats,
       enabled: pool.botEnabled !== false,
       intervalMinutes: pool.botIntervalMinutes ?? 15,
@@ -393,37 +393,37 @@ export class TradeSpotService {
     };
   }
 
-  /** Admin-tunable bot config — validated server-side, persisted on the pool. */
-  async updateBotConfig(body: { enabled?: boolean; intervalMinutes?: number }) {
-    const pool = await this.getPool();
+  async updateBotConfig(body: { pair?: string; enabled?: boolean; intervalMinutes?: number }) {
+    const pair = body.pair || DEFAULT_PAIR;
+    const pool = await this.getPool(pair);
     const set: Record<string, unknown> = {};
     if (typeof body.enabled === "boolean") set.botEnabled = body.enabled;
     if (body.intervalMinutes !== undefined) {
       const m = Number(body.intervalMinutes);
       if (!isFinite(m) || m < 1 || m > 60) {
-        return {
-          success: false,
-          error: "Cooldown must be between 1 and 60 minutes",
-        };
+        return { success: false, error: "Cooldown must be between 1 and 60 minutes" };
       }
       set.botIntervalMinutes = Math.round(m);
     }
     if (Object.keys(set).length > 0) {
-      await this.poolModel
-        .updateOne({ pair: PAIR }, { $set: set })
-        .exec();
+      await this.poolModel.updateOne({ pair }, { $set: set }).exec();
     }
-    return this.getBotStatus();
+    return this.getBotStatus(pair);
   }
 
   // ── User holdings ───────────────────────────────────────────────────────
-  async getHoldings(telegramId: string) {
+  async getHoldings(telegramId: string, pair: string = DEFAULT_PAIR) {
     const user = await this.userModel.findOne({ telegramId }).lean().exec();
+    const [base, quote] = pair.split("/");
+    const crypto = user?.cryptoBalances as Record<string, number> | undefined;
     return {
       success: true,
-      base: BASE,
-      quote: QUOTE,
-      elixcoin: round4((user?.cryptoBalances as Record<string, number> | undefined)?.[ELIXCOIN_KEY] || 0),
+      base,
+      quote,
+      baseBalance: round4(base === "ELIXIR" ? (user?.elixirBalance || 0) : (crypto?.[base] || 0)),
+      quoteBalance: round4(quote === "ELIXIR" ? (user?.elixirBalance || 0) : (crypto?.[quote] || 0)),
+      // LEGACY fallback for exact matching on the frontend until updated:
+      elixcoin: round4(crypto?.["ELIXCOIN"] || 0),
       elixir: round4(user?.elixirBalance || 0),
     };
   }
@@ -431,13 +431,15 @@ export class TradeSpotService {
   // ── User order placement ────────────────────────────────────────────────
   async placeOrder(
     telegramId: string,
-    body: { side?: string; type?: string; amount?: number; price?: number },
+    body: { pair?: string; side?: string; type?: string; amount?: number; price?: number },
   ) {
-    // ── Rate limit: max ORDER_RATE_LIMIT orders per minute ──────────────
     const rateErr = this.checkRateLimit(this.orderTimestamps, telegramId, ORDER_RATE_LIMIT, Date.now());
     if (rateErr) return { success: false, error: rateErr };
 
-    const pool = await this.getPool();
+    const pair = body.pair || DEFAULT_PAIR;
+    const [base, quote] = pair.split("/");
+    const pool = await this.getPool(pair);
+
     const side = String(body.side || "").toUpperCase();
     if (side !== "BUY" && side !== "SELL")
       return { success: false, error: "Invalid side" };
@@ -450,10 +452,7 @@ export class TradeSpotService {
       return { success: false, error: "Invalid amount" };
     const MIN_AMOUNT = 1;
     if (amount < MIN_AMOUNT)
-      return {
-        success: false,
-        error: `Minimum order is ${MIN_AMOUNT} ${BASE}`,
-      };
+      return { success: false, error: `Minimum order is ${MIN_AMOUNT} ${base}` };
 
     const user = await this.userModel.findOne({ telegramId }).exec();
     if (!user) return { success: false, error: "Account not found" };
@@ -463,22 +462,21 @@ export class TradeSpotService {
     const ask = mid * (1 + half);
     const bid = mid * (1 - half);
 
-    // Market → fill instantly at the aggressive side of the spread.
     if (type === "market") {
       const execPrice = side === "BUY" ? ask : bid;
-      return this.executeFill(telegramId, side, round2(amount), round8(execPrice), "USER");
+      return this.executeFill(pair, telegramId, side, round2(amount), round8(execPrice), "USER");
     }
 
-    // Limit → fill now if it crosses, otherwise rest on the book.
     const limit = Number(body.price);
     if (!isFinite(limit) || limit <= 0)
       return { success: false, error: "Invalid limit price" };
     if (side === "BUY" && limit >= ask)
-      return this.executeFill(telegramId, "BUY", round2(amount), round8(ask), "USER");
+      return this.executeFill(pair, telegramId, "BUY", round2(amount), round8(ask), "USER");
     if (side === "SELL" && limit <= bid)
-      return this.executeFill(telegramId, "SELL", round2(amount), round8(bid), "USER");
+      return this.executeFill(pair, telegramId, "SELL", round2(amount), round8(bid), "USER");
 
     const order = await this.orderModel.create({
+      pair,
       telegramId,
       side,
       price: round8(limit),
@@ -502,14 +500,10 @@ export class TradeSpotService {
   /**
    * Atomic fill: ONE findOneAndUpdate guards the balance inside the query and
    * deducts + credits in the same operation (no double-spend, no race).
-   * The platform pool is the counterparty — its reserves are guarded the same
-   * way, and it keeps the 1.5% fee plus the spread slip.
-   *
    * Fee currency rule: the fee is always charged in the currency the user RECEIVES.
-   *   • BUY  (spend ELIXIR → receive ELIXCOIN)  → fee is ELIXCOIN
-   *   • SELL (spend ELIXCOIN → receive ELIXIR)  → fee is ELIXIR
    */
   private async executeFill(
+    pair: string,
     telegramId: string,
     side: "BUY" | "SELL",
     amount: number,
@@ -519,94 +513,90 @@ export class TradeSpotService {
     if (source === "USER" && !telegramId)
       return { success: false, error: "Missing account" };
 
-    const total = round4(amount * price); // quote (ELIXIR) value of the trade
-    const pool = await this.getPool();
+    const total = round4(amount * price);
+    const pool = await this.getPool(pair);
+    const [base, quote] = pair.split("/");
+    const baseKey = base === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${base}`;
+    const quoteKey = quote === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${quote}`;
+
     let updated: any = null;
     let fee = 0;
-    let feeCurrency: "ELIXIR" | "ELIXCOIN" = BASE;
+    let feeCurrency = base;
 
     if (side === "BUY") {
-      // BUY ELIXCOIN: user spends ELIXIR (total), receives ELIXCOIN (amount) minus fee.
-      // Fee charged in ELIXCOIN — the currency they receive.
-      fee = round4(amount * FEE_PCT); // ELIXCOIN
-      feeCurrency = BASE;
-      const receivedElixcoin = round4(amount - fee);
+      fee = round4(amount * FEE_PCT);
+      feeCurrency = base;
+      const receivedBase = round4(amount - fee);
+
       updated = await this.userModel
         .findOneAndUpdate(
-          { telegramId, elixirBalance: { $gte: total } },
-          { $inc: { elixirBalance: -total, [`cryptoBalances.${ELIXCOIN_KEY}`]: receivedElixcoin } },
+          { telegramId, [quoteKey]: { $gte: total } },
+          { $inc: { [quoteKey]: -total, [baseKey]: receivedBase } },
           { returnDocument: "after" },
-        )
-        .exec();
+        ).exec();
       if (!updated)
-        return { success: false, error: `Insufficient ${QUOTE} balance` };
+        return { success: false, error: `Insufficient ${quote} balance` };
 
-      // Pool sells ELIXCOIN, receives ELIXIR.
       const poolUpd = await this.poolModel
         .findOneAndUpdate(
-          { pair: PAIR, elixcoinReserve: { $gte: amount } },
+          { pair, $or: [{ baseReserve: { $gte: amount } }, { elixcoinReserve: { $gte: amount } }] },
           {
             $inc: {
+              baseReserve: -amount,
+              quoteReserve: total,
               elixcoinReserve: -amount,
               elixirReserve: total,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
             },
           },
-        )
-        .exec();
+        ).exec();
       if (!poolUpd) {
-        // Roll back the user charge.
-        await this.userModel
-          .updateOne(
-            { telegramId },
-            { $inc: { elixirBalance: total, [`cryptoBalances.${ELIXCOIN_KEY}`]: -receivedElixcoin } },
-          )
-          .exec();
+        await this.userModel.updateOne(
+          { telegramId },
+          { $inc: { [quoteKey]: total, [baseKey]: -receivedBase } }
+        ).exec();
         return { success: false, error: "Insufficient platform liquidity" };
       }
     } else {
-      // SELL ELIXCOIN: user spends ELIXCOIN (amount), receives ELIXIR (proceeds) minus fee.
-      // Fee charged in ELIXIR — the currency they receive.
-      fee = round4(total * FEE_PCT); // ELIXIR
-      feeCurrency = QUOTE;
+      fee = round4(total * FEE_PCT);
+      feeCurrency = quote;
       const proceeds = round4(total - fee);
+
       updated = await this.userModel
         .findOneAndUpdate(
-          { telegramId, [`cryptoBalances.${ELIXCOIN_KEY}`]: { $gte: amount } },
-          { $inc: { [`cryptoBalances.${ELIXCOIN_KEY}`]: -amount, elixirBalance: proceeds } },
+          { telegramId, [baseKey]: { $gte: amount } },
+          { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } },
           { returnDocument: "after" },
-        )
-        .exec();
+        ).exec();
       if (!updated)
-        return { success: false, error: `Insufficient ${BASE} balance` };
+        return { success: false, error: `Insufficient ${base} balance` };
 
       const poolUpd = await this.poolModel
         .findOneAndUpdate(
-          { pair: PAIR, elixirReserve: { $gte: proceeds } },
+          { pair, $or: [{ quoteReserve: { $gte: proceeds } }, { elixirReserve: { $gte: proceeds } }] },
           {
             $inc: {
+              baseReserve: amount,
+              quoteReserve: -proceeds,
               elixcoinReserve: amount,
               elixirReserve: -proceeds,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: Math.abs(pool.lastMid - price) * amount,
             },
           },
-        )
-        .exec();
+        ).exec();
       if (!poolUpd) {
-        await this.userModel
-          .updateOne(
-            { telegramId },
-            { $inc: { [`cryptoBalances.${ELIXCOIN_KEY}`]: amount, elixirBalance: -proceeds } },
-          )
-          .exec();
+        await this.userModel.updateOne(
+          { telegramId },
+          { $inc: { [baseKey]: amount, [quoteKey]: -proceeds } }
+        ).exec();
         return { success: false, error: "Insufficient platform liquidity" };
       }
     }
 
     const trade = await this.tradeModel.create({
-      pair: PAIR,
+      pair,
       side,
       price,
       amount,
@@ -617,21 +607,18 @@ export class TradeSpotService {
       ...(source === "USER" ? { telegramId } : {}),
     });
 
-    // ── Update 24h pre-computed stats on the pool (eliminates full scan) ─
     const quoteAmt = round4(amount * price);
-    await this.poolModel
-      .updateOne(
-        { pair: PAIR },
-        {
-          $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: quoteAmt },
-          $max: { high24h: price },
-          $min: { low24h: price },
-        },
-      )
-      .exec();
-    // Invalidate caches so next poll picks up fresh data.
-    this.tickerCache = { data: null, ts: 0 };
-    this.tradesCache = { data: null, ts: 0, limit: 0 };
+    await this.poolModel.updateOne(
+      { pair },
+      {
+        $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: quoteAmt },
+        $max: { high24h: price },
+        $min: { low24h: price },
+      }
+    ).exec();
+
+    this.tickerCache.delete(pair);
+    this.tradesCache.delete(pair);
 
     return {
       success: true,
@@ -646,20 +633,22 @@ export class TradeSpotService {
         source,
       },
       balances: {
-        elixcoin: round4(updated.cryptoBalances?.[ELIXCOIN_KEY] || 0),
+        baseBalance: round4(base === "ELIXIR" ? (updated?.elixirBalance || 0) : (updated?.cryptoBalances?.[base] || 0)),
+        quoteBalance: round4(quote === "ELIXIR" ? (updated?.elixirBalance || 0) : (updated?.cryptoBalances?.[quote] || 0)),
+        // Legacy:
+        elixcoin: round4(updated?.cryptoBalances?.["ELIXCOIN"] || 0),
         elixir: round4(updated.elixirBalance),
       },
-      message:
-        source === "USER"
-          ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${BASE} @ ${round8(price)} ${QUOTE} · fee ${round4(fee)} ${feeCurrency}`
-          : undefined,
+      message: source === "USER"
+        ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${base} @ ${round8(price)} ${quote} · fee ${round4(fee)} ${feeCurrency}`
+        : undefined,
     };
   }
 
   // ── Resting limit orders ────────────────────────────────────────────────
-  async getOpenOrders(telegramId: string) {
+  async getOpenOrders(telegramId: string, pair: string = DEFAULT_PAIR) {
     const orders = await this.orderModel
-      .find({ telegramId, status: "OPEN" })
+      .find({ telegramId, status: "OPEN", pair })
       .sort({ createdAt: -1 })
       .lean<any>()
       .exec();
@@ -677,7 +666,6 @@ export class TradeSpotService {
   }
 
   async cancelOrder(telegramId: string, orderId: string) {
-    // ── Rate limit: max CANCEL_RATE_LIMIT cancels per minute ────────────
     const rateErr = this.checkRateLimit(this.cancelTimestamps, telegramId, CANCEL_RATE_LIMIT, Date.now());
     if (rateErr) return { success: false, error: rateErr };
 
@@ -686,27 +674,28 @@ export class TradeSpotService {
         { _id: orderId, telegramId, status: "OPEN" },
         { $set: { status: "CANCELLED" } },
         { returnDocument: "after" },
-      )
-      .exec();
+      ).exec();
     if (!order) return { success: false, error: "Order not found or already closed" };
     return { success: true, order };
   }
 
   // ── The caller's own trade history (paginated, 5 per page + load-more) ──
-  async getUserTrades(telegramId: string, page = 1, limit = 5) {
+  async getUserTrades(telegramId: string, page = 1, limit = 5, pair = DEFAULT_PAIR) {
     const p = Math.max(1, Math.floor(page || 1));
     const n = Math.max(1, Math.min(50, Math.floor(limit || 5)));
     const skip = (p - 1) * n;
+
+    const query: any = { telegramId, source: "USER" };
+    if (pair) query.pair = pair;
+
     const trades = await this.tradeModel
-      .find({ telegramId, source: "USER" })
+      .find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(n)
       .lean<any>()
       .exec();
-    const total = await this.tradeModel
-      .countDocuments({ telegramId, source: "USER" })
-      .exec();
+    const total = await this.tradeModel.countDocuments(query).exec();
     return {
       success: true,
       trades: trades.map((t) => ({
@@ -716,7 +705,7 @@ export class TradeSpotService {
         amount: t.amount,
         total: t.total,
         fee: t.fee,
-        feeCurrency: t.feeCurrency || "ELIXCOIN",
+        feeCurrency: t.feeCurrency,
         source: t.source,
         time: t.createdAt,
       })),
@@ -731,12 +720,12 @@ export class TradeSpotService {
    * Match resting user limit orders against the current real-time price.
    * Called on every market-maker cycle so fills happen as the market moves.
    */
-  async matchOpenOrders() {
-    const pool = await this.getPool();
+  async matchOpenOrders(pair = DEFAULT_PAIR) {
+    const pool = await this.getPool(pair);
     const half = pool.spreadPct / 2;
     const ask = pool.lastMid * (1 + half);
     const bid = pool.lastMid * (1 - half);
-    const open = await this.orderModel.find({ status: "OPEN" }).lean().exec();
+    const open = await this.orderModel.find({ status: "OPEN", pair }).lean().exec();
     const fills: any[] = [];
 
     for (const o of open) {
@@ -746,6 +735,7 @@ export class TradeSpotService {
       if (!fillPrice) continue;
 
       const res = await this.executeFill(
+        pair,
         o.telegramId,
         o.side,
         o.amount,
@@ -753,12 +743,10 @@ export class TradeSpotService {
         "USER",
       );
       if (res.success) {
-        await this.orderModel
-          .updateOne(
-            { _id: o._id },
-            { $set: { status: "FILLED", filledAmount: o.amount } },
-          )
-          .exec();
+        await this.orderModel.updateOne(
+          { _id: o._id },
+          { $set: { status: "FILLED", filledAmount: o.amount } }
+        ).exec();
         fills.push({ orderId: String(o._id), trade: res.trade });
       }
     }
@@ -766,20 +754,21 @@ export class TradeSpotService {
   }
 
   // ── Market-maker internals (driven by MarketMakerService) ───────────────
-  /** Bounded random walk of the mid — the bot follows, never pushes, the market. */
-  async driftMid() {
-    const pool = await this.getPool();
-    const drift = (Math.random() - 0.5) * 0.006; // ±0.3% per cycle
-    const next = Math.min(MID_MAX, Math.max(MID_MIN, pool.lastMid * (1 + drift)));
+  async driftMid(pair = DEFAULT_PAIR) {
+    const pool = await this.getPool(pair);
+    const drift = (Math.random() - 0.5) * 0.006;
+    const minBound = pool.midMin;
+    const maxBound = pool.midMax;
+    const next = Math.min(maxBound, Math.max(minBound, pool.lastMid * (1 + drift)));
     await this.poolModel
-      .updateOne({ pair: PAIR }, { $set: { lastMid: round8(next) } })
+      .updateOne({ pair }, { $set: { lastMid: round8(next) } })
       .exec();
   }
 
-  /** One bot cycle: 5 buys + 5 sells, all at the real-time mid price. */
-  async botCycle() {
-    const pool = await this.getPool();
+  async botCycle(pair = DEFAULT_PAIR) {
+    const pool = await this.getPool(pair);
     const mid = pool.lastMid;
+    const [base, quote] = pair.split("/");
 
     const sides: ("BUY" | "SELL")[] = [
       ...Array(5).fill("BUY"),
@@ -787,101 +776,122 @@ export class TradeSpotService {
     ].sort(() => Math.random() - 0.5);
 
     const trades: any[] = [];
+    const baseReserveKey = "baseReserve";
+    const quoteReserveKey = "quoteReserve";
+
+    // Fallbacks just in case older pools haven't migrated
+    const baseResVal = pool.baseReserve || pool.elixcoinReserve;
+    const quoteResVal = pool.quoteReserve || pool.elixirReserve;
+
     for (const side of sides) {
-      // Log-uniform random amount (50–1,200 ELIXCOIN): small trades frequent,
-      // occasionally a bigger one — always bounded by pool liquidity.
-      let amount = this.randomAmount(); // ELIXCOIN amount (BASE)
-      const maxByReserve =
-        side === "BUY"
-          ? pool.elixcoinReserve * 0.04
-          : (pool.elixirReserve / mid) * 0.04;
-      amount = Math.max(10, Math.min(amount, maxByReserve));
+      // Create a random target quote volume (e.g. between 0.022 and 0.05 ELIXCOIN baseline)
+      // then divide by price to arrive at an appropriately scaled base amount.
+      const targetQuoteVolume = Math.random() * 0.028 + 0.022;
+      let amount = targetQuoteVolume / mid;
+
+      const maxByReserve = side === "BUY"
+        ? baseResVal * 0.04
+        : (quoteResVal / mid) * 0.04;
+      amount = Math.min(amount, maxByReserve);
       amount = round2(amount);
 
-      const price = round8(mid); // ELIXIR per ELIXCOIN
-      const total = round4(amount * price); // ELIXIR value
+      const price = round8(mid);
+      const total = round4(amount * price);
       const fee = round4(total * FEE_PCT);
 
-      // Bot fills never touch a user account — only pool + trade history.
       if (side === "BUY") {
-        // Bot buys ELIXCOIN: pool sells ELIXCOIN, receives ELIXIR + fee.
-        const upd = await this.poolModel
-          .findOneAndUpdate(
-            { pair: PAIR, elixcoinReserve: { $gte: amount } },
-            {
-              $inc: {
-                elixcoinReserve: -amount,
-                elixirReserve: total + fee,
-                platformFeesAccumulated: fee,
-              },
+        const upd = await this.poolModel.findOneAndUpdate(
+          { pair, $or: [{ baseReserve: { $gte: amount } }, { elixcoinReserve: { $gte: amount } }] },
+          {
+            $inc: {
+              baseReserve: -amount,
+              quoteReserve: total + fee,
+              elixcoinReserve: -amount,
+              elixirReserve: total + fee,
+              platformFeesAccumulated: fee,
             },
-            { returnDocument: "after" },
-          )
-          .exec();
-        if (!upd) continue;
+          },
+          { returnDocument: "after" }
+        ).exec();
+        if (!upd) {
+          console.warn(`[MM Bot] skipping BUY on ${pair}: Insufficient baseReserve (needs ${amount})`);
+          continue;
+        }
       } else {
-        // Bot sells ELIXCOIN: pool buys ELIXCOIN, pays ELIXIR minus fee.
         const proceeds = round4(total - fee);
-        const upd = await this.poolModel
-          .findOneAndUpdate(
-            { pair: PAIR, elixirReserve: { $gte: proceeds } },
-            {
-              $inc: {
-                elixcoinReserve: amount,
-                elixirReserve: -proceeds,
-                platformFeesAccumulated: fee,
-              },
+        const upd = await this.poolModel.findOneAndUpdate(
+          { pair, $or: [{ quoteReserve: { $gte: proceeds } }, { elixirReserve: { $gte: proceeds } }] },
+          {
+            $inc: {
+              baseReserve: amount,
+              quoteReserve: -proceeds,
+              elixcoinReserve: amount,
+              elixirReserve: -proceeds,
+              platformFeesAccumulated: fee,
             },
-            { returnDocument: "after" },
-          )
-          .exec();
-        if (!upd) continue;
+          },
+          { returnDocument: "after" }
+        ).exec();
+        if (!upd) {
+          console.warn(`[MM Bot] skipping SELL on ${pair}: Insufficient quoteReserve`);
+          continue;
+        }
       }
 
       const trade = await this.tradeModel.create({
-        pair: PAIR,
+        pair,
         side,
         price,
         amount,
         total,
         fee,
-        feeCurrency: side === "BUY" ? BASE : QUOTE,
+        feeCurrency: side === "BUY" ? base : quote,
         source: "BOT",
       });
       trades.push(trade);
     }
 
-    // ── Daily 24h stats reset: if lastReset >24h ago, reset counters ────
     const now = Date.now();
     const shouldResetDay = !pool.dayResetAt || (now - pool.dayResetAt.getTime()) > 24 * 3600_000;
-    const updateOps: Record<string, any> = {
-      $inc: { lifetimeVolume: trades.reduce((a, t) => a + t.amount, 0), botRunCount: 1 },
-      $set: { lastBotRunAt: new Date() },
+
+    const cycleVolume = trades.reduce((a, t) => a + t.amount, 0);
+    const cycleQuoteVol = trades.reduce((a, t) => a + t.total, 0);
+
+    const updateOps: { $inc: any; $set?: any; $max?: any; $min?: any } = {
+      $inc: {
+        lifetimeVolume: cycleVolume,
+        botRunCount: 1
+      },
     };
+
     if (shouldResetDay && trades.length > 0) {
       const lastPrice = trades[trades.length - 1].price;
-      updateOps.$set.high24h = lastPrice;
-      updateOps.$set.low24h = lastPrice;
-      updateOps.$set.volume24h = 0;
-      updateOps.$set.quoteVolume24h = 0;
-      updateOps.$set.open24h = lastPrice;
-      updateOps.$set.dayResetAt = new Date();
+      updateOps.$set = {
+        lastBotRunAt: new Date(),
+        high24h: lastPrice,
+        low24h: lastPrice,
+        volume24h: cycleVolume,
+        quoteVolume24h: cycleQuoteVol,
+        open24h: lastPrice,
+        dayResetAt: new Date()
+      };
+    } else {
+      updateOps.$set = { lastBotRunAt: new Date() };
+      updateOps.$inc.volume24h = cycleVolume;
+      updateOps.$inc.quoteVolume24h = cycleQuoteVol;
+      if (trades.length > 0) {
+        const lastPrice = trades[trades.length - 1].price;
+        updateOps.$max = { high24h: lastPrice };
+        updateOps.$min = { low24h: lastPrice };
+      }
     }
-    await this.poolModel
-      .updateOne({ pair: PAIR }, updateOps)
-      .exec();
-    // Invalidate caches after bot cycle.
-    this.tickerCache = { data: null, ts: 0 };
-    this.bookCache = { data: null, ts: 0, depth: 0 };
-    this.tradesCache = { data: null, ts: 0, limit: 0 };
+
+    await this.poolModel.updateOne({ pair }, updateOps as any).exec();
+
+    this.tickerCache.delete(pair);
+    this.bookCache.delete(pair);
+    this.tradesCache.delete(pair);
 
     return { count: trades.length, trades };
-  }
-
-  private randomAmount(): number {
-    const min = 50;
-    const max = 1200;
-    const u = Math.random();
-    return Math.exp(Math.log(min) + u * (Math.log(max) - Math.log(min)));
   }
 }

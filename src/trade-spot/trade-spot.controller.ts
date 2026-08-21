@@ -4,50 +4,50 @@ import { User } from "../auth/telegram-user.decorator";
 
 @Controller("trade-spot")
 export class TradeSpotController {
-  constructor(private readonly tradeSpotService: TradeSpotService) {}
+  constructor(private readonly tradeSpotService: TradeSpotService) { }
 
   /** Real-time ticker: last price, 24h change/high/low/volume, fee & spread. */
   @Get("ticker")
-  async ticker() {
-    return this.tradeSpotService.getTicker();
+  async ticker(@Query("pair") pair?: string) {
+    return this.tradeSpotService.getTicker(pair);
   }
 
   /** Order book ladder (asks/bids) around the real-time mid — display data. */
   @Get("orderbook")
-  async orderbook(@Query("depth") depth?: string) {
-    return this.tradeSpotService.getOrderBook(Number(depth) || 10);
+  async orderbook(@Query("depth") depth?: string, @Query("pair") pair?: string) {
+    return this.tradeSpotService.getOrderBook(Number(depth) || 10, pair);
   }
 
   /** Recent market trades — the live tape (bot + user fills). */
   @Get("trades")
-  async trades(@Query("limit") limit?: string) {
-    return this.tradeSpotService.getTrades(Number(limit) || 30);
+  async trades(@Query("limit") limit?: string, @Query("pair") pair?: string) {
+    return this.tradeSpotService.getTrades(Number(limit) || 30, pair);
   }
 
   /** Market-maker + platform pool stats (legacy Bots-tab payload). */
   @Get("stats")
-  async stats() {
-    return this.tradeSpotService.getStats();
+  async stats(@Query("pair") pair?: string) {
+    return this.tradeSpotService.getStats(pair);
   }
 
   /** INFO panel: 24h totals + lifetime + chart data for ELIXIR & ELIXCOIN. */
   @Get("info")
-  async info() {
-    return this.tradeSpotService.getInfo();
+  async info(@Query("pair") pair?: string) {
+    return this.tradeSpotService.getInfo(pair);
   }
 
   /** The caller's tradable balances (ELIXIR + ELIXCOIN). */
   @Get("holdings")
-  async holdings(@User("telegramId") telegramId: string) {
+  async holdings(@User("telegramId") telegramId: string, @Query("pair") pair?: string) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
-    return this.tradeSpotService.getHoldings(telegramId);
+    return this.tradeSpotService.getHoldings(telegramId, pair);
   }
 
   /** The caller's resting limit orders. */
   @Get("open-orders")
-  async openOrders(@User("telegramId") telegramId: string) {
+  async openOrders(@User("telegramId") telegramId: string, @Query("pair") pair?: string) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
-    return this.tradeSpotService.getOpenOrders(telegramId);
+    return this.tradeSpotService.getOpenOrders(telegramId, pair);
   }
 
   /**
@@ -59,12 +59,14 @@ export class TradeSpotController {
     @User("telegramId") telegramId: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string,
+    @Query("pair") pair?: string,
   ) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
     return this.tradeSpotService.getUserTrades(
       telegramId,
       Number(page) || 1,
       Number(limit) || 5,
+      pair,
     );
   }
 

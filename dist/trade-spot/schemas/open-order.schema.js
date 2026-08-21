@@ -13,6 +13,7 @@ exports.OpenOrderSchema = exports.OpenOrder = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
 let OpenOrder = class OpenOrder {
     telegramId;
+    pair;
     side;
     price;
     amount;
@@ -24,6 +25,10 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
 ], OpenOrder.prototype, "telegramId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: "ELIXCOIN/ELIXIR" }),
+    __metadata("design:type", String)
+], OpenOrder.prototype, "pair", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true, enum: ["BUY", "SELL"] }),
     __metadata("design:type", String)

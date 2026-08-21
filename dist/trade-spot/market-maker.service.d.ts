@@ -8,9 +8,9 @@ export declare class MarketMakerService implements OnModuleInit, OnModuleDestroy
     onModuleInit(): void;
     onModuleDestroy(): void;
     private tick;
-    runNow(): Promise<{
+    runNow(pair?: string): Promise<{
         ran: boolean;
         count: number;
     }>;
-    runCycle(): Promise<number>;
+    runCycle(pair?: string): Promise<number>;
 }
