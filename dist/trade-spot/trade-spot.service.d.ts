@@ -144,7 +144,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
         };
         balances: {
             baseBalance: number;

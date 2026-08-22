@@ -78,9 +78,9 @@ exports.BUFF_RARITY_WEIGHTS = {
     ULTRA_RARE: 0.5,
 };
 exports.ELIXCOIN_BANDS = {
-    COMMON: [100, 500],
-    MEDIUM: [300, 1200],
-    RARE: [800, 3000],
+    COMMON: [1, 5],
+    MEDIUM: [5, 15],
+    RARE: [15, 40],
 };
 exports.MATERIAL_AMOUNTS = {
     COMMON: [1, 1],

@@ -76,9 +76,9 @@ export const BUFF_RARITY_WEIGHTS: Record<string, number> = {
  * sustainable — the real prize of a case remains the material tool.
  */
 export const ELIXCOIN_BANDS: Record<CaseTier, [number, number]> = {
-  COMMON: [100, 500],
-  MEDIUM: [300, 1200],
-  RARE: [800, 3000],
+  COMMON: [1, 5],
+  MEDIUM: [5, 15],
+  RARE: [15, 40],
 };
 
 /** Layer 3 — material amount bands per rarity. Always exactly 1: each open

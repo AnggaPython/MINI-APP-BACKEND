@@ -18,8 +18,8 @@ export const SPREAD_PCT = 0.004;
 export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "ELIXCOIN/ELIXIR": 0.09674384,
   "ELIXCOIN/USDC": 0.00000967,
-  "IRON/USDC": 0.00000003,
-  "COPPER/USDC": 0.00000006, // approx 0.000000068 but matching MM drift bounds
+  "IRON/USDC": 0.00000030, // raised to 3e-7 for 8-decimal order book depth
+  "COPPER/USDC": 0.00000060, // raised to 6e-7 for 8-decimal order book depth
   "SILVER/USDC": 0.00000068,
   "GOLD/USDC": 0.0000068,
   "DIAMOND/USDC": 0.000068,
@@ -230,25 +230,41 @@ export class TradeSpotService {
     const asks: { price: number; amount: number }[] = [];
     const bids: { price: number; amount: number }[] = [];
 
-    for (let i = 0; i < clamped; i++) {
-      const rngDepthAsks = mulberry32(Math.round(mid * 1e6) + i * 5123);
-      const rngDepthBids = mulberry32(Math.round(mid * 1e6) + i * 7919);
+    // Derive the smallest price unit that survives round8 for this mid price.
+    const magnitude = Math.pow(10, Math.floor(Math.log10(mid)) - 7);
+    const minVisibleTick = Math.max(magnitude, 0.00000001);
+    const pctStep = mid * step;
+    const levelStep = pctStep > minVisibleTick ? pctStep : minVisibleTick;
+    const halfSpreadRaw = Math.max(mid * half, minVisibleTick);
 
-      // Randomize natural depth clamped loosely between 150k and 3.5M
-      // 20% chance of thick "whale" walls on specific ticks. No more predictable tapering.
+    // For ultra-micro pairs, limit depth so bids never go ≤ 0.
+    // deepest bid = mid - halfSpreadRaw - levelStep * (depth - 1) > 0
+    // → depth < (mid - halfSpreadRaw) / levelStep + 1
+    const maxSafeDepth = Math.max(
+      1,
+      Math.floor((mid - halfSpreadRaw) / levelStep),
+    );
+    const safeDepth = Math.min(clamped, maxSafeDepth);
+
+    for (let i = 0; i < safeDepth; i++) {
+      const rngDepthAsks = mulberry32(Math.round(mid * 1e8) + i * 5123);
+      const rngDepthBids = mulberry32(Math.round(mid * 1e8) + i * 7919);
+
+      // Depth: 150K–3.5M with 20% whale-wall spike chance
       const askBase =
         rngDepthAsks() > 0.8
           ? 2_000_000 + rngDepthAsks() * 1_500_000
           : 150_000 + rngDepthAsks() * 600_000;
       const bidBase =
         rngDepthBids() > 0.8
-          ? 2_500_000 + rngDepthBids() * 2_000_000
-          : 250_000 + rngDepthBids() * 700_000;
+          ? 2_000_000 + rngDepthBids() * 1_500_000
+          : 150_000 + rngDepthBids() * 600_000;
 
-      const askPrice = round8(mid * (1 + half + step * i));
+      // Ascending asks, descending bids — guaranteed distinct and never negative
+      const askPrice = round8(mid + halfSpreadRaw + levelStep * i);
       asks.push({ price: askPrice, amount: round2(askBase) });
 
-      const bidPrice = round8(mid * (1 - half - step * i));
+      const bidPrice = round8(mid - halfSpreadRaw - levelStep * i);
       bids.push({ price: bidPrice, amount: round2(bidBase) });
     }
 
@@ -968,10 +984,16 @@ export class TradeSpotService {
     const quoteResVal = pool.quoteReserve || pool.elixirReserve;
 
     for (const side of sides) {
-      // Create a massive random target quote volume (e.g. 50 to 500 ELIXIR)
-      // so the bot executes trades in the thousands rather than pennies.
-      const targetQuoteVolume = Math.random() * 450 + 50;
+      // Create a sensible retail-sized target quote volume
+      // so the bot simulates normal traders (e.g., small fractions)
+      const targetQuoteVolume = Math.random() * 1.5 + 0.2;
       let amount = targetQuoteVolume / mid;
+
+      // Hard cap the amount so MM bot doesn't spam 100M unit orders
+      // which frightens casual "normie" users. Max looks around 20k-60k.
+      if (amount > 80_000) {
+        amount = Math.random() * 40_000 + 10_000;
+      }
 
       amount = round2(amount);
 

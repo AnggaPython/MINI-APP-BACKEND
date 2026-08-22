@@ -26,8 +26,8 @@ exports.SPREAD_PCT = 0.004;
 exports.MINERAL_INITIAL_RATES = {
     "ELIXCOIN/ELIXIR": 0.09674384,
     "ELIXCOIN/USDC": 0.00000967,
-    "IRON/USDC": 0.00000003,
-    "COPPER/USDC": 0.00000006,
+    "IRON/USDC": 0.00000030,
+    "COPPER/USDC": 0.00000060,
     "SILVER/USDC": 0.00000068,
     "GOLD/USDC": 0.0000068,
     "DIAMOND/USDC": 0.000068,
@@ -197,18 +197,25 @@ let TradeSpotService = class TradeSpotService {
         const step = 0.0012;
         const asks = [];
         const bids = [];
-        for (let i = 0; i < clamped; i++) {
-            const rngDepthAsks = mulberry32(Math.round(mid * 1e6) + i * 5123);
-            const rngDepthBids = mulberry32(Math.round(mid * 1e6) + i * 7919);
+        const magnitude = Math.pow(10, Math.floor(Math.log10(mid)) - 7);
+        const minVisibleTick = Math.max(magnitude, 0.00000001);
+        const pctStep = mid * step;
+        const levelStep = pctStep > minVisibleTick ? pctStep : minVisibleTick;
+        const halfSpreadRaw = Math.max(mid * half, minVisibleTick);
+        const maxSafeDepth = Math.max(1, Math.floor((mid - halfSpreadRaw) / levelStep));
+        const safeDepth = Math.min(clamped, maxSafeDepth);
+        for (let i = 0; i < safeDepth; i++) {
+            const rngDepthAsks = mulberry32(Math.round(mid * 1e8) + i * 5123);
+            const rngDepthBids = mulberry32(Math.round(mid * 1e8) + i * 7919);
             const askBase = rngDepthAsks() > 0.8
                 ? 2_000_000 + rngDepthAsks() * 1_500_000
                 : 150_000 + rngDepthAsks() * 600_000;
             const bidBase = rngDepthBids() > 0.8
-                ? 2_500_000 + rngDepthBids() * 2_000_000
-                : 250_000 + rngDepthBids() * 700_000;
-            const askPrice = round8(mid * (1 + half + step * i));
+                ? 2_000_000 + rngDepthBids() * 1_500_000
+                : 150_000 + rngDepthBids() * 600_000;
+            const askPrice = round8(mid + halfSpreadRaw + levelStep * i);
             asks.push({ price: askPrice, amount: round2(askBase) });
-            const bidPrice = round8(mid * (1 - half - step * i));
+            const bidPrice = round8(mid - halfSpreadRaw - levelStep * i);
             bids.push({ price: bidPrice, amount: round2(bidBase) });
         }
         const openOrders = await this.orderModel
@@ -750,8 +757,11 @@ let TradeSpotService = class TradeSpotService {
         const baseResVal = pool.baseReserve || pool.elixcoinReserve;
         const quoteResVal = pool.quoteReserve || pool.elixirReserve;
         for (const side of sides) {
-            const targetQuoteVolume = Math.random() * 450 + 50;
+            const targetQuoteVolume = Math.random() * 1.5 + 0.2;
             let amount = targetQuoteVolume / mid;
+            if (amount > 80_000) {
+                amount = Math.random() * 40_000 + 10_000;
+            }
             amount = round2(amount);
             const price = round8(mid);
             const total = round4(amount * price);
