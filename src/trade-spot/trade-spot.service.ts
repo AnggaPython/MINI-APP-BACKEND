@@ -15,6 +15,14 @@ export const FEE_PCT = 0.015;
 /** Full quoted spread (0.4% → ±0.2% around mid). */
 export const SPREAD_PCT = 0.004;
 
+export const MINERAL_INITIAL_RATES: Record<string, number> = {
+  "IRON/USDC": 0.00000003,
+  "COPPER/USDC": 0.00000006, // approx 0.000000068 but matching MM drift bounds
+  "SILVER/USDC": 0.00000068,
+  "GOLD/USDC": 0.0000068,
+  "DIAMOND/USDC": 0.000068,
+};
+
 const round8 = (n: number) => Math.round(n * 1e8) / 1e8;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
@@ -32,12 +40,12 @@ function mulberry32(seed: number) {
 }
 
 // ── Anti-exploit constants ────────────────────────────────────────────────
-const ORDER_RATE_LIMIT = 10;      // max orders per minute per user
-const CANCEL_RATE_LIMIT = 20;     // max cancels per minute per user
+const ORDER_RATE_LIMIT = 10; // max orders per minute per user
+const CANCEL_RATE_LIMIT = 20; // max cancels per minute per user
 const RATE_WINDOW_MS = 60_000;
 
 // ── In-memory cache TTL (shared across ALL users — 0 extra DB reads) ──────
-const TICKER_CACHE_MS = 3_000;    // 3 seconds
+const TICKER_CACHE_MS = 3_000; // 3 seconds
 const BOOK_CACHE_MS = 3_000;
 const TRADES_CACHE_MS = 5_000;
 
@@ -49,8 +57,14 @@ export class TradeSpotService {
 
   // In-memory caches — shared across ALL connected users. Keyed by pair.
   private tickerCache = new Map<string, { data: any; ts: number }>();
-  private bookCache = new Map<string, { data: any; ts: number; depth: number }>();
-  private tradesCache = new Map<string, { data: any; ts: number; limit: number }>();
+  private bookCache = new Map<
+    string,
+    { data: any; ts: number; depth: number }
+  >();
+  private tradesCache = new Map<
+    string,
+    { data: any; ts: number; limit: number }
+  >();
 
   constructor(
     @InjectModel(Trade.name) private readonly tradeModel: Model<Trade>,
@@ -61,7 +75,11 @@ export class TradeSpotService {
   ) { }
 
   // ── Rate limit helpers (in-memory sliding window) ─────────────────────
-  private evictRateLimit(map: Map<string, number[]>, telegramId: string, now: number): void {
+  private evictRateLimit(
+    map: Map<string, number[]>,
+    telegramId: string,
+    now: number,
+  ): void {
     const ts = map.get(telegramId);
     if (!ts) return;
     const cutoff = now - RATE_WINDOW_MS;
@@ -70,7 +88,12 @@ export class TradeSpotService {
     else map.set(telegramId, filtered);
   }
 
-  private checkRateLimit(map: Map<string, number[]>, telegramId: string, limit: number, now: number): string | null {
+  private checkRateLimit(
+    map: Map<string, number[]>,
+    telegramId: string,
+    limit: number,
+    now: number,
+  ): string | null {
     this.evictRateLimit(map, telegramId, now);
     const ts = map.get(telegramId) || [];
     if (ts.length >= limit) return "Too many requests. Please slow down.";
@@ -78,8 +101,6 @@ export class TradeSpotService {
     map.set(telegramId, ts);
     return null; // OK
   }
-
-
 
   // ── Pool (platform liquidity + market state) ────────────────────────────
   async getAllActivePools(): Promise<LiquidityPool[]> {
@@ -96,18 +117,32 @@ export class TradeSpotService {
           elixirReserve: 1_000_000,
           baseReserve: 6_724_000,
           quoteReserve: 1_000_000,
-          lastMid: 0.14872647389,
+          lastMid: 0.14872647,
           spreadPct: SPREAD_PCT,
           feePct: FEE_PCT,
-          midMin: 0.14700000,
+          midMin: 0.147,
           midMax: 0.14899999,
+        });
+      } else if (MINERAL_INITIAL_RATES[pair]) {
+        const initialMid = MINERAL_INITIAL_RATES[pair];
+        pool = await this.poolModel.create({
+          pair,
+          baseReserve: 10_000_000,
+          quoteReserve: 1_000_000,
+          lastMid: initialMid,
+          spreadPct: SPREAD_PCT,
+          feePct: FEE_PCT,
+          midMin: initialMid * 0.5,
+          midMax: initialMid * 10,
         });
       } else {
         throw new Error(`Pool for ${pair} not found`);
       }
     } else if (pool.feePct !== FEE_PCT) {
       pool.feePct = FEE_PCT;
-      await this.poolModel.updateOne({ pair }, { $set: { feePct: FEE_PCT } }).exec();
+      await this.poolModel
+        .updateOne({ pair }, { $set: { feePct: FEE_PCT } })
+        .exec();
     }
     return pool;
   }
@@ -124,7 +159,7 @@ export class TradeSpotService {
     const close = pool.lastMid;
     const open = pool.open24h || close;
     const high = pool.high24h || close;
-    const low = pool.low24h === Infinity ? close : (pool.low24h || close);
+    const low = pool.low24h === Infinity ? close : pool.low24h || close;
     const volume = pool.volume24h || 0;
     const quoteVolume = pool.quoteVolume24h || 0;
     const changePct = open ? ((close - open) / open) * 100 : 0;
@@ -154,7 +189,11 @@ export class TradeSpotService {
     const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
     const cache = this.bookCache.get(pair);
 
-    if (cache?.data && now - cache.ts < BOOK_CACHE_MS && cache.depth === clamped) {
+    if (
+      cache?.data &&
+      now - cache.ts < BOOK_CACHE_MS &&
+      cache.depth === clamped
+    ) {
       return cache.data;
     }
     const pool = await this.getPool(pair);
@@ -167,7 +206,10 @@ export class TradeSpotService {
 
     // Scale orderbook depth based on base asset supply representation
     // Enforce a hard minimum of 10000 base depth just in case the pool is drained to a tiny decimal (e.g 0.001) where JS Truthy skips the || fallback.
-    const maxBookDepth = Math.max(10000, (pool.baseReserve || pool.elixcoinReserve) || 0);
+    const maxBookDepth = Math.max(
+      10000,
+      pool.baseReserve || pool.elixcoinReserve || 0,
+    );
 
     for (let i = 0; i < clamped; i++) {
       const taper = Math.pow(0.85, i); // deeper levels are thinner
@@ -178,19 +220,22 @@ export class TradeSpotService {
       asks.push({ price: askPrice, amount: Math.max(0.0001, askAmount) });
 
       const bidPrice = round8(mid * (1 - half - step * i));
-      const bidAmount = round8(maxBookDepth * (0.005 + 0.01 * rng()) * taper);
+      const bidAmount = round8(maxBookDepth * 5 * (0.005 + 0.01 * rng()) * taper);
       bids.push({ price: bidPrice, amount: Math.max(0.0001, bidAmount) });
     }
 
     // [NEW] Merge active user Limit Orders into the AMM visual depth
-    const openOrders = await this.orderModel.find({ pair, status: "OPEN" }).lean().exec();
+    const openOrders = await this.orderModel
+      .find({ pair, status: "OPEN" })
+      .lean()
+      .exec();
     for (const o of openOrders) {
       if (!isFinite(o.price) || o.price <= 0) continue;
       const rem = (o.amount || 0) - (o.filledAmount || 0);
       if (rem <= 0) continue;
 
       const targetList = o.side === "SELL" ? asks : bids;
-      const match = targetList.find(x => x.price === o.price);
+      const match = targetList.find((x) => x.price === o.price);
       if (match) {
         match.amount += rem;
       } else {
@@ -208,7 +253,8 @@ export class TradeSpotService {
 
     const totalAsk = finAsks.reduce((acc, l) => acc + l.amount, 0);
     const totalBid = finBids.reduce((acc, l) => acc + l.amount, 0);
-    const bidShare = totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
+    const bidShare =
+      totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
 
     const result = {
       success: true,
@@ -217,7 +263,7 @@ export class TradeSpotService {
       spread: round8(finAsks[0]?.price - finBids[0]?.price || 0),
       asks: finAsks,
       bids: finBids,
-      bidShare: Math.max(0, Math.min(100, round2(bidShare)))
+      bidShare: Math.max(0, Math.min(100, round2(bidShare))),
     };
     this.bookCache.set(pair, { data: result, ts: now, depth: clamped });
     return result;
@@ -257,8 +303,12 @@ export class TradeSpotService {
   // ── Market stats (MM bot + platform pool) ───────────────────────────────
   async getStats(pair = DEFAULT_PAIR) {
     const pool = await this.getPool(pair);
-    const botTrades = await this.tradeModel.countDocuments({ pair, source: "BOT" }).exec();
-    const userTrades = await this.tradeModel.countDocuments({ pair, source: "USER" }).exec();
+    const botTrades = await this.tradeModel
+      .countDocuments({ pair, source: "BOT" })
+      .exec();
+    const userTrades = await this.tradeModel
+      .countDocuments({ pair, source: "USER" })
+      .exec();
     return {
       success: true,
       lastBotRunAt: pool.lastBotRunAt,
@@ -314,7 +364,9 @@ export class TradeSpotService {
         { $match: { pair, createdAt: { $gte: since24 } } },
         {
           $group: {
-            _id: { $dateToString: { format: "%Y-%m-%d %H", date: "$createdAt" } },
+            _id: {
+              $dateToString: { format: "%Y-%m-%d %H", date: "$createdAt" },
+            },
             volume: { $sum: "$amount" },
             count: { $sum: 1 },
           },
@@ -339,8 +391,12 @@ export class TradeSpotService {
       });
     }
 
-    const botTrades = await this.tradeModel.countDocuments({ pair, source: "BOT" }).exec();
-    const userTrades = await this.tradeModel.countDocuments({ pair, source: "USER" }).exec();
+    const botTrades = await this.tradeModel
+      .countDocuments({ pair, source: "BOT" })
+      .exec();
+    const userTrades = await this.tradeModel
+      .countDocuments({ pair, source: "USER" })
+      .exec();
     const [base, quote] = pair.split("/");
 
     return {
@@ -393,7 +449,11 @@ export class TradeSpotService {
     };
   }
 
-  async updateBotConfig(body: { pair?: string; enabled?: boolean; intervalMinutes?: number }) {
+  async updateBotConfig(body: {
+    pair?: string;
+    enabled?: boolean;
+    intervalMinutes?: number;
+  }) {
     const pair = body.pair || DEFAULT_PAIR;
     const pool = await this.getPool(pair);
     const set: Record<string, unknown> = {};
@@ -401,7 +461,10 @@ export class TradeSpotService {
     if (body.intervalMinutes !== undefined) {
       const m = Number(body.intervalMinutes);
       if (!isFinite(m) || m < 1 || m > 60) {
-        return { success: false, error: "Cooldown must be between 1 and 60 minutes" };
+        return {
+          success: false,
+          error: "Cooldown must be between 1 and 60 minutes",
+        };
       }
       set.botIntervalMinutes = Math.round(m);
     }
@@ -420,8 +483,12 @@ export class TradeSpotService {
       success: true,
       base,
       quote,
-      baseBalance: round4(base === "ELIXIR" ? (user?.elixirBalance || 0) : (crypto?.[base] || 0)),
-      quoteBalance: round4(quote === "ELIXIR" ? (user?.elixirBalance || 0) : (crypto?.[quote] || 0)),
+      baseBalance: round4(
+        base === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[base] || 0,
+      ),
+      quoteBalance: round4(
+        quote === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[quote] || 0,
+      ),
       // LEGACY fallback for exact matching on the frontend until updated:
       elixcoin: round4(crypto?.["ELIXCOIN"] || 0),
       elixir: round4(user?.elixirBalance || 0),
@@ -431,9 +498,20 @@ export class TradeSpotService {
   // ── User order placement ────────────────────────────────────────────────
   async placeOrder(
     telegramId: string,
-    body: { pair?: string; side?: string; type?: string; amount?: number; price?: number },
+    body: {
+      pair?: string;
+      side?: string;
+      type?: string;
+      amount?: number;
+      price?: number;
+    },
   ) {
-    const rateErr = this.checkRateLimit(this.orderTimestamps, telegramId, ORDER_RATE_LIMIT, Date.now());
+    const rateErr = this.checkRateLimit(
+      this.orderTimestamps,
+      telegramId,
+      ORDER_RATE_LIMIT,
+      Date.now(),
+    );
     if (rateErr) return { success: false, error: rateErr };
 
     const pair = body.pair || DEFAULT_PAIR;
@@ -452,7 +530,10 @@ export class TradeSpotService {
       return { success: false, error: "Invalid amount" };
     const MIN_AMOUNT = 1;
     if (amount < MIN_AMOUNT)
-      return { success: false, error: `Minimum order is ${MIN_AMOUNT} ${base}` };
+      return {
+        success: false,
+        error: `Minimum order is ${MIN_AMOUNT} ${base}`,
+      };
 
     const user = await this.userModel.findOne({ telegramId }).exec();
     if (!user) return { success: false, error: "Account not found" };
@@ -464,16 +545,37 @@ export class TradeSpotService {
 
     if (type === "market") {
       const execPrice = side === "BUY" ? ask : bid;
-      return this.executeFill(pair, telegramId, side, round2(amount), round8(execPrice), "USER");
+      return this.executeFill(
+        pair,
+        telegramId,
+        side,
+        round2(amount),
+        round8(execPrice),
+        "USER",
+      );
     }
 
     const limit = Number(body.price);
     if (!isFinite(limit) || limit <= 0)
       return { success: false, error: "Invalid limit price" };
     if (side === "BUY" && limit >= ask)
-      return this.executeFill(pair, telegramId, "BUY", round2(amount), round8(ask), "USER");
+      return this.executeFill(
+        pair,
+        telegramId,
+        "BUY",
+        round2(amount),
+        round8(ask),
+        "USER",
+      );
     if (side === "SELL" && limit <= bid)
-      return this.executeFill(pair, telegramId, "SELL", round2(amount), round8(bid), "USER");
+      return this.executeFill(
+        pair,
+        telegramId,
+        "SELL",
+        round2(amount),
+        round8(bid),
+        "USER",
+      );
 
     const order = await this.orderModel.create({
       pair,
@@ -516,8 +618,10 @@ export class TradeSpotService {
     const total = round4(amount * price);
     const pool = await this.getPool(pair);
     const [base, quote] = pair.split("/");
-    const baseKey = base === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${base}`;
-    const quoteKey = quote === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${quote}`;
+    const baseKey =
+      base === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${base}`;
+    const quoteKey =
+      quote === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${quote}`;
 
     let updated: any = null;
     let fee = 0;
@@ -533,13 +637,20 @@ export class TradeSpotService {
           { telegramId, [quoteKey]: { $gte: total } },
           { $inc: { [quoteKey]: -total, [baseKey]: receivedBase } },
           { returnDocument: "after" },
-        ).exec();
+        )
+        .exec();
       if (!updated)
         return { success: false, error: `Insufficient ${quote} balance` };
 
       const poolUpd = await this.poolModel
         .findOneAndUpdate(
-          { pair, $or: [{ baseReserve: { $gte: amount } }, { elixcoinReserve: { $gte: amount } }] },
+          {
+            pair,
+            $or: [
+              { baseReserve: { $gte: amount } },
+              { elixcoinReserve: { $gte: amount } },
+            ],
+          },
           {
             $inc: {
               baseReserve: -amount,
@@ -550,12 +661,15 @@ export class TradeSpotService {
               spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
             },
           },
-        ).exec();
+        )
+        .exec();
       if (!poolUpd) {
-        await this.userModel.updateOne(
-          { telegramId },
-          { $inc: { [quoteKey]: total, [baseKey]: -receivedBase } }
-        ).exec();
+        await this.userModel
+          .updateOne(
+            { telegramId },
+            { $inc: { [quoteKey]: total, [baseKey]: -receivedBase } },
+          )
+          .exec();
         return { success: false, error: "Insufficient platform liquidity" };
       }
     } else {
@@ -568,13 +682,20 @@ export class TradeSpotService {
           { telegramId, [baseKey]: { $gte: amount } },
           { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } },
           { returnDocument: "after" },
-        ).exec();
+        )
+        .exec();
       if (!updated)
         return { success: false, error: `Insufficient ${base} balance` };
 
       const poolUpd = await this.poolModel
         .findOneAndUpdate(
-          { pair, $or: [{ quoteReserve: { $gte: proceeds } }, { elixirReserve: { $gte: proceeds } }] },
+          {
+            pair,
+            $or: [
+              { quoteReserve: { $gte: proceeds } },
+              { elixirReserve: { $gte: proceeds } },
+            ],
+          },
           {
             $inc: {
               baseReserve: amount,
@@ -585,12 +706,15 @@ export class TradeSpotService {
               spreadProfitAccumulated: Math.abs(pool.lastMid - price) * amount,
             },
           },
-        ).exec();
+        )
+        .exec();
       if (!poolUpd) {
-        await this.userModel.updateOne(
-          { telegramId },
-          { $inc: { [baseKey]: amount, [quoteKey]: -proceeds } }
-        ).exec();
+        await this.userModel
+          .updateOne(
+            { telegramId },
+            { $inc: { [baseKey]: amount, [quoteKey]: -proceeds } },
+          )
+          .exec();
         return { success: false, error: "Insufficient platform liquidity" };
       }
     }
@@ -608,14 +732,20 @@ export class TradeSpotService {
     });
 
     const quoteAmt = round4(amount * price);
-    await this.poolModel.updateOne(
-      { pair },
-      {
-        $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: quoteAmt },
-        $max: { high24h: price },
-        $min: { low24h: price },
-      }
-    ).exec();
+    await this.poolModel
+      .updateOne(
+        { pair },
+        {
+          $inc: {
+            lifetimeVolume: amount,
+            volume24h: amount,
+            quoteVolume24h: quoteAmt,
+          },
+          $max: { high24h: price },
+          $min: { low24h: price },
+        },
+      )
+      .exec();
 
     this.tickerCache.delete(pair);
     this.tradesCache.delete(pair);
@@ -633,15 +763,24 @@ export class TradeSpotService {
         source,
       },
       balances: {
-        baseBalance: round4(base === "ELIXIR" ? (updated?.elixirBalance || 0) : (updated?.cryptoBalances?.[base] || 0)),
-        quoteBalance: round4(quote === "ELIXIR" ? (updated?.elixirBalance || 0) : (updated?.cryptoBalances?.[quote] || 0)),
+        baseBalance: round4(
+          base === "ELIXIR"
+            ? updated?.elixirBalance || 0
+            : updated?.cryptoBalances?.[base] || 0,
+        ),
+        quoteBalance: round4(
+          quote === "ELIXIR"
+            ? updated?.elixirBalance || 0
+            : updated?.cryptoBalances?.[quote] || 0,
+        ),
         // Legacy:
         elixcoin: round4(updated?.cryptoBalances?.["ELIXCOIN"] || 0),
         elixir: round4(updated.elixirBalance),
       },
-      message: source === "USER"
-        ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${base} @ ${round8(price)} ${quote} · fee ${round4(fee)} ${feeCurrency}`
-        : undefined,
+      message:
+        source === "USER"
+          ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${base} @ ${round8(price)} ${quote} · fee ${round4(fee)} ${feeCurrency}`
+          : undefined,
     };
   }
 
@@ -666,7 +805,12 @@ export class TradeSpotService {
   }
 
   async cancelOrder(telegramId: string, orderId: string) {
-    const rateErr = this.checkRateLimit(this.cancelTimestamps, telegramId, CANCEL_RATE_LIMIT, Date.now());
+    const rateErr = this.checkRateLimit(
+      this.cancelTimestamps,
+      telegramId,
+      CANCEL_RATE_LIMIT,
+      Date.now(),
+    );
     if (rateErr) return { success: false, error: rateErr };
 
     const order = await this.orderModel
@@ -674,13 +818,20 @@ export class TradeSpotService {
         { _id: orderId, telegramId, status: "OPEN" },
         { $set: { status: "CANCELLED" } },
         { returnDocument: "after" },
-      ).exec();
-    if (!order) return { success: false, error: "Order not found or already closed" };
+      )
+      .exec();
+    if (!order)
+      return { success: false, error: "Order not found or already closed" };
     return { success: true, order };
   }
 
   // ── The caller's own trade history (paginated, 5 per page + load-more) ──
-  async getUserTrades(telegramId: string, page = 1, limit = 5, pair = DEFAULT_PAIR) {
+  async getUserTrades(
+    telegramId: string,
+    page = 1,
+    limit = 5,
+    pair = DEFAULT_PAIR,
+  ) {
     const p = Math.max(1, Math.floor(page || 1));
     const n = Math.max(1, Math.min(50, Math.floor(limit || 5)));
     const skip = (p - 1) * n;
@@ -725,7 +876,10 @@ export class TradeSpotService {
     const half = pool.spreadPct / 2;
     const ask = pool.lastMid * (1 + half);
     const bid = pool.lastMid * (1 - half);
-    const open = await this.orderModel.find({ status: "OPEN", pair }).lean().exec();
+    const open = await this.orderModel
+      .find({ status: "OPEN", pair })
+      .lean()
+      .exec();
     const fills: any[] = [];
 
     for (const o of open) {
@@ -743,10 +897,12 @@ export class TradeSpotService {
         "USER",
       );
       if (res.success) {
-        await this.orderModel.updateOne(
-          { _id: o._id },
-          { $set: { status: "FILLED", filledAmount: o.amount } }
-        ).exec();
+        await this.orderModel
+          .updateOne(
+            { _id: o._id },
+            { $set: { status: "FILLED", filledAmount: o.amount } },
+          )
+          .exec();
         fills.push({ orderId: String(o._id), trade: res.trade });
       }
     }
@@ -759,7 +915,10 @@ export class TradeSpotService {
     const drift = (Math.random() - 0.5) * 0.006;
     const minBound = pool.midMin;
     const maxBound = pool.midMax;
-    const next = Math.min(maxBound, Math.max(minBound, pool.lastMid * (1 + drift)));
+    const next = Math.min(
+      maxBound,
+      Math.max(minBound, pool.lastMid * (1 + drift)),
+    );
     await this.poolModel
       .updateOne({ pair }, { $set: { lastMid: round8(next) } })
       .exec();
@@ -789,9 +948,8 @@ export class TradeSpotService {
       const targetQuoteVolume = Math.random() * 0.028 + 0.022;
       let amount = targetQuoteVolume / mid;
 
-      const maxByReserve = side === "BUY"
-        ? baseResVal * 0.04
-        : (quoteResVal / mid) * 0.04;
+      const maxByReserve =
+        side === "BUY" ? baseResVal * 0.04 : (quoteResVal / mid) * 0.04;
       amount = Math.min(amount, maxByReserve);
       amount = round2(amount);
 
@@ -800,40 +958,60 @@ export class TradeSpotService {
       const fee = round4(total * FEE_PCT);
 
       if (side === "BUY") {
-        const upd = await this.poolModel.findOneAndUpdate(
-          { pair, $or: [{ baseReserve: { $gte: amount } }, { elixcoinReserve: { $gte: amount } }] },
-          {
-            $inc: {
-              baseReserve: -amount,
-              quoteReserve: total + fee,
-              elixcoinReserve: -amount,
-              elixirReserve: total + fee,
-              platformFeesAccumulated: fee,
+        const upd = await this.poolModel
+          .findOneAndUpdate(
+            {
+              pair,
+              $or: [
+                { baseReserve: { $gte: amount } },
+                { elixcoinReserve: { $gte: amount } },
+              ],
             },
-          },
-          { returnDocument: "after" }
-        ).exec();
+            {
+              $inc: {
+                baseReserve: -amount,
+                quoteReserve: total + fee,
+                elixcoinReserve: -amount,
+                elixirReserve: total + fee,
+                platformFeesAccumulated: fee,
+              },
+            },
+            { returnDocument: "after" },
+          )
+          .exec();
         if (!upd) {
-          console.warn(`[MM Bot] skipping BUY on ${pair}: Insufficient baseReserve (needs ${amount})`);
+          console.warn(
+            `[MM Bot] skipping BUY on ${pair}: Insufficient baseReserve (needs ${amount})`,
+          );
           continue;
         }
       } else {
         const proceeds = round4(total - fee);
-        const upd = await this.poolModel.findOneAndUpdate(
-          { pair, $or: [{ quoteReserve: { $gte: proceeds } }, { elixirReserve: { $gte: proceeds } }] },
-          {
-            $inc: {
-              baseReserve: amount,
-              quoteReserve: -proceeds,
-              elixcoinReserve: amount,
-              elixirReserve: -proceeds,
-              platformFeesAccumulated: fee,
+        const upd = await this.poolModel
+          .findOneAndUpdate(
+            {
+              pair,
+              $or: [
+                { quoteReserve: { $gte: proceeds } },
+                { elixirReserve: { $gte: proceeds } },
+              ],
             },
-          },
-          { returnDocument: "after" }
-        ).exec();
+            {
+              $inc: {
+                baseReserve: amount,
+                quoteReserve: -proceeds,
+                elixcoinReserve: amount,
+                elixirReserve: -proceeds,
+                platformFeesAccumulated: fee,
+              },
+            },
+            { returnDocument: "after" },
+          )
+          .exec();
         if (!upd) {
-          console.warn(`[MM Bot] skipping SELL on ${pair}: Insufficient quoteReserve`);
+          console.warn(
+            `[MM Bot] skipping SELL on ${pair}: Insufficient quoteReserve`,
+          );
           continue;
         }
       }
@@ -852,7 +1030,8 @@ export class TradeSpotService {
     }
 
     const now = Date.now();
-    const shouldResetDay = !pool.dayResetAt || (now - pool.dayResetAt.getTime()) > 24 * 3600_000;
+    const shouldResetDay =
+      !pool.dayResetAt || now - pool.dayResetAt.getTime() > 24 * 3600_000;
 
     const cycleVolume = trades.reduce((a, t) => a + t.amount, 0);
     const cycleQuoteVol = trades.reduce((a, t) => a + t.total, 0);
@@ -860,7 +1039,7 @@ export class TradeSpotService {
     const updateOps: { $inc: any; $set?: any; $max?: any; $min?: any } = {
       $inc: {
         lifetimeVolume: cycleVolume,
-        botRunCount: 1
+        botRunCount: 1,
       },
     };
 
@@ -873,7 +1052,7 @@ export class TradeSpotService {
         volume24h: cycleVolume,
         quoteVolume24h: cycleQuoteVol,
         open24h: lastPrice,
-        dayResetAt: new Date()
+        dayResetAt: new Date(),
       };
     } else {
       updateOps.$set = { lastBotRunAt: new Date() };
