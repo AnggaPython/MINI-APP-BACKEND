@@ -6,6 +6,7 @@ import { User } from "../users/schemas/user.schema";
 export declare const DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 export declare const FEE_PCT = 0.015;
 export declare const SPREAD_PCT = 0.004;
+export declare const MINERAL_INITIAL_RATES: Record<string, number>;
 export declare class TradeSpotService {
     private readonly tradeModel;
     private readonly poolModel;
@@ -143,7 +144,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             baseBalance: number;

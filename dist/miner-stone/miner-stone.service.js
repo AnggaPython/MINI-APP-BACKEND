@@ -91,7 +91,6 @@ const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 50;
 const MAX_PLAYER_ATK = 120;
 const HIT_INTERVAL_MS = 1500;
-const MINER_COOLDOWN_MS = 120_000;
 const DESTROY_RATE_LIMIT = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
 const ZONK_CHANCE = 0.1;
@@ -128,7 +127,6 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
     logger = new common_1.Logger(MinerStoneService_1.name);
     lastSpawnAt = new Map();
     destroyTimestamps = new Map();
-    lastClaimAt = new Map();
     constructor(miningStoneModel, userModel, usersService, buffCollectionsService, levelingService) {
         this.miningStoneModel = miningStoneModel;
         this.userModel = userModel;
@@ -148,12 +146,6 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         else {
             this.destroyTimestamps.set(telegramId, filtered);
         }
-    }
-    getCooldownLeft(telegramId, now) {
-        const last = this.lastClaimAt.get(telegramId);
-        if (!last)
-            return 0;
-        return Math.max(0, MINER_COOLDOWN_MS - (now - last));
     }
     roll01(clientSeed, purpose) {
         const serverSeed = crypto.randomBytes(16).toString("hex");
@@ -182,14 +174,6 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 if (now - ts > 60000)
                     this.lastSpawnAt.delete(key);
             }
-        }
-        const cooldownLeft = this.getCooldownLeft(telegramId, now);
-        if (cooldownLeft > 0) {
-            return {
-                success: false,
-                error: "Please wait before mining another stone.",
-                cooldownLeft,
-            };
         }
         let levelMultiplier = 1;
         try {
@@ -443,14 +427,6 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 success: false,
                 error: "Rewards already claimed or stone not found.",
             };
-        }
-        this.lastClaimAt.set(telegramId, Date.now());
-        if (this.lastClaimAt.size > 5000) {
-            const cutoff = Date.now() - MINER_COOLDOWN_MS * 2;
-            for (const [key, ts] of this.lastClaimAt) {
-                if (ts < cutoff)
-                    this.lastClaimAt.delete(key);
-            }
         }
         let economyMultiplier = 1;
         try {

@@ -4,11 +4,6 @@ export declare class MinerStoneController {
     constructor(minerStoneService: MinerStoneService);
     spawn(telegramId: string): Promise<{
         success: boolean;
-        error: string;
-        cooldownLeft: number;
-        stone?: undefined;
-    } | {
-        success: boolean;
         stone: {
             stoneId: string;
             tier: import("./schemas/mining-stone.schema").StoneTier;
@@ -16,7 +11,6 @@ export declare class MinerStoneController {
             zonk: boolean;
         };
         error?: undefined;
-        cooldownLeft?: undefined;
     } | {
         success: boolean;
         error: string;

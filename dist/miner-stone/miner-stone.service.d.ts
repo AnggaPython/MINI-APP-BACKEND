@@ -16,21 +16,13 @@ export declare class MinerStoneService {
     private readonly logger;
     private readonly lastSpawnAt;
     private readonly destroyTimestamps;
-    private readonly lastClaimAt;
     constructor(miningStoneModel: Model<MiningStoneDocument>, userModel: Model<UserDocument>, usersService: UsersService, buffCollectionsService: BuffItemCollectionsService, levelingService: LevelingService);
     private evictRateLimit;
-    private getCooldownLeft;
     private roll01;
     private round2;
     spawn(telegramId: string): Promise<{
         success: boolean;
         error: string;
-        cooldownLeft?: undefined;
-        stone?: undefined;
-    } | {
-        success: boolean;
-        error: string;
-        cooldownLeft: number;
         stone?: undefined;
     } | {
         success: boolean;
@@ -41,7 +33,6 @@ export declare class MinerStoneService {
             zonk: boolean;
         };
         error?: undefined;
-        cooldownLeft?: undefined;
     }>;
     repairPickaxe(telegramId: string, tier: string): Promise<{
         success: boolean;

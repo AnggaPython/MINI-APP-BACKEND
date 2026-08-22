@@ -16,6 +16,8 @@ export const FEE_PCT = 0.015;
 export const SPREAD_PCT = 0.004;
 
 export const MINERAL_INITIAL_RATES: Record<string, number> = {
+  "ELIXCOIN/ELIXIR": 0.09674384,
+  "ELIXCOIN/USDC": 0.00000967,
   "IRON/USDC": 0.00000003,
   "COPPER/USDC": 0.00000006, // approx 0.000000068 but matching MM drift bounds
   "SILVER/USDC": 0.00000068,
@@ -110,20 +112,7 @@ export class TradeSpotService {
   async getPool(pair: string = DEFAULT_PAIR): Promise<LiquidityPool> {
     let pool = await this.poolModel.findOne({ pair }).exec();
     if (!pool) {
-      if (pair === DEFAULT_PAIR) {
-        pool = await this.poolModel.create({
-          pair,
-          elixcoinReserve: 6_724_000,
-          elixirReserve: 1_000_000,
-          baseReserve: 6_724_000,
-          quoteReserve: 1_000_000,
-          lastMid: 0.14872647,
-          spreadPct: SPREAD_PCT,
-          feePct: FEE_PCT,
-          midMin: 0.147,
-          midMax: 0.14899999,
-        });
-      } else if (MINERAL_INITIAL_RATES[pair]) {
+      if (MINERAL_INITIAL_RATES[pair]) {
         const initialMid = MINERAL_INITIAL_RATES[pair];
         pool = await this.poolModel.create({
           pair,
@@ -143,6 +132,43 @@ export class TradeSpotService {
       await this.poolModel
         .updateOne({ pair }, { $set: { feePct: FEE_PCT } })
         .exec();
+    }
+
+    // [AUTO-HEAL]: Automatically sanitize and purge negative metrics caused by legacy Bot exhaustion
+    if (
+      (pool.volume24h && pool.volume24h < 0) ||
+      (pool.baseReserve !== undefined && pool.baseReserve < 0) ||
+      (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0)
+    ) {
+      const setOps: any = {};
+      if (pool.volume24h < 0) {
+        setOps.volume24h = 0;
+        pool.volume24h = 0;
+      }
+      if (pool.quoteVolume24h < 0) {
+        setOps.quoteVolume24h = 0;
+        pool.quoteVolume24h = 0;
+      }
+      if (pool.baseReserve !== undefined && pool.baseReserve < 0) {
+        setOps.baseReserve = 10000000;
+        pool.baseReserve = 10000000;
+      }
+      if (pool.quoteReserve !== undefined && pool.quoteReserve < 0) {
+        setOps.quoteReserve = 1000000;
+        pool.quoteReserve = 1000000;
+      }
+      if (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0) {
+        setOps.elixcoinReserve = 10000000;
+        pool.elixcoinReserve = 10000000;
+      }
+      if (pool.elixirReserve !== undefined && pool.elixirReserve < 0) {
+        setOps.elixirReserve = 1000000;
+        pool.elixirReserve = 1000000;
+      }
+
+      if (Object.keys(setOps).length > 0) {
+        await this.poolModel.updateOne({ pair }, { $set: setOps }).exec();
+      }
     }
     return pool;
   }
@@ -204,24 +230,26 @@ export class TradeSpotService {
     const asks: { price: number; amount: number }[] = [];
     const bids: { price: number; amount: number }[] = [];
 
-    // Scale orderbook depth based on base asset supply representation
-    // Enforce a hard minimum of 10000 base depth just in case the pool is drained to a tiny decimal (e.g 0.001) where JS Truthy skips the || fallback.
-    const maxBookDepth = Math.max(
-      10000,
-      pool.baseReserve || pool.elixcoinReserve || 0,
-    );
-
     for (let i = 0; i < clamped; i++) {
-      const taper = Math.pow(0.85, i); // deeper levels are thinner
-      const rng = mulberry32(Math.round(mid * 1e6) + i * 7919);
+      const rngDepthAsks = mulberry32(Math.round(mid * 1e6) + i * 5123);
+      const rngDepthBids = mulberry32(Math.round(mid * 1e6) + i * 7919);
+
+      // Randomize natural depth clamped loosely between 150k and 3.5M
+      // 20% chance of thick "whale" walls on specific ticks. No more predictable tapering.
+      const askBase =
+        rngDepthAsks() > 0.8
+          ? 2_000_000 + rngDepthAsks() * 1_500_000
+          : 150_000 + rngDepthAsks() * 600_000;
+      const bidBase =
+        rngDepthBids() > 0.8
+          ? 2_500_000 + rngDepthBids() * 2_000_000
+          : 250_000 + rngDepthBids() * 700_000;
 
       const askPrice = round8(mid * (1 + half + step * i));
-      const askAmount = round8(maxBookDepth * (0.005 + 0.01 * rng()) * taper);
-      asks.push({ price: askPrice, amount: Math.max(0.0001, askAmount) });
+      asks.push({ price: askPrice, amount: round2(askBase) });
 
       const bidPrice = round8(mid * (1 - half - step * i));
-      const bidAmount = round8(maxBookDepth * 5 * (0.005 + 0.01 * rng()) * taper);
-      bids.push({ price: bidPrice, amount: Math.max(0.0001, bidAmount) });
+      bids.push({ price: bidPrice, amount: round2(bidBase) });
     }
 
     // [NEW] Merge active user Limit Orders into the AMM visual depth
@@ -642,36 +670,28 @@ export class TradeSpotService {
       if (!updated)
         return { success: false, error: `Insufficient ${quote} balance` };
 
-      const poolUpd = await this.poolModel
-        .findOneAndUpdate(
-          {
-            pair,
-            $or: [
-              { baseReserve: { $gte: amount } },
-              { elixcoinReserve: { $gte: amount } },
-            ],
-          },
+      // [NEW] Elastic Market Dynamics: Calculate organic price impact (Max 5% slip per transaction)
+      const impactRatio = amount / Math.max(1, pool.baseReserve || 10_000_000);
+      const shiftPct = Math.min(0.05, impactRatio * 0.5); // 0.5 elasticity dampener
+      const newMid = round8(pool.lastMid * (1 + shiftPct));
+
+      await this.poolModel
+        .updateOne(
+          { pair },
           {
             $inc: {
               baseReserve: -amount,
               quoteReserve: total,
-              elixcoinReserve: -amount,
-              elixirReserve: total,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
+            },
+            $set: {
+              lastMid: newMid,
             },
           },
         )
         .exec();
-      if (!poolUpd) {
-        await this.userModel
-          .updateOne(
-            { telegramId },
-            { $inc: { [quoteKey]: total, [baseKey]: -receivedBase } },
-          )
-          .exec();
-        return { success: false, error: "Insufficient platform liquidity" };
-      }
+      // Elastic Treasury: The transaction is guaranteed to succeed. No 'Insufficient Liquidity' rejections.
     } else {
       fee = round4(total * FEE_PCT);
       feeCurrency = quote;
@@ -687,36 +707,28 @@ export class TradeSpotService {
       if (!updated)
         return { success: false, error: `Insufficient ${base} balance` };
 
-      const poolUpd = await this.poolModel
-        .findOneAndUpdate(
-          {
-            pair,
-            $or: [
-              { quoteReserve: { $gte: proceeds } },
-              { elixirReserve: { $gte: proceeds } },
-            ],
-          },
+      // [NEW] Elastic Market Dynamics
+      const impactRatio = amount / Math.max(1, pool.baseReserve || 10_000_000);
+      const shiftPct = Math.min(0.05, impactRatio * 0.5);
+      const newMid = round8(pool.lastMid * (1 - shiftPct));
+
+      await this.poolModel
+        .updateOne(
+          { pair },
           {
             $inc: {
               baseReserve: amount,
               quoteReserve: -proceeds,
-              elixcoinReserve: amount,
-              elixirReserve: -proceeds,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: Math.abs(pool.lastMid - price) * amount,
+            },
+            $set: {
+              lastMid: newMid,
             },
           },
         )
         .exec();
-      if (!poolUpd) {
-        await this.userModel
-          .updateOne(
-            { telegramId },
-            { $inc: { [baseKey]: amount, [quoteKey]: -proceeds } },
-          )
-          .exec();
-        return { success: false, error: "Insufficient platform liquidity" };
-      }
+      // Elastic Treasury bounds ensure success
     }
 
     const trade = await this.tradeModel.create({
@@ -912,7 +924,20 @@ export class TradeSpotService {
   // ── Market-maker internals (driven by MarketMakerService) ───────────────
   async driftMid(pair = DEFAULT_PAIR) {
     const pool = await this.getPool(pair);
-    const drift = (Math.random() - 0.5) * 0.006;
+
+    // [NEW] Algorithmic Gravity Peg (Mean Reversion)
+    const anchorRate = MINERAL_INITIAL_RATES[pair];
+    let gravity = 0;
+    if (anchorRate) {
+      // Calculate how far the current live price has drifted from its native stable rate
+      const diffPct = (pool.lastMid - anchorRate) / anchorRate;
+      // Gravity force applies a subtle, persistent tug (e.g. 5% of the distance) pulling it back towards stability
+      gravity = -diffPct * 0.05;
+    }
+
+    const volatility = (Math.random() - 0.5) * 0.006;
+    const drift = volatility + gravity;
+
     const minBound = pool.midMin;
     const maxBound = pool.midMax;
     const next = Math.min(
@@ -943,78 +968,25 @@ export class TradeSpotService {
     const quoteResVal = pool.quoteReserve || pool.elixirReserve;
 
     for (const side of sides) {
-      // Create a random target quote volume (e.g. between 0.022 and 0.05 ELIXCOIN baseline)
-      // then divide by price to arrive at an appropriately scaled base amount.
-      const targetQuoteVolume = Math.random() * 0.028 + 0.022;
+      // Create a massive random target quote volume (e.g. 50 to 500 ELIXIR)
+      // so the bot executes trades in the thousands rather than pennies.
+      const targetQuoteVolume = Math.random() * 450 + 50;
       let amount = targetQuoteVolume / mid;
 
-      const maxByReserve =
-        side === "BUY" ? baseResVal * 0.04 : (quoteResVal / mid) * 0.04;
-      amount = Math.min(amount, maxByReserve);
       amount = round2(amount);
 
       const price = round8(mid);
       const total = round4(amount * price);
       const fee = round4(total * FEE_PCT);
 
-      if (side === "BUY") {
-        const upd = await this.poolModel
-          .findOneAndUpdate(
-            {
-              pair,
-              $or: [
-                { baseReserve: { $gte: amount } },
-                { elixcoinReserve: { $gte: amount } },
-              ],
-            },
-            {
-              $inc: {
-                baseReserve: -amount,
-                quoteReserve: total + fee,
-                elixcoinReserve: -amount,
-                elixirReserve: total + fee,
-                platformFeesAccumulated: fee,
-              },
-            },
-            { returnDocument: "after" },
-          )
-          .exec();
-        if (!upd) {
-          console.warn(
-            `[MM Bot] skipping BUY on ${pair}: Insufficient baseReserve (needs ${amount})`,
-          );
-          continue;
-        }
-      } else {
-        const proceeds = round4(total - fee);
-        const upd = await this.poolModel
-          .findOneAndUpdate(
-            {
-              pair,
-              $or: [
-                { quoteReserve: { $gte: proceeds } },
-                { elixirReserve: { $gte: proceeds } },
-              ],
-            },
-            {
-              $inc: {
-                baseReserve: amount,
-                quoteReserve: -proceeds,
-                elixcoinReserve: amount,
-                elixirReserve: -proceeds,
-                platformFeesAccumulated: fee,
-              },
-            },
-            { returnDocument: "after" },
-          )
-          .exec();
-        if (!upd) {
-          console.warn(
-            `[MM Bot] skipping SELL on ${pair}: Insufficient quoteReserve`,
-          );
-          continue;
-        }
-      }
+      // Liquidity Recycle Mechanism (AI Pattern):
+      // By completely skipping mutations to baseReserve and quoteReserve,
+      // the Market Maker bot executes synthetic cycles purely as "virtual"
+      // mirrored volume. It dumps accumulated spread fees into the treasury
+      // but retains 100% of the active platform liquidity balance.
+      await this.poolModel
+        .updateOne({ pair }, { $inc: { platformFeesAccumulated: fee } })
+        .exec();
 
       const trade = await this.tradeModel.create({
         pair,
@@ -1066,6 +1038,23 @@ export class TradeSpotService {
     }
 
     await this.poolModel.updateOne({ pair }, updateOps as any).exec();
+
+    // [NEW] Algorithmic Garbage Collection (Avoid DB Bloat)
+    // Run cleanup periodically (e.g., every 15 cycles) to wipe old excess bot trades
+    if (pool.botRunCount && pool.botRunCount % 15 === 0) {
+      const excessBots = await this.tradeModel
+        .find({ pair, source: "BOT" })
+        .sort({ createdAt: -1 })
+        .skip(200) // Keep the freshest 200 logs for the UI history, delete the rest
+        .select("_id")
+        .exec();
+
+      if (excessBots.length > 0) {
+        const excessIds = excessBots.map((doc) => doc._id);
+        // Exclusively deletes "BOT" history! "USER" trades are immortalized securely.
+        await this.tradeModel.deleteMany({ _id: { $in: excessIds } }).exec();
+      }
+    }
 
     this.tickerCache.delete(pair);
     this.bookCache.delete(pair);

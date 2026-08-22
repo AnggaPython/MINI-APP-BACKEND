@@ -12,7 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TradeSpotService = exports.SPREAD_PCT = exports.FEE_PCT = exports.DEFAULT_PAIR = void 0;
+exports.TradeSpotService = exports.MINERAL_INITIAL_RATES = exports.SPREAD_PCT = exports.FEE_PCT = exports.DEFAULT_PAIR = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
@@ -23,6 +23,15 @@ const user_schema_1 = require("../users/schemas/user.schema");
 exports.DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 exports.FEE_PCT = 0.015;
 exports.SPREAD_PCT = 0.004;
+exports.MINERAL_INITIAL_RATES = {
+    "ELIXCOIN/ELIXIR": 0.09674384,
+    "ELIXCOIN/USDC": 0.00000967,
+    "IRON/USDC": 0.00000003,
+    "COPPER/USDC": 0.00000006,
+    "SILVER/USDC": 0.00000068,
+    "GOLD/USDC": 0.0000068,
+    "DIAMOND/USDC": 0.000068,
+};
 const round8 = (n) => Math.round(n * 1e8) / 1e8;
 const round2 = (n) => Math.round(n * 100) / 100;
 const round4 = (n) => Math.round(n * 1e4) / 1e4;
@@ -84,18 +93,17 @@ let TradeSpotService = class TradeSpotService {
     async getPool(pair = exports.DEFAULT_PAIR) {
         let pool = await this.poolModel.findOne({ pair }).exec();
         if (!pool) {
-            if (pair === exports.DEFAULT_PAIR) {
+            if (exports.MINERAL_INITIAL_RATES[pair]) {
+                const initialMid = exports.MINERAL_INITIAL_RATES[pair];
                 pool = await this.poolModel.create({
                     pair,
-                    elixcoinReserve: 6_724_000,
-                    elixirReserve: 1_000_000,
-                    baseReserve: 6_724_000,
+                    baseReserve: 10_000_000,
                     quoteReserve: 1_000_000,
-                    lastMid: 0.14872647389,
+                    lastMid: initialMid,
                     spreadPct: exports.SPREAD_PCT,
                     feePct: exports.FEE_PCT,
-                    midMin: 0.14700000,
-                    midMax: 0.14899999,
+                    midMin: initialMid * 0.5,
+                    midMax: initialMid * 10,
                 });
             }
             else {
@@ -104,7 +112,41 @@ let TradeSpotService = class TradeSpotService {
         }
         else if (pool.feePct !== exports.FEE_PCT) {
             pool.feePct = exports.FEE_PCT;
-            await this.poolModel.updateOne({ pair }, { $set: { feePct: exports.FEE_PCT } }).exec();
+            await this.poolModel
+                .updateOne({ pair }, { $set: { feePct: exports.FEE_PCT } })
+                .exec();
+        }
+        if ((pool.volume24h && pool.volume24h < 0) ||
+            (pool.baseReserve !== undefined && pool.baseReserve < 0) ||
+            (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0)) {
+            const setOps = {};
+            if (pool.volume24h < 0) {
+                setOps.volume24h = 0;
+                pool.volume24h = 0;
+            }
+            if (pool.quoteVolume24h < 0) {
+                setOps.quoteVolume24h = 0;
+                pool.quoteVolume24h = 0;
+            }
+            if (pool.baseReserve !== undefined && pool.baseReserve < 0) {
+                setOps.baseReserve = 10000000;
+                pool.baseReserve = 10000000;
+            }
+            if (pool.quoteReserve !== undefined && pool.quoteReserve < 0) {
+                setOps.quoteReserve = 1000000;
+                pool.quoteReserve = 1000000;
+            }
+            if (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0) {
+                setOps.elixcoinReserve = 10000000;
+                pool.elixcoinReserve = 10000000;
+            }
+            if (pool.elixirReserve !== undefined && pool.elixirReserve < 0) {
+                setOps.elixirReserve = 1000000;
+                pool.elixirReserve = 1000000;
+            }
+            if (Object.keys(setOps).length > 0) {
+                await this.poolModel.updateOne({ pair }, { $set: setOps }).exec();
+            }
         }
         return pool;
     }
@@ -118,7 +160,7 @@ let TradeSpotService = class TradeSpotService {
         const close = pool.lastMid;
         const open = pool.open24h || close;
         const high = pool.high24h || close;
-        const low = pool.low24h === Infinity ? close : (pool.low24h || close);
+        const low = pool.low24h === Infinity ? close : pool.low24h || close;
         const volume = pool.volume24h || 0;
         const quoteVolume = pool.quoteVolume24h || 0;
         const changePct = open ? ((close - open) / open) * 100 : 0;
@@ -144,7 +186,9 @@ let TradeSpotService = class TradeSpotService {
         const now = Date.now();
         const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
         const cache = this.bookCache.get(pair);
-        if (cache?.data && now - cache.ts < BOOK_CACHE_MS && cache.depth === clamped) {
+        if (cache?.data &&
+            now - cache.ts < BOOK_CACHE_MS &&
+            cache.depth === clamped) {
             return cache.data;
         }
         const pool = await this.getPool(pair);
@@ -153,18 +197,24 @@ let TradeSpotService = class TradeSpotService {
         const step = 0.0012;
         const asks = [];
         const bids = [];
-        const maxBookDepth = Math.max(10000, (pool.baseReserve || pool.elixcoinReserve) || 0);
         for (let i = 0; i < clamped; i++) {
-            const taper = Math.pow(0.85, i);
-            const rng = mulberry32(Math.round(mid * 1e6) + i * 7919);
+            const rngDepthAsks = mulberry32(Math.round(mid * 1e6) + i * 5123);
+            const rngDepthBids = mulberry32(Math.round(mid * 1e6) + i * 7919);
+            const askBase = rngDepthAsks() > 0.8
+                ? 2_000_000 + rngDepthAsks() * 1_500_000
+                : 150_000 + rngDepthAsks() * 600_000;
+            const bidBase = rngDepthBids() > 0.8
+                ? 2_500_000 + rngDepthBids() * 2_000_000
+                : 250_000 + rngDepthBids() * 700_000;
             const askPrice = round8(mid * (1 + half + step * i));
-            const askAmount = round8(maxBookDepth * (0.005 + 0.01 * rng()) * taper);
-            asks.push({ price: askPrice, amount: Math.max(0.0001, askAmount) });
+            asks.push({ price: askPrice, amount: round2(askBase) });
             const bidPrice = round8(mid * (1 - half - step * i));
-            const bidAmount = round8(maxBookDepth * (0.005 + 0.01 * rng()) * taper);
-            bids.push({ price: bidPrice, amount: Math.max(0.0001, bidAmount) });
+            bids.push({ price: bidPrice, amount: round2(bidBase) });
         }
-        const openOrders = await this.orderModel.find({ pair, status: "OPEN" }).lean().exec();
+        const openOrders = await this.orderModel
+            .find({ pair, status: "OPEN" })
+            .lean()
+            .exec();
         for (const o of openOrders) {
             if (!isFinite(o.price) || o.price <= 0)
                 continue;
@@ -172,7 +222,7 @@ let TradeSpotService = class TradeSpotService {
             if (rem <= 0)
                 continue;
             const targetList = o.side === "SELL" ? asks : bids;
-            const match = targetList.find(x => x.price === o.price);
+            const match = targetList.find((x) => x.price === o.price);
             if (match) {
                 match.amount += rem;
             }
@@ -194,7 +244,7 @@ let TradeSpotService = class TradeSpotService {
             spread: round8(finAsks[0]?.price - finBids[0]?.price || 0),
             asks: finAsks,
             bids: finBids,
-            bidShare: Math.max(0, Math.min(100, round2(bidShare)))
+            bidShare: Math.max(0, Math.min(100, round2(bidShare))),
         };
         this.bookCache.set(pair, { data: result, ts: now, depth: clamped });
         return result;
@@ -230,8 +280,12 @@ let TradeSpotService = class TradeSpotService {
     }
     async getStats(pair = exports.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
-        const botTrades = await this.tradeModel.countDocuments({ pair, source: "BOT" }).exec();
-        const userTrades = await this.tradeModel.countDocuments({ pair, source: "USER" }).exec();
+        const botTrades = await this.tradeModel
+            .countDocuments({ pair, source: "BOT" })
+            .exec();
+        const userTrades = await this.tradeModel
+            .countDocuments({ pair, source: "USER" })
+            .exec();
         return {
             success: true,
             lastBotRunAt: pool.lastBotRunAt,
@@ -283,7 +337,9 @@ let TradeSpotService = class TradeSpotService {
             { $match: { pair, createdAt: { $gte: since24 } } },
             {
                 $group: {
-                    _id: { $dateToString: { format: "%Y-%m-%d %H", date: "$createdAt" } },
+                    _id: {
+                        $dateToString: { format: "%Y-%m-%d %H", date: "$createdAt" },
+                    },
                     volume: { $sum: "$amount" },
                     count: { $sum: 1 },
                 },
@@ -307,8 +363,12 @@ let TradeSpotService = class TradeSpotService {
                 count: b?.count || 0,
             });
         }
-        const botTrades = await this.tradeModel.countDocuments({ pair, source: "BOT" }).exec();
-        const userTrades = await this.tradeModel.countDocuments({ pair, source: "USER" }).exec();
+        const botTrades = await this.tradeModel
+            .countDocuments({ pair, source: "BOT" })
+            .exec();
+        const userTrades = await this.tradeModel
+            .countDocuments({ pair, source: "USER" })
+            .exec();
         const [base, quote] = pair.split("/");
         return {
             success: true,
@@ -366,7 +426,10 @@ let TradeSpotService = class TradeSpotService {
         if (body.intervalMinutes !== undefined) {
             const m = Number(body.intervalMinutes);
             if (!isFinite(m) || m < 1 || m > 60) {
-                return { success: false, error: "Cooldown must be between 1 and 60 minutes" };
+                return {
+                    success: false,
+                    error: "Cooldown must be between 1 and 60 minutes",
+                };
             }
             set.botIntervalMinutes = Math.round(m);
         }
@@ -383,8 +446,8 @@ let TradeSpotService = class TradeSpotService {
             success: true,
             base,
             quote,
-            baseBalance: round4(base === "ELIXIR" ? (user?.elixirBalance || 0) : (crypto?.[base] || 0)),
-            quoteBalance: round4(quote === "ELIXIR" ? (user?.elixirBalance || 0) : (crypto?.[quote] || 0)),
+            baseBalance: round4(base === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[base] || 0),
+            quoteBalance: round4(quote === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[quote] || 0),
             elixcoin: round4(crypto?.["ELIXCOIN"] || 0),
             elixir: round4(user?.elixirBalance || 0),
         };
@@ -407,7 +470,10 @@ let TradeSpotService = class TradeSpotService {
             return { success: false, error: "Invalid amount" };
         const MIN_AMOUNT = 1;
         if (amount < MIN_AMOUNT)
-            return { success: false, error: `Minimum order is ${MIN_AMOUNT} ${base}` };
+            return {
+                success: false,
+                error: `Minimum order is ${MIN_AMOUNT} ${base}`,
+            };
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user)
             return { success: false, error: "Account not found" };
@@ -463,48 +529,52 @@ let TradeSpotService = class TradeSpotService {
             feeCurrency = base;
             const receivedBase = round4(amount - fee);
             updated = await this.userModel
-                .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: total } }, { $inc: { [quoteKey]: -total, [baseKey]: receivedBase } }, { returnDocument: "after" }).exec();
+                .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: total } }, { $inc: { [quoteKey]: -total, [baseKey]: receivedBase } }, { returnDocument: "after" })
+                .exec();
             if (!updated)
                 return { success: false, error: `Insufficient ${quote} balance` };
-            const poolUpd = await this.poolModel
-                .findOneAndUpdate({ pair, $or: [{ baseReserve: { $gte: amount } }, { elixcoinReserve: { $gte: amount } }] }, {
+            const impactRatio = amount / Math.max(1, pool.baseReserve || 10_000_000);
+            const shiftPct = Math.min(0.05, impactRatio * 0.5);
+            const newMid = round8(pool.lastMid * (1 + shiftPct));
+            await this.poolModel
+                .updateOne({ pair }, {
                 $inc: {
                     baseReserve: -amount,
                     quoteReserve: total,
-                    elixcoinReserve: -amount,
-                    elixirReserve: total,
                     platformFeesAccumulated: fee,
                     spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
                 },
-            }).exec();
-            if (!poolUpd) {
-                await this.userModel.updateOne({ telegramId }, { $inc: { [quoteKey]: total, [baseKey]: -receivedBase } }).exec();
-                return { success: false, error: "Insufficient platform liquidity" };
-            }
+                $set: {
+                    lastMid: newMid,
+                },
+            })
+                .exec();
         }
         else {
             fee = round4(total * exports.FEE_PCT);
             feeCurrency = quote;
             const proceeds = round4(total - fee);
             updated = await this.userModel
-                .findOneAndUpdate({ telegramId, [baseKey]: { $gte: amount } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" }).exec();
+                .findOneAndUpdate({ telegramId, [baseKey]: { $gte: amount } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" })
+                .exec();
             if (!updated)
                 return { success: false, error: `Insufficient ${base} balance` };
-            const poolUpd = await this.poolModel
-                .findOneAndUpdate({ pair, $or: [{ quoteReserve: { $gte: proceeds } }, { elixirReserve: { $gte: proceeds } }] }, {
+            const impactRatio = amount / Math.max(1, pool.baseReserve || 10_000_000);
+            const shiftPct = Math.min(0.05, impactRatio * 0.5);
+            const newMid = round8(pool.lastMid * (1 - shiftPct));
+            await this.poolModel
+                .updateOne({ pair }, {
                 $inc: {
                     baseReserve: amount,
                     quoteReserve: -proceeds,
-                    elixcoinReserve: amount,
-                    elixirReserve: -proceeds,
                     platformFeesAccumulated: fee,
                     spreadProfitAccumulated: Math.abs(pool.lastMid - price) * amount,
                 },
-            }).exec();
-            if (!poolUpd) {
-                await this.userModel.updateOne({ telegramId }, { $inc: { [baseKey]: amount, [quoteKey]: -proceeds } }).exec();
-                return { success: false, error: "Insufficient platform liquidity" };
-            }
+                $set: {
+                    lastMid: newMid,
+                },
+            })
+                .exec();
         }
         const trade = await this.tradeModel.create({
             pair,
@@ -518,11 +588,17 @@ let TradeSpotService = class TradeSpotService {
             ...(source === "USER" ? { telegramId } : {}),
         });
         const quoteAmt = round4(amount * price);
-        await this.poolModel.updateOne({ pair }, {
-            $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: quoteAmt },
+        await this.poolModel
+            .updateOne({ pair }, {
+            $inc: {
+                lifetimeVolume: amount,
+                volume24h: amount,
+                quoteVolume24h: quoteAmt,
+            },
             $max: { high24h: price },
             $min: { low24h: price },
-        }).exec();
+        })
+            .exec();
         this.tickerCache.delete(pair);
         this.tradesCache.delete(pair);
         return {
@@ -538,8 +614,12 @@ let TradeSpotService = class TradeSpotService {
                 source,
             },
             balances: {
-                baseBalance: round4(base === "ELIXIR" ? (updated?.elixirBalance || 0) : (updated?.cryptoBalances?.[base] || 0)),
-                quoteBalance: round4(quote === "ELIXIR" ? (updated?.elixirBalance || 0) : (updated?.cryptoBalances?.[quote] || 0)),
+                baseBalance: round4(base === "ELIXIR"
+                    ? updated?.elixirBalance || 0
+                    : updated?.cryptoBalances?.[base] || 0),
+                quoteBalance: round4(quote === "ELIXIR"
+                    ? updated?.elixirBalance || 0
+                    : updated?.cryptoBalances?.[quote] || 0),
                 elixcoin: round4(updated?.cryptoBalances?.["ELIXCOIN"] || 0),
                 elixir: round4(updated.elixirBalance),
             },
@@ -571,7 +651,8 @@ let TradeSpotService = class TradeSpotService {
         if (rateErr)
             return { success: false, error: rateErr };
         const order = await this.orderModel
-            .findOneAndUpdate({ _id: orderId, telegramId, status: "OPEN" }, { $set: { status: "CANCELLED" } }, { returnDocument: "after" }).exec();
+            .findOneAndUpdate({ _id: orderId, telegramId, status: "OPEN" }, { $set: { status: "CANCELLED" } }, { returnDocument: "after" })
+            .exec();
         if (!order)
             return { success: false, error: "Order not found or already closed" };
         return { success: true, order };
@@ -615,7 +696,10 @@ let TradeSpotService = class TradeSpotService {
         const half = pool.spreadPct / 2;
         const ask = pool.lastMid * (1 + half);
         const bid = pool.lastMid * (1 - half);
-        const open = await this.orderModel.find({ status: "OPEN", pair }).lean().exec();
+        const open = await this.orderModel
+            .find({ status: "OPEN", pair })
+            .lean()
+            .exec();
         const fills = [];
         for (const o of open) {
             let fillPrice = 0;
@@ -627,7 +711,9 @@ let TradeSpotService = class TradeSpotService {
                 continue;
             const res = await this.executeFill(pair, o.telegramId, o.side, o.amount, round8(fillPrice), "USER");
             if (res.success) {
-                await this.orderModel.updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } }).exec();
+                await this.orderModel
+                    .updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } })
+                    .exec();
                 fills.push({ orderId: String(o._id), trade: res.trade });
             }
         }
@@ -635,7 +721,14 @@ let TradeSpotService = class TradeSpotService {
     }
     async driftMid(pair = exports.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
-        const drift = (Math.random() - 0.5) * 0.006;
+        const anchorRate = exports.MINERAL_INITIAL_RATES[pair];
+        let gravity = 0;
+        if (anchorRate) {
+            const diffPct = (pool.lastMid - anchorRate) / anchorRate;
+            gravity = -diffPct * 0.05;
+        }
+        const volatility = (Math.random() - 0.5) * 0.006;
+        const drift = volatility + gravity;
         const minBound = pool.midMin;
         const maxBound = pool.midMax;
         const next = Math.min(maxBound, Math.max(minBound, pool.lastMid * (1 + drift)));
@@ -657,47 +750,15 @@ let TradeSpotService = class TradeSpotService {
         const baseResVal = pool.baseReserve || pool.elixcoinReserve;
         const quoteResVal = pool.quoteReserve || pool.elixirReserve;
         for (const side of sides) {
-            const targetQuoteVolume = Math.random() * 0.028 + 0.022;
+            const targetQuoteVolume = Math.random() * 450 + 50;
             let amount = targetQuoteVolume / mid;
-            const maxByReserve = side === "BUY"
-                ? baseResVal * 0.04
-                : (quoteResVal / mid) * 0.04;
-            amount = Math.min(amount, maxByReserve);
             amount = round2(amount);
             const price = round8(mid);
             const total = round4(amount * price);
             const fee = round4(total * exports.FEE_PCT);
-            if (side === "BUY") {
-                const upd = await this.poolModel.findOneAndUpdate({ pair, $or: [{ baseReserve: { $gte: amount } }, { elixcoinReserve: { $gte: amount } }] }, {
-                    $inc: {
-                        baseReserve: -amount,
-                        quoteReserve: total + fee,
-                        elixcoinReserve: -amount,
-                        elixirReserve: total + fee,
-                        platformFeesAccumulated: fee,
-                    },
-                }, { returnDocument: "after" }).exec();
-                if (!upd) {
-                    console.warn(`[MM Bot] skipping BUY on ${pair}: Insufficient baseReserve (needs ${amount})`);
-                    continue;
-                }
-            }
-            else {
-                const proceeds = round4(total - fee);
-                const upd = await this.poolModel.findOneAndUpdate({ pair, $or: [{ quoteReserve: { $gte: proceeds } }, { elixirReserve: { $gte: proceeds } }] }, {
-                    $inc: {
-                        baseReserve: amount,
-                        quoteReserve: -proceeds,
-                        elixcoinReserve: amount,
-                        elixirReserve: -proceeds,
-                        platformFeesAccumulated: fee,
-                    },
-                }, { returnDocument: "after" }).exec();
-                if (!upd) {
-                    console.warn(`[MM Bot] skipping SELL on ${pair}: Insufficient quoteReserve`);
-                    continue;
-                }
-            }
+            await this.poolModel
+                .updateOne({ pair }, { $inc: { platformFeesAccumulated: fee } })
+                .exec();
             const trade = await this.tradeModel.create({
                 pair,
                 side,
@@ -711,13 +772,13 @@ let TradeSpotService = class TradeSpotService {
             trades.push(trade);
         }
         const now = Date.now();
-        const shouldResetDay = !pool.dayResetAt || (now - pool.dayResetAt.getTime()) > 24 * 3600_000;
+        const shouldResetDay = !pool.dayResetAt || now - pool.dayResetAt.getTime() > 24 * 3600_000;
         const cycleVolume = trades.reduce((a, t) => a + t.amount, 0);
         const cycleQuoteVol = trades.reduce((a, t) => a + t.total, 0);
         const updateOps = {
             $inc: {
                 lifetimeVolume: cycleVolume,
-                botRunCount: 1
+                botRunCount: 1,
             },
         };
         if (shouldResetDay && trades.length > 0) {
@@ -729,7 +790,7 @@ let TradeSpotService = class TradeSpotService {
                 volume24h: cycleVolume,
                 quoteVolume24h: cycleQuoteVol,
                 open24h: lastPrice,
-                dayResetAt: new Date()
+                dayResetAt: new Date(),
             };
         }
         else {
@@ -743,6 +804,18 @@ let TradeSpotService = class TradeSpotService {
             }
         }
         await this.poolModel.updateOne({ pair }, updateOps).exec();
+        if (pool.botRunCount && pool.botRunCount % 15 === 0) {
+            const excessBots = await this.tradeModel
+                .find({ pair, source: "BOT" })
+                .sort({ createdAt: -1 })
+                .skip(200)
+                .select("_id")
+                .exec();
+            if (excessBots.length > 0) {
+                const excessIds = excessBots.map((doc) => doc._id);
+                await this.tradeModel.deleteMany({ _id: { $in: excessIds } }).exec();
+            }
+        }
         this.tickerCache.delete(pair);
         this.bookCache.delete(pair);
         this.tradesCache.delete(pair);
