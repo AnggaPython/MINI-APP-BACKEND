@@ -653,43 +653,58 @@ export class TradeSpotService {
     telegramId: string,
     side: "BUY" | "SELL",
     amount: number,
-    price: number,
+    basePrice: number,
     source: "BOT" | "USER",
   ) {
     if (source === "USER" && !telegramId)
       return { success: false, error: "Missing account" };
 
-    const total = round4(amount * price);
     const pool = await this.getPool(pair);
+
+    // ── Anti-whale slippage penalty (synchronous bonding-curve impact) ─────
+    // BUY taker pays MORE (higher effective ask); SELL taker receives LESS
+    // (lower effective bid). This converts large-volume round-trips into net losses.
+    let price = basePrice;
+    let shiftPct = 0;
+    if (source === "USER") {
+      const impactRatio = amount / Math.max(1, pool.baseReserve ?? 10_000_000);
+      shiftPct = Math.min(0.05, impactRatio * 0.5); // cap at 5% per fill
+      price = side === "BUY"
+        ? round8(basePrice * (1 + shiftPct))   // buyer pays more
+        : round8(basePrice * (1 - shiftPct));  // seller receives less
+    }
+
     const [base, quote] = pair.split("/");
-    const baseKey =
-      base === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${base}`;
-    const quoteKey =
-      quote === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${quote}`;
+    const baseKey = base === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${base}`;
+    const quoteKey = quote === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${quote}`;
 
     let updated: any = null;
     let fee = 0;
     let feeCurrency = base;
 
     if (side === "BUY") {
-      fee = round4(amount * FEE_PCT);
+      // ── BUY accounting ────────────────────────────────────────────────
+      // User spends `spendQuote` (quote) → receives `receivedBase` (base net of fee)
+      // Fee is charged in BASE (the currency they receive).
+      const spendQuote = round4(amount * price);   // quote leaving user
+      fee = round4(amount * FEE_PCT); // platform cut in BASE
+      const receivedBase = round4(amount - fee);     // net base credited to user
       feeCurrency = base;
-      const receivedBase = round4(amount - fee);
 
       updated = await this.userModel
         .findOneAndUpdate(
-          { telegramId, [quoteKey]: { $gte: total } },
-          { $inc: { [quoteKey]: -total, [baseKey]: receivedBase } },
+          { telegramId, [quoteKey]: { $gte: spendQuote } },
+          { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } },
           { returnDocument: "after" },
         )
         .exec();
       if (!updated)
         return { success: false, error: `Insufficient ${quote} balance` };
 
-      // [NEW] Elastic Market Dynamics: Calculate organic price impact (Max 5% slip per transaction)
-      const impactRatio = amount / Math.max(1, pool.baseReserve || 10_000_000);
-      const shiftPct = Math.min(0.05, impactRatio * 0.5); // 0.5 elasticity dampener
-      const newMid = round8(pool.lastMid * (1 + shiftPct));
+      // Mid nudges UP by HALF the slippage only — the spread itself already
+      // provides the other half, preventing price from running away on tiny orders.
+      const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
+      const newMid = round8(pool.lastMid * (1 + midNudge));
 
       await this.poolModel
         .updateOne(
@@ -697,21 +712,62 @@ export class TradeSpotService {
           {
             $inc: {
               baseReserve: -amount,
-              quoteReserve: total,
+              quoteReserve: spendQuote,
               platformFeesAccumulated: fee,
-              spreadProfitAccumulated: Math.abs(price - pool.lastMid) * amount,
+              spreadProfitAccumulated: round4(Math.abs(price - pool.lastMid) * amount),
             },
-            $set: {
-              lastMid: newMid,
-            },
+            $set: { lastMid: newMid },
           },
         )
         .exec();
-      // Elastic Treasury: The transaction is guaranteed to succeed. No 'Insufficient Liquidity' rejections.
+
+      // Swap `total` to spendQuote so the trade record is consistently quote-denominated
+      const total = spendQuote;
+      const trade = await this.tradeModel.create({
+        pair, side, price, amount, total, fee, feeCurrency, source,
+        ...(source === "USER" ? { telegramId } : {}),
+      });
+
+      await this.poolModel
+        .updateOne(
+          { pair },
+          {
+            $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: spendQuote },
+            $max: { high24h: price },
+            $min: { low24h: price },
+          },
+        )
+        .exec();
+
+      this.tickerCache.delete(pair);
+      this.tradesCache.delete(pair);
+
+      const crypto = updated?.cryptoBalances as Record<string, number> | undefined;
+      const getB = (k: string) =>
+        k === "elixirBalance" ? (updated?.elixirBalance ?? 0)
+          : (crypto?.[k.replace("cryptoBalances.", "")] ?? 0);
+
+      return {
+        success: true,
+        resting: false,
+        trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
+        balances: {
+          baseBalance: round4(getB(baseKey)),
+          quoteBalance: round4(getB(quoteKey)),
+          elixir: round4(updated?.elixirBalance ?? 0),
+          elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
+        },
+        message: `Bought ${receivedBase} ${base} @ ${price} ${quote}. Fee: ${fee} ${base}.`,
+      };
+
     } else {
-      fee = round4(total * FEE_PCT);
+      // ── SELL accounting ───────────────────────────────────────────────
+      // User spends `amount` (base) → receives `proceeds` (quote net of fee)
+      // Fee is charged in QUOTE (the currency they receive).
+      const grossQuote = round4(amount * price);      // raw quote from market
+      fee = round4(grossQuote * FEE_PCT); // platform cut in QUOTE
+      const proceeds = round4(grossQuote - fee);    // net quote credited to user
       feeCurrency = quote;
-      const proceeds = round4(total - fee);
 
       updated = await this.userModel
         .findOneAndUpdate(
@@ -723,10 +779,9 @@ export class TradeSpotService {
       if (!updated)
         return { success: false, error: `Insufficient ${base} balance` };
 
-      // [NEW] Elastic Market Dynamics
-      const impactRatio = amount / Math.max(1, pool.baseReserve || 10_000_000);
-      const shiftPct = Math.min(0.05, impactRatio * 0.5);
-      const newMid = round8(pool.lastMid * (1 - shiftPct));
+      // Mid nudges DOWN by HALF the slippage only
+      const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
+      const newMid = round8(pool.lastMid * (1 - midNudge));
 
       await this.poolModel
         .updateOne(
@@ -736,81 +791,54 @@ export class TradeSpotService {
               baseReserve: amount,
               quoteReserve: -proceeds,
               platformFeesAccumulated: fee,
-              spreadProfitAccumulated: Math.abs(pool.lastMid - price) * amount,
+              spreadProfitAccumulated: round4(Math.abs(pool.lastMid - price) * amount),
             },
-            $set: {
-              lastMid: newMid,
-            },
+            $set: { lastMid: newMid },
           },
         )
         .exec();
-      // Elastic Treasury bounds ensure success
-    }
 
-    const trade = await this.tradeModel.create({
-      pair,
-      side,
-      price,
-      amount,
-      total,
-      fee,
-      feeCurrency,
-      source,
-      ...(source === "USER" ? { telegramId } : {}),
-    });
+      const total = grossQuote;
+      const trade = await this.tradeModel.create({
+        pair, side, price, amount, total, fee, feeCurrency, source,
+        ...(source === "USER" ? { telegramId } : {}),
+      });
 
-    const quoteAmt = round4(amount * price);
-    await this.poolModel
-      .updateOne(
-        { pair },
-        {
-          $inc: {
-            lifetimeVolume: amount,
-            volume24h: amount,
-            quoteVolume24h: quoteAmt,
+      await this.poolModel
+        .updateOne(
+          { pair },
+          {
+            $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: grossQuote },
+            $max: { high24h: price },
+            $min: { low24h: price },
           },
-          $max: { high24h: price },
-          $min: { low24h: price },
+        )
+        .exec();
+
+      this.tickerCache.delete(pair);
+      this.tradesCache.delete(pair);
+
+      const crypto = updated?.cryptoBalances as Record<string, number> | undefined;
+      const getB = (k: string) =>
+        k === "elixirBalance" ? (updated?.elixirBalance ?? 0)
+          : (crypto?.[k.replace("cryptoBalances.", "")] ?? 0);
+
+      return {
+        success: true,
+        resting: false,
+        trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
+        balances: {
+          baseBalance: round4(getB(baseKey)),
+          quoteBalance: round4(getB(quoteKey)),
+          elixir: round4(updated?.elixirBalance ?? 0),
+          elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
         },
-      )
-      .exec();
-
-    this.tickerCache.delete(pair);
-    this.tradesCache.delete(pair);
-
-    return {
-      success: true,
-      trade: {
-        id: String(trade._id),
-        side,
-        price,
-        amount,
-        total,
-        fee,
-        feeCurrency,
-        source,
-      },
-      balances: {
-        baseBalance: round4(
-          base === "ELIXIR"
-            ? updated?.elixirBalance || 0
-            : updated?.cryptoBalances?.[base] || 0,
-        ),
-        quoteBalance: round4(
-          quote === "ELIXIR"
-            ? updated?.elixirBalance || 0
-            : updated?.cryptoBalances?.[quote] || 0,
-        ),
-        // Legacy:
-        elixcoin: round4(updated?.cryptoBalances?.["ELIXCOIN"] || 0),
-        elixir: round4(updated.elixirBalance),
-      },
-      message:
-        source === "USER"
-          ? `Filled: ${side === "BUY" ? "Bought" : "Sold"} ${round2(amount)} ${base} @ ${round8(price)} ${quote} · fee ${round4(fee)} ${feeCurrency}`
-          : undefined,
-    };
+        message: `Sold ${amount} ${base} @ ${price} ${quote}. Proceeds: ${proceeds} ${quote}. Fee: ${fee} ${quote}.`,
+      };
+    }
   }
+
+
 
   // ── Resting limit orders ────────────────────────────────────────────────
   async getOpenOrders(telegramId: string, pair: string = DEFAULT_PAIR) {
@@ -984,18 +1012,23 @@ export class TradeSpotService {
     const quoteResVal = pool.quoteReserve || pool.elixirReserve;
 
     for (const side of sides) {
-      // Create a sensible retail-sized target quote volume
-      // so the bot simulates normal traders (e.g., small fractions)
-      const targetQuoteVolume = Math.random() * 1.5 + 0.2;
+      // Add random organic human-like delay (2 to 8 seconds) between trades
+      // so they don't print as a single robotic block.
+      await new Promise(r => setTimeout(r, Math.floor(Math.random() * 6000) + 2000));
+
+      // Calculate organic target quote volume (bolder sizes: 10 to 300 equivalent)
+      const targetQuoteVolume = Math.random() * 290 + 10;
       let amount = targetQuoteVolume / mid;
 
-      // Hard cap the amount so MM bot doesn't spam 100M unit orders
-      // which frightens casual "normie" users. Max looks around 20k-60k.
-      if (amount > 80_000) {
-        amount = Math.random() * 40_000 + 10_000;
+      // Enforce hundreds or thousands bounds
+      if (amount < 150) {
+        amount = Math.random() * 850 + 150; // min 150 to 1000
+      } else if (amount > 150_000) {
+        amount = Math.random() * 50_000 + 20_000; // max reasonable whale chunk
       }
 
-      amount = round2(amount);
+      // Use round integers for cleaner orderbook aesthetics
+      amount = Math.floor(amount);
 
       const price = round8(mid);
       const total = round4(amount * price);
