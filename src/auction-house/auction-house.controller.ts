@@ -4,19 +4,26 @@ import { User } from "../auth/telegram-user.decorator";
 
 @Controller("auction-house")
 export class AuctionHouseController {
-  constructor(private readonly auctionService: AuctionHouseService) {}
+  constructor(private readonly auctionService: AuctionHouseService) { }
 
   /**
    * POST /auction-house/list — Create a listing.
-   * Body: { buffId, price }
+   * Body: { instanceId?, baseItemId?, itemCategory, amount?, price }
    */
   @Post("list")
   async createListing(
     @User("telegramId") telegramId: string,
-    @Body() body: { buffId: string; price: number },
+    @Body() body: { instanceId?: string; baseItemId?: string; itemCategory: "buff" | "material"; amount?: number; price: number },
   ) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
-    return this.auctionService.createListing(telegramId, body.buffId, body.price);
+    return this.auctionService.createListing(
+      telegramId,
+      body.price,
+      body.itemCategory,
+      body.instanceId,
+      body.baseItemId,
+      body.amount,
+    );
   }
 
   /**
@@ -70,6 +77,20 @@ export class AuctionHouseController {
       page: query.page ? parseInt(query.page, 10) : 1,
       limit: query.limit ? parseInt(query.limit, 10) : 50,
     });
+  }
+
+  /**
+   * GET /auction-house/browse-item — View specific item listings.
+   * Query: baseItemId
+   */
+  @Get("browse-item")
+  async browseItem(
+    @User("telegramId") telegramId: string,
+    @Query("baseItemId") baseItemId: string,
+  ) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    if (!baseItemId) return { success: false, error: "Missing baseItemId" };
+    return this.auctionService.browseItemListings(baseItemId);
   }
 
   /**

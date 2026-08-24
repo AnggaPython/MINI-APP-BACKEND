@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import * as crypto from "crypto";
 import { BuffItem, BuffItemDocument, BuffType, BuffRarity } from "./schemas/buff-item.schema";
 import {
   UserBuffCollection,
@@ -11,9 +12,9 @@ import {
 // Each rarity has exactly 10 values. Order matters — index maps to position.
 
 const BUFF_VALUES: Record<BuffRarity, number[]> = {
-  COMMON:     [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.55, 0.60],
-  MEDIUM:     [1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25, 3.50],
-  RARE:       [3.75, 4.00, 4.25, 4.50, 4.75, 5.00, 5.25, 5.50, 5.75, 6.00],
+  COMMON: [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.55, 0.60],
+  MEDIUM: [1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25, 3.50],
+  RARE: [3.75, 4.00, 4.25, 4.50, 4.75, 5.00, 5.25, 5.50, 5.75, 6.00],
   ULTRA_RARE: [6.00, 9.00, 12.00, 15.00, 18.00, 21.00, 24.00, 27.00, 30.00, 33.00],
 };
 
@@ -264,7 +265,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
     @InjectModel(BuffItem.name) private buffItemModel: Model<BuffItemDocument>,
     @InjectModel(UserBuffCollection.name)
     private userBuffModel: Model<UserBuffCollectionDocument>,
-  ) {}
+  ) { }
 
   // ── Seed on startup ────────────────────────────────────────────────────────
   async onModuleInit() {
@@ -362,44 +363,75 @@ export class BuffItemCollectionsService implements OnModuleInit {
 
   // ── User Collection ────────────────────────────────────────────────────────
 
-  /** Get a user's buff collection (owned + active). */
+  /** Get a user's buff collection (inventory + active). */
   async getUserCollection(telegramId: string) {
     let collection = await this.userBuffModel.findOne({ telegramId }).lean();
     if (!collection) {
       const created = await this.userBuffModel.create({
         telegramId,
-        ownedBuffIds: [],
-        activeBuffIds: [],
+        inventory: [],
+        activeInstanceIds: [],
       });
       collection = created.toObject();
     }
 
-    const ownedBuffIds = collection.ownedBuffIds || [];
-    const activeBuffIds = collection.activeBuffIds || [];
+    const inventory = collection.inventory || [];
+    const activeInstanceIds = collection.activeInstanceIds || [];
+    const baseItemIds = [...new Set(inventory.map(i => i.baseItemId))];
 
-    // Fetch full buff item details for owned items
-    const ownedItems =
-      ownedBuffIds.length > 0
+    // Fetch full buff item details for all base items in inventory
+    const baseItems =
+      baseItemIds.length > 0
         ? await this.buffItemModel
-            .find({ buffId: { $in: ownedBuffIds } })
-            .lean()
+          .find({ buffId: { $in: baseItemIds } })
+          .lean()
         : [];
 
-    // Fetch full details for active items
-    const activeItems =
-      activeBuffIds.length > 0
-        ? await this.buffItemModel
-            .find({ buffId: { $in: activeBuffIds } })
-            .lean()
-        : [];
+    // Map baseItems by buffId
+    const baseItemMap = new Map(baseItems.map(item => [item.buffId, item]));
 
-    // Calculate total buff values per type
+    // Construct full details for owned items (instances)
+    const ownedItems = inventory.map(inst => {
+      const itemData = baseItemMap.get(inst.baseItemId);
+      return {
+        instanceId: inst.instanceId,
+        baseItemId: inst.baseItemId,
+        acquiredAt: inst.acquiredAt,
+        buffType: itemData?.buffType,
+        rarity: itemData?.rarity,
+        buffValue: itemData?.buffValue,
+        buffUnit: itemData?.buffUnit,
+        name: itemData?.name,
+        description: itemData?.description,
+        icon: itemData?.icon,
+      };
+    });
+
+    // Reconstruct active items
+    const activeInstances = inventory.filter(inst => activeInstanceIds.includes(inst.instanceId));
+    const activeItems = activeInstances.map(inst => {
+      const itemData = baseItemMap.get(inst.baseItemId);
+      return {
+        instanceId: inst.instanceId,
+        baseItemId: inst.baseItemId,
+        acquiredAt: inst.acquiredAt,
+        buffType: itemData?.buffType,
+        rarity: itemData?.rarity,
+        buffValue: itemData?.buffValue,
+        buffUnit: itemData?.buffUnit,
+        name: itemData?.name,
+        description: itemData?.description,
+        icon: itemData?.icon,
+      };
+    });
+
+    // Calculate total buff values
     const totals = this.calculateBuffTotals(activeItems);
 
     return {
       success: true,
-      ownedBuffIds,
-      activeBuffIds,
+      inventory,
+      activeInstanceIds,
       ownedItems,
       activeItems,
       totals,
@@ -408,143 +440,123 @@ export class BuffItemCollectionsService implements OnModuleInit {
 
   /**
    * Grant a buff item to a user (e.g. after mining/case loot).
-   * Idempotent — grants even if already owned.
    */
   async grantBuffItem(telegramId: string, buffId: string) {
-    // Verify buff exists
     const buffItem = await this.buffItemModel.findOne({ buffId }).lean();
-    if (!buffItem) {
-      return { success: false, error: "Buff item not found" };
-    }
+    if (!buffItem) return { success: false, error: "Buff item not found" };
 
-    // Upsert user collection and add to owned
+    const instanceId = crypto.randomUUID();
+    const newInstance = { instanceId, baseItemId: buffId, acquiredAt: new Date() };
+
     await this.userBuffModel.updateOne(
       { telegramId },
-      { $addToSet: { ownedBuffIds: buffId } },
-      { upsert: true },
+      { $push: { inventory: newInstance } },
+      { upsert: true }
     );
 
     return {
       success: true,
       buffItem,
+      instanceId,
       message: `Granted "${buffItem.name}" (${buffItem.description})`,
     };
   }
 
   /**
-   * Activate (equip) a buff — adds to activeBuffIds if owned.
+   * Activate (equip) a buff instance.
    */
-  async activateBuff(telegramId: string, buffId: string) {
+  async activateBuff(telegramId: string, instanceId: string) {
     const collection = await this.userBuffModel.findOne({ telegramId });
-    if (!collection) {
-      return { success: false, error: "User collection not found" };
+    if (!collection) return { success: false, error: "User collection not found" };
+
+    const hasInstance = collection.inventory.some(i => i.instanceId === instanceId);
+    if (!hasInstance) return { success: false, error: "You do not own this instance" };
+
+    if (collection.activeInstanceIds.includes(instanceId)) {
+      return { success: false, error: "Instance is already active" };
     }
 
-    if (!collection.ownedBuffIds.includes(buffId)) {
-      return { success: false, error: "You do not own this buff item" };
-    }
-
-    if (collection.activeBuffIds.includes(buffId)) {
-      return { success: false, error: "Buff is already active" };
-    }
-
-    collection.activeBuffIds.push(buffId);
+    collection.activeInstanceIds.push(instanceId);
     await collection.save();
-
-    return { success: true, activeBuffIds: collection.activeBuffIds };
+    return { success: true, activeInstanceIds: collection.activeInstanceIds };
   }
 
   /**
-   * Deactivate (unequip) a buff — removes from activeBuffIds.
+   * Deactivate (unequip) a buff instance.
    */
-  async deactivateBuff(telegramId: string, buffId: string) {
+  async deactivateBuff(telegramId: string, instanceId: string) {
     const collection = await this.userBuffModel.findOne({ telegramId });
-    if (!collection) {
-      return { success: false, error: "User collection not found" };
+    if (!collection) return { success: false, error: "User collection not found" };
+
+    if (!collection.activeInstanceIds.includes(instanceId)) {
+      return { success: false, error: "Instance is not active" };
     }
 
-    if (!collection.activeBuffIds.includes(buffId)) {
-      return { success: false, error: "Buff is not active" };
-    }
-
-    collection.activeBuffIds = collection.activeBuffIds.filter((id) => id !== buffId);
+    collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== instanceId);
     await collection.save();
-
-    return { success: true, activeBuffIds: collection.activeBuffIds };
+    return { success: true, activeInstanceIds: collection.activeInstanceIds };
   }
 
   /**
-   * Batch-activate all owned buffs of a specific type.
+   * Batch-activate all owned instances of a specific type.
    */
   async activateAllByType(telegramId: string, buffType: BuffType) {
     const collection = await this.userBuffModel.findOne({ telegramId });
-    if (!collection) {
-      return { success: false, error: "User collection not found" };
-    }
+    if (!collection) return { success: false, error: "User collection not found" };
 
-    // Find all buff items of this type that user owns
-    const items = await this.buffItemModel
-      .find({ buffType, buffId: { $in: collection.ownedBuffIds } })
-      .lean();
+    const items = await this.buffItemModel.find({ buffType }).lean();
+    const typeBaseIds = new Set(items.map(i => i.buffId));
 
-    const toActivate = items
-      .map((i) => i.buffId)
-      .filter((id) => !collection.activeBuffIds.includes(id));
+    const instancesOfType = collection.inventory.filter(i => typeBaseIds.has(i.baseItemId));
+    const toActivate = instancesOfType
+      .map(i => i.instanceId)
+      .filter(id => !collection.activeInstanceIds.includes(id));
 
     if (toActivate.length === 0) {
-      return { success: true, activated: 0, activeBuffIds: collection.activeBuffIds };
+      return { success: true, activated: 0, activeInstanceIds: collection.activeInstanceIds };
     }
 
-    collection.activeBuffIds.push(...toActivate);
+    collection.activeInstanceIds.push(...toActivate);
     await collection.save();
 
-    return {
-      success: true,
-      activated: toActivate.length,
-      activeBuffIds: collection.activeBuffIds,
-    };
+    return { success: true, activated: toActivate.length, activeInstanceIds: collection.activeInstanceIds };
   }
 
   // ── Buff Calculation ───────────────────────────────────────────────────────
 
-  /**
-   * Calculate total buff values per type from active items.
-   * Returns flat sums for ATK/DURABILITY and summed percentages for ECONOMY/DROPRATE.
-   */
   calculateBuffTotals(activeItems: any[]) {
     const totals: Record<BuffType, number> = {
-      ATK: 0,
-      ECONOMY: 0,
-      DURABILITY: 0,
-      DROPRATE: 0,
+      ATK: 0, ECONOMY: 0, DURABILITY: 0, DROPRATE: 0,
     };
-
-    for (const item of activeItems) {
-      totals[item.buffType] += item.buffValue;
-    }
-
+    for (const item of activeItems) totals[item.buffType] += item.buffValue;
     return totals;
   }
 
   /**
-   * Get the computed buff totals for a user — convenience method for gameplay.
-   * Used by miner-stone and case-box services to apply bonuses.
+   * Get the computed buff totals for a user.
    */
   async getUserBuffTotals(telegramId: string) {
     const collection = await this.userBuffModel.findOne({ telegramId }).lean();
-    if (!collection || collection.activeBuffIds.length === 0) {
+    if (!collection || !collection.activeInstanceIds || collection.activeInstanceIds.length === 0) {
       return {
         success: true,
         totals: { ATK: 0, ECONOMY: 0, DURABILITY: 0, DROPRATE: 0 },
       };
     }
 
+    const inventory = collection.inventory || [];
+    const activeInstances = inventory.filter(inst => collection.activeInstanceIds.includes(inst.instanceId));
+    const activeBaseItemIds = activeInstances.map(inst => inst.baseItemId);
+
     const activeItems = await this.buffItemModel
-      .find({ buffId: { $in: collection.activeBuffIds } })
+      .find({ buffId: { $in: activeBaseItemIds } })
       .lean();
 
-    const totals = this.calculateBuffTotals(activeItems);
+    const calculatedItems = activeInstances.map(inst =>
+      activeItems.find(item => item.buffId === inst.baseItemId)
+    ).filter(Boolean);
 
+    const totals = this.calculateBuffTotals(calculatedItems);
     return { success: true, totals };
   }
 
@@ -596,9 +608,9 @@ export class BuffItemCollectionsService implements OnModuleInit {
       }
     }
 
-    // Get a random buff item of this rarity that the user doesn't own yet
+    // Get a random buff item of this rarity that the user doesn't own yet (checking baseItemId)
     const collection = await this.userBuffModel.findOne({ telegramId }).lean();
-    const ownedIds = collection?.ownedBuffIds || [];
+    const ownedIds = collection?.inventory?.map(i => i.baseItemId) || [];
 
     const available = await this.buffItemModel
       .find({

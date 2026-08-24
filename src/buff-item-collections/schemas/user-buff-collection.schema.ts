@@ -4,32 +4,45 @@ import { Document } from "mongoose";
 export type UserBuffCollectionDocument = UserBuffCollection & Document;
 
 /**
- * Tracks a user's buff-item collection.
+ * Tracks a user's buff-item collection using an instance-based model.
  *
- *  - `ownedBuffIds`:   All buff IDs the user has obtained (permanent).
- *  - `activeBuffIds`:  Subset of owned buffs that are currently equipped/activated.
+ *  - `inventory`:          All unique item instances the user has obtained.
+ *  - `activeInstanceIds`:  Subset of instanceIds that are currently equipped/activated.
  *
- * Only active buffs contribute to gameplay bonuses. Users can toggle buffs
+ * Only active instances contribute to gameplay bonuses. Users can toggle instances
  * on/off freely — activation is instant and free.
  */
+
+@Schema({ _id: false })
+export class ItemInstance {
+  @Prop({ required: true, index: true })
+  instanceId: string;
+
+  @Prop({ required: true })
+  baseItemId: string;
+
+  @Prop({ default: Date.now })
+  acquiredAt: Date;
+}
+export const ItemInstanceSchema = SchemaFactory.createForClass(ItemInstance);
 @Schema({ timestamps: true, collection: "user_buff_collections" })
 export class UserBuffCollection {
   @Prop({ required: true, unique: true, index: true })
   telegramId: string;
 
   /**
-   * All buff IDs this user has collected (never removed — permanent ownership).
-   * E.g. ["ATK-COMMON-01", "ECONOMY-MEDIUM-03", "DROPRATE-RARE-07"]
+   * All item instances this user has collected. Contains unique UUIDs.
+   * E.g. [{ instanceId: "idx1", baseItemId: "ATK-COMMON-01", ... }]
    */
-  @Prop({ type: [String], default: [] })
-  ownedBuffIds: string[];
+  @Prop({ type: [ItemInstanceSchema], default: [] })
+  inventory: ItemInstance[];
 
   /**
-   * Currently activated/equipped buff IDs (subset of ownedBuffIds).
-   * Only active buffs apply their bonuses to gameplay.
+   * Currently activated/equipped instance IDs (subset of inventory instanceIds).
+   * Only active instances apply their bonuses to gameplay.
    */
   @Prop({ type: [String], default: [] })
-  activeBuffIds: string[];
+  activeInstanceIds: string[];
 }
 
 export const UserBuffCollectionSchema =

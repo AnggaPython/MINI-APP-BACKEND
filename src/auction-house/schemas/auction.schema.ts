@@ -22,12 +22,24 @@ export class Auction {
   @Prop({ required: true })
   sellerName: string;
 
-  /** The buff item ID being sold (e.g. "ATK-COMMON-01"). */
-  @Prop({ required: true, index: true })
-  buffId: string;
+  /** The item category: buff (NFT-style) or material (Stackable). */
+  @Prop({ required: true, enum: ["buff", "material"], default: "buff" })
+  itemCategory: string;
 
-  /** Buff type — ATK / ECONOMY / DURABILITY / DROPRATE. */
-  @Prop({ required: true, enum: ["ATK", "ECONOMY", "DURABILITY", "DROPRATE"] })
+  /** The unique instance ID of the buff item being sold (Optional for materials). */
+  @Prop({ required: false, index: true })
+  instanceId?: string;
+
+  /** The base buff item ID being sold (e.g. "ATK-COMMON-01" or "Rusty Nail"). */
+  @Prop({ required: true, index: true })
+  baseItemId: string;
+
+  /** Amount of items being sold (used for materials). */
+  @Prop({ required: false, default: 1 })
+  amount: number;
+
+  /** Buff type — ATK / ECONOMY / DURABILITY / DROPRATE / MATERIAL. */
+  @Prop({ required: true, enum: ["ATK", "ECONOMY", "DURABILITY", "DROPRATE", "MATERIAL"] })
   buffType: string;
 
   /** Rarity tier — COMMON / MEDIUM / RARE / ULTRA_RARE. */
