@@ -375,7 +375,7 @@ export class TradeSpotService {
     this.tickerCache.delete(pair);
     this.bookCache.delete(pair);
 
-    this.logger.log(`[Admin] Price control cleared for ${pair}`);    return {
+    this.logger.log(`[Admin] Price control cleared for ${pair}`); return {
       success: true,
       pair,
       message: `Price control removed for ${pair}. Bot resumes normal drift.`,
@@ -563,6 +563,10 @@ export class TradeSpotService {
     };
     this.tickerCache.set(pair, { data: result, ts: now });
     return result;
+  }
+
+  async getTickers(pairs: string[]) {
+    return Promise.all(pairs.map((p) => this.getTicker(p)));
   }
 
   // ── Order book: synthetic ladder (cached 3s, shared across users) ──────

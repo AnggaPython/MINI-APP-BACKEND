@@ -12,6 +12,14 @@ export class TradeSpotController {
     return this.tradeSpotService.getTicker(pair);
   }
 
+  /** Bulk real-time tickers */
+  @Post("tickers")
+  async tickers(@Body() body: { pairs?: string[] }) {
+    if (!body?.pairs || !Array.isArray(body.pairs)) return { success: false, tickers: [] };
+    const tickers = await this.tradeSpotService.getTickers(body.pairs);
+    return { success: true, tickers };
+  }
+
   /** Order book ladder (asks/bids) around the real-time mid — display data. */
   @Get("orderbook")
   async orderbook(
