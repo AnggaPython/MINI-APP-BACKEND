@@ -47,7 +47,7 @@ export class BuffItem {
   buffId: string;
 
   /**
-   * Reference to the frontend collection item ID (e.g. "guci-tanah-liat").
+   * Reference to the frontend collection item ID (e.g. "clay-pot").
    * Links the SVG visual to this buff item.
    */
   @Prop({ required: true })

@@ -83,6 +83,10 @@ export class LiquidityPool {
   @Prop({ default: 15, min: 1, max: 60 })
   botIntervalMinutes: number;
 
+  /** Admin-tunable: number of bot trades per cycle (BUY+SELL combined). Default 10 (5 BUY + 5 SELL). */
+  @Prop({ default: 10, min: 2, max: 100 })
+  botTradesPerCycle: number;
+
   // ── 24h pre-computed stats (eliminates full table scan every 5s) ────────
   // Updated on every trade (bot + user). Reset daily by the bot cycle.
   @Prop({ default: 0 })
@@ -102,6 +106,33 @@ export class LiquidityPool {
 
   @Prop({ default: null })
   dayResetAt: Date;
+
+  // ── Admin Price Control ──────────────────────────────────────────────
+  // When set, the MM bot and driftMid operate within this range.
+  // Admin sets SELL ceiling (askCeiling) and BUY floor (bidFloor).
+  // The mid price is always: (askCeiling + bidFloor) / 2.
+  // Bot trades ONLY between bidFloor and askCeiling — never above/below.
+
+  /** Admin-controlled SELL ceiling (highest ask price). 0 = disabled. */
+  @Prop({ default: 0 })
+  adminAskCeiling: number;
+
+  /** Admin-controlled BUY floor (lowest bid price). 0 = disabled. */
+  @Prop({ default: 0 })
+  adminBidFloor: number;
+
+  // ── Admin Order Book Walls ───────────────────────────────────────────
+  // 10 SELL walls (asks) + 10 BUY walls (bids) that appear in the
+  // order book as synthetic depth. These are NOT real orders — they
+  // create the illusion of liquidity and support/resistance levels.
+
+  /** SELL walls: [{ price: number, amount: number }] — shown as asks. */
+  @Prop({ type: [{ price: Number, amount: Number }], default: [] })
+  adminSellWalls: { price: number; amount: number }[];
+
+  /** BUY walls: [{ price: number, amount: number }] — shown as bids. */
+  @Prop({ type: [{ price: Number, amount: Number }], default: [] })
+  adminBuyWalls: { price: number; amount: number }[];
 }
 
 export const LiquidityPoolSchema =

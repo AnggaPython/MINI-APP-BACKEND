@@ -609,9 +609,21 @@ export class CaseBoxService {
     }
 
     if (outcome !== "ZONK" && loot) {
+      // Separate materials from crypto balances — materials go to the
+      // "materials" field (used by pickaxe upgrade), while ELIXCOIN
+      // and other currencies go to cryptoBalances.
+      const allMaterialNames = [
+        ...CASE_MATERIALS.COMMON,
+        ...CASE_MATERIALS.MEDIUM,
+        ...CASE_MATERIALS.RARE,
+      ];
       const inc: Record<string, number> = {};
       for (const [key, value] of Object.entries(loot)) {
-        inc[`cryptoBalances.${key}`] = value;
+        if (allMaterialNames.includes(key)) {
+          inc[`materials.${key}`] = value;
+        } else {
+          inc[`cryptoBalances.${key}`] = value;
+        }
       }
       if (adRequired) inc["adTickets"] = -1;
 

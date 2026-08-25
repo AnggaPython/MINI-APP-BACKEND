@@ -23,208 +23,208 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
   // ── ATK (40 items) — weapon / striking / sharp items ────────────────────
   ATK: {
     COMMON: [
-      "artefak-romawi",      // Roman Coin
-      "artefak-inca",        // Inca Gold Disc
-      "artefak-afrika",      // African Iron Coin
-      "artefak-tartar",      // Tartar Bow Ornament
-      "artefak-keltik",      // Celtic Torc
-      "patung-banteng",      // Bronze Bull
-      "patung-elang",        // Eagle Figurine
-      "patung-naga-kecil",   // Small Dragon
-      "patung-serigala",     // Wolf Figurine
-      "patung-beruang",      // Bear Statuette
+      "roman-coin",      // Roman Coin
+      "inca-gold",        // Inca Gold Disc
+      "iron-coin",      // African Iron Coin
+      "tartar-bow",      // Tartar Bow Ornament
+      "celtic-torc",      // Celtic Torc
+      "bronze-bull",      // Bronze Bull
+      "eagle-figure",        // Eagle Figurine
+      "small-dragon",   // Small Dragon
+      "wolf-figure",     // Wolf Figurine
+      "bear-statue",      // Bear Statuette
     ],
     MEDIUM: [
-      "patung-dewa-yunani",   // Greek God Statue
-      "patung-garuda-emas",   // Golden Garuda
-      "patung-singa-marmer",  // Marble Lion
-      "patung-knight",        // Knight Statue
-      "patung-samurai-statue",// Samurai Armor
-      "guci-tutup-naga",      // Dragon Lid Vase (reused medium slot)
-      "guci-dinasti-ming",    // Ming Dynasty Vase
-      "guci-cloisonne",       // Cloisonne Enamel
-      "cincin-firaun",        // Pharaoh's Ring
-      "bros-permata",         // Gemstone Brooch
+      "greek-god",   // Greek God Statue
+      "golden-garuda",   // Golden Garuda
+      "marble-lion",  // Marble Lion
+      "knight-statue",        // Knight Statue
+      "samurai-armor",// Samurai Armor
+      "dragon-lid",      // Dragon Lid Vase (reused medium slot)
+      "ming-vase",    // Ming Dynasty Vase
+      "cloisonne",       // Cloisonne Enamel
+      "pharaoh-ring",        // Pharaoh's Ring
+      "gem-brooch",         // Gemstone Brooch
     ],
     RARE: [
-      "pedang-excalibur",     // Excalibur
-      "keris-jawa",           // Javanese Keris
-      "trident-poseidon",     // Poseidon's Trident
-      "mjolnir",              // Thor's Hammer
-      "panah-artemis",        // Artemis' Bow
-      "pedang-bayangan",      // Shadow Blade
-      "perisai-athena",       // Aegis Shield
-      "pedang-samurai",       // Katana
-      "keris-naga",           // Dragon Keris
-      "halberd-penjaga",      // Guard's Halberd
+      "excalibur",     // Excalibur
+      "javanese-keris",           // Javanese Keris
+      "poseidon-trident",     // Poseidon's Trident
+      "thors-hammer",              // Thor's Hammer
+      "artemis-bow",        // Artemis' Bow
+      "shadow-blade",      // Shadow Blade
+      "aegis-shield",       // Aegis Shield
+      "katana",       // Katana
+      "dragon-keris",           // Dragon Keris
+      "guard-halberd",      // Guard's Halberd
     ],
     ULTRA_RARE: [
-      "mahkota-kaisar",       // Emperor's Crown
-      "cincin-solomon",       // Solomon's Ring
-      "kalung-ra",            // Ra's Necklace
-      "tongkat-hermes",       // Caduceus
-      "bola-kristal-naga",    // Dragon Crystal Ball
-      "peti-naga",            // Dragon Chest
-      "peti-neraka",          // Hellfire Chest
-      "peti-dewa",            // Divine Chest
-      "peti-multiverse",      // Multiverse Chest
-      "peti-emas-raja",       // King's Gold Chest
+      "emperor-crown",       // Emperor's Crown
+      "solomon-ring",       // Solomon's Ring
+      "ras-necklace",            // Ra's Necklace
+      "caduceus",       // Caduceus
+      "dragon-orb",    // Dragon Crystal Ball
+      "dragon-chest",            // Dragon Chest
+      "hellfire-chest",          // Hellfire Chest
+      "divine-chest",            // Divine Chest
+      "multiverse-chest",      // Multiverse Chest
+      "kings-gold-chest",       // King's Gold Chest
     ],
   },
 
   // ── ECONOMY (40 items) — wealth / trade / resource items ────────────────
   ECONOMY: {
     COMMON: [
-      "artefak-sumeria",      // Sumerian Tablet
-      "artefak-maya",         // Mayan Calendar Disk
-      "artefak-cina-kuno",    // Ancient Chinese Seal
-      "artefak-persia",       // Persian Astrolabe
-      "artefak-babilonia",    // Babylonian Seal
-      "artefak-mesir-mini",   // Mini Scarab
-      "artefak-aztec-mini",   // Mini Sun Disk
-      "artefak-timur-tengah", // Brass Lamp
-      "kotak-kayu",           // Wooden Box
-      "kotak-logam",          // Metal Tin
+      "sumerian-tablet",      // Sumerian Tablet
+      "mayan-disk",         // Mayan Calendar Disk
+      "chinese-seal",    // Ancient Chinese Seal
+      "persian-astro",       // Persian Astrolabe
+      "babylon-seal",    // Babylonian Seal
+      "mini-scarab",   // Mini Scarab
+      "mini-sun-disk",   // Mini Sun Disk
+      "brass-lamp", // Brass Lamp
+      "wooden-box",           // Wooden Box
+      "metal-tin",          // Metal Tin
     ],
     MEDIUM: [
-      "mahkota-raja",         // King's Crown
-      "mahkota-ratu",         // Queen's Tiara
-      "kalung-mutiara",       // Pearl Necklace
-      "gelang-perak",         // Silver Bracelet
-      "liontin-bulan",        // Moon Pendant
-      "anting-giok",          // Jade Earrings
-      "diadem-bintang",       // Star Diadem
-      "circlet-bulan",        // Moon Circlet
-      "guci-jade-hijau",      // Green Jade Vase
-      "guci-permata",         // Jeweled Vase
+      "kings-crown",         // King's Crown
+      "queens-tiara",         // Queen's Tiara
+      "pearl-necklace",       // Pearl Necklace
+      "silver-bracelet",         // Silver Bracelet
+      "moon-pendant",        // Moon Pendant
+      "jade-earrings",          // Jade Earrings
+      "star-diadem",       // Star Diadem
+      "moon-circlet",        // Moon Circlet
+      "jade-vase",      // Green Jade Vase
+      "jeweled-vase",         // Jeweled Vase
     ],
     RARE: [
-      "peti-permata",         // Gemstone Chest
-      "peti-kristal",         // Crystal Chest
-      "peti-misterius",       // Mysterious Chest
-      "peti-abadi",           // Eternal Chest
-      "peti-langit",          // Sky Chest
-      "peta-naga",            // Dragon Treasure Map
-      "surat-naga",           // Ancient Dragon Letter
-      "kitab-naga",           // Dragon Tome
-      "kompas-naga",          // Dragon Compass
-      "segel-naga",           // Dragon Seal
+      "gem-chest",         // Gemstone Chest
+      "crystal-chest",         // Crystal Chest
+      "mystery-chest",       // Mysterious Chest
+      "eternal-chest",           // Eternal Chest
+      "sky-chest",          // Sky Chest
+      "dragon-map",            // Dragon Treasure Map
+      "dragon-letter",           // Ancient Dragon Letter
+      "dragon-tome",           // Dragon Tome
+      "dragon-compass",          // Dragon Compass
+      "dragon-seal",           // Dragon Seal
     ],
     ULTRA_RARE: [
-      "guci-meissen",         // Meissen Porcelain
-      "guci-wedgwood",        // Wedgwood Jasper
-      "guci-millefiori",      // Millefiori Glass
-      "guci-urn-yunani",      // Greek Amphora
-      "guci-kubisme",         // Cubist Vase
-      "guci-dunia",           // Globe Vase
-      "patung-firaun-emas",   // Golden Pharaoh
-      "patung-naga-jade",     // Jade Dragon
-      "patung-feniks",        // Phoenix Statue
-      "patung-tortoise",      // Jade Tortoise
+      "meissen-porcelain",         // Meissen Porcelain
+      "wedgwood-jasper",        // Wedgwood Jasper
+      "millefiori",      // Millefiori Glass
+      "greek-amphora",      // Greek Amphora
+      "cubist-vase",         // Cubist Vase
+      "globe-vase",           // Globe Vase
+      "golden-pharaoh",   // Golden Pharaoh
+      "jade-dragon",     // Jade Dragon
+      "phoenix-statue",        // Phoenix Statue
+      "jade-tortoise",      // Jade Tortoise
     ],
   },
 
   // ── DURABILITY (40 items) — tool / craft / repair items ─────────────────
   DURABILITY: {
     COMMON: [
-      "guci-tanah-liat",      // Clay Pot
-      "guci-keramik-biru",    // Blue Ceramic Vase
-      "guci-porselen-putih",  // White Porcelain
-      "guci-tembikar-romawi", // Roman Pottery
-      "guci-batik-jawa",      // Batik Vase
-      "guci-sakura-jepang",   // Cherry Blossom Vase
-      "guci-celadon",         // Celadon Vase
-      "guci-majolica",        // Majolica Vase
-      "guci-raku",            // Raku Pottery
-      "guci-sancai",          // Sancai Glazed Vase
+      "clay-pot",      // Clay Pot
+      "blue-ceramic",    // Blue Ceramic Vase
+      "white-porcelain",  // White Porcelain
+      "roman-pottery", // Roman Pottery
+      "batik-vase",      // Batik Vase
+      "sakura-vase",   // Cherry Blossom Vase
+      "celadon-vase",         // Celadon Vase
+      "majolica-vase",        // Majolica Vase
+      "raku-pottery",            // Raku Pottery
+      "sancai-vase",          // Sancai Glazed Vase
     ],
     MEDIUM: [
-      "guci-meissen",         // (note: re-using visually, but real mapping below)
-      "guci-jade-hijau",      // Green Jade Vase
-      "guci-cloisonne",       // Cloisonne Enamel
-      "patung-dewi-lakshmi",  // Goddess Lakshmi
-      "patung-dewa-yunani",   // Greek God Statue
-      "kristal-kuarsa",       // Quartz Crystal
-      "batu-ruby",            // Ruby Stone
-      "batu-sapphire",        // Sapphire Stone
-      "batu-emerald",         // Emerald Stone
-      "kristal-amethyst",     // Amethyst Crystal
+      "meissen-porcelain",         // (note: re-using visually, but real mapping below)
+      "jade-vase",      // Green Jade Vase
+      "cloisonne",       // Cloisonne Enamel
+      "goddess-lakshmi",  // Goddess Lakshmi
+      "greek-god",   // Greek God Statue
+      "quartz-crystal",       // Quartz Crystal
+      "ruby-stone",            // Ruby Stone
+      "sapphire-stone",        // Sapphire Stone
+      "emerald-stone",         // Emerald Stone
+      "amethyst-crystal",     // Amethyst Crystal
     ],
     RARE: [
-      "peti-permata",         // Gemstone Chest
-      "peti-kristal",         // Crystal Chest
-      "bola-kristal-naga",    // Dragon Crystal Ball
-      "kalung-ra",            // Ra's Necklace
-      "cincin-solomon",       // Solomon's Ring
-      "tongkat-hermes",       // Caduceus
-      "mahkota-kaisar",       // Emperor's Crown
-      "peti-dewa",            // Divine Chest
-      "peti-abadi",           // Eternal Chest
-      "peti-multiverse",      // Multiverse Chest
+      "gem-chest",         // Gemstone Chest
+      "crystal-chest",         // Crystal Chest
+      "dragon-orb",    // Dragon Crystal Ball
+      "ras-necklace",            // Ra's Necklace
+      "solomon-ring",       // Solomon's Ring
+      "caduceus",       // Caduceus
+      "emperor-crown",       // Emperor's Crown
+      "divine-chest",            // Divine Chest
+      "eternal-chest",           // Eternal Chest
+      "multiverse-chest",      // Multiverse Chest
     ],
     ULTRA_RARE: [
-      "guci-kubisme",         // Cubist Vase
-      "guci-permata",         // Jeweled Vase
-      "guci-dunia",           // Globe Vase
-      "guci-millefiori",      // Millefiori Glass
-      "guci-urn-yunani",      // Greek Amphora
-      "guci-wedgwood",        // Wedgwood Jasper
-      "patung-firaun-emas",   // Golden Pharaoh
-      "patung-naga-jade",     // Jade Dragon
-      "patung-feniks",        // Phoenix Statue
-      "patung-tortoise",      // Jade Tortoise
+      "cubist-vase",         // Cubist Vase
+      "jeweled-vase",         // Jeweled Vase
+      "globe-vase",           // Globe Vase
+      "millefiori",      // Millefiori Glass
+      "greek-amphora",      // Greek Amphora
+      "wedgwood-jasper",        // Wedgwood Jasper
+      "golden-pharaoh",   // Golden Pharaoh
+      "jade-dragon",     // Jade Dragon
+      "phoenix-statue",        // Phoenix Statue
+      "jade-tortoise",      // Jade Tortoise
     ],
   },
 
   // ── DROPRATE (40 items) — mystical / arcane / rare-find items ───────────
   DROPRATE: {
     COMMON: [
-      "artefak-viking",       // Viking Compass
-      "artefak-yunani",       // Greek Figurine
-      "artefak-aborigin",     // Dreamtime Rock
-      "artefak-norse",        // Norse Rune Stone
-      "artefak-korea",        // Korean Celadon Cup
-      "artefak-india",        // Ancient Chakra
-      "artefak-polinesia",    // Tiki Figurine
-      "patung-buddha",        // Small Buddha
-      "patung-kucing-mesir",  // Bastet Cat
-      "patung-merak",         // Peacock Figure
+      "viking-compass",       // Viking Compass
+      "greek-figure",       // Greek Figurine
+      "dream-rock",     // Dreamtime Rock
+      "norse-rune",        // Norse Rune Stone
+      "korean-cup",        // Korean Celadon Cup
+      "ancient-chakra",        // Ancient Chakra
+      "tiki-figure",    // Tiki Figurine
+      "small-buddha",        // Small Buddha
+      "bastet-cat",  // Bastet Cat
+      "peacock-figure",         // Peacock Figure
     ],
     MEDIUM: [
-      "kitab-sihir",          // Spell Book
-      "peta-harta-karun",     // Treasure Map
-      "surat-raja",           // Royal Decree
-      "codex-kuno",           // Ancient Codex
-      "scroll-buddha",        // Buddhist Sutra
-      "manuskrip-maya",       // Mayan Codex
-      "atlas-kuno",           // Ancient Atlas
-      "buku-ramalan",         // Prophecy Book
-      "tabel-bintang",        // Star Chart
-      "gulungan-mesir",       // Egyptian Papyrus
+      "spell-book",          // Spell Book
+      "treasure-map",     // Treasure Map
+      "royal-decree",           // Royal Decree
+      "ancient-codex",           // Ancient Codex
+      "buddhist-sutra",        // Buddhist Sutra
+      "mayan-codex",       // Mayan Codex
+      "ancient-atlas",           // Ancient Atlas
+      "prophecy-book",         // Prophecy Book
+      "star-chart",        // Star Chart
+      "egypt-papyrus",       // Egyptian Papyrus
     ],
     RARE: [
-      "peti-misterius",       // Mysterious Chest
-      "peti-langit",          // Sky Chest
-      "peta-naga",            // Dragon Treasure Map
-      "surat-naga",           // Ancient Dragon Letter
-      "kitab-naga",           // Dragon Tome
-      "kompas-naga",          // Dragon Compass
-      "segel-naga",           // Dragon Seal
-      "peti-naga",            // Dragon Chest
-      "peti-neraka",          // Hellfire Chest
-      "peti-emas-raja",       // King's Gold Chest
+      "mystery-chest",       // Mysterious Chest
+      "sky-chest",          // Sky Chest
+      "dragon-map",            // Dragon Treasure Map
+      "dragon-letter",           // Ancient Dragon Letter
+      "dragon-tome",           // Dragon Tome
+      "dragon-compass",          // Dragon Compass
+      "dragon-seal",           // Dragon Seal
+      "dragon-chest",            // Dragon Chest
+      "hellfire-chest",          // Hellfire Chest
+      "kings-gold-chest",       // King's Gold Chest
     ],
     ULTRA_RARE: [
-      "batu-topaz",           // Topaz Stone
-      "batu-opal",            // Opal Stone
-      "kristal-lapis",        // Lapis Lazuli
-      "batu-garnet",          // Garnet Stone
-      "kristal-aquamarine",   // Aquamarine
-      "bros-permata",         // Gemstone Brooch
-      "cincin-firaun",        // Pharaoh's Ring
-      "mahkota-raja",         // King's Crown
-      "mahkota-ratu",         // Queen's Tiara
-      "kalung-mutiara",       // Pearl Necklace
+      "topaz-stone",           // Topaz Stone
+      "opal-stone",            // Opal Stone
+      "lapis-lazuli",        // Lapis Lazuli
+      "garnet-stone",          // Garnet Stone
+      "aquamarine",   // Aquamarine
+      "gem-brooch",         // Gemstone Brooch
+      "pharaoh-ring",        // Pharaoh's Ring
+      "kings-crown",         // King's Crown
+      "queens-tiara",         // Queen's Tiara
+      "pearl-necklace",       // Pearl Necklace
     ],
   },
 };
@@ -274,17 +274,24 @@ export class BuffItemCollectionsService implements OnModuleInit {
 
   /**
    * Seed all 160 buff items into the database (idempotent — skips if already seeded).
-   */
-  private async seedBuffItems() {
+   */  private async seedBuffItems() {
+    // Clear old data if using legacy ATK-COMMON-01 format
+    const legacy = await this.buffItemModel.findOne({ buffId: /^ATK-|^ECONOMY-|^DURABILITY-|^DROPRATE-/ }).lean();
+    if (legacy) {
+      this.logger.log("Clearing legacy buff items (ATK-COMMON-01 format)...");
+      await this.buffItemModel.deleteMany({});
+    }
+
     const count = await this.buffItemModel.countDocuments();
-    if (count >= 160) {
+    if (count >= 120) {
       this.logger.log(`Buff items already seeded (${count} found)`);
       return;
     }
 
-    this.logger.log("Seeding 160 buff items...");
+    this.logger.log("Seeding buff items (item-name format)...");
 
     const docs: Partial<BuffItem>[] = [];
+    const seenItems = new Set<string>(); // Deduplicate across buff types
 
     for (const buffType of ["ATK", "ECONOMY", "DURABILITY", "DROPRATE"] as BuffType[]) {
       for (const rarity of ["COMMON", "MEDIUM", "RARE", "ULTRA_RARE"] as BuffRarity[]) {
@@ -293,7 +300,11 @@ export class BuffItemCollectionsService implements OnModuleInit {
         const meta = BUFF_TYPE_META[buffType];
 
         for (let i = 0; i < 10; i++) {
-          const buffId = `${buffType}-${rarity}-${String(i + 1).padStart(2, "0")}`;
+          const itemId = itemIds[i];
+          // Skip if this item was already assigned to another buff type
+          if (seenItems.has(itemId)) continue;
+          seenItems.add(itemId);
+
           const value = values[i];
           const description =
             meta.unit === "percent"
@@ -301,8 +312,8 @@ export class BuffItemCollectionsService implements OnModuleInit {
               : `+${value} ${meta.label}`;
 
           docs.push({
-            buffId,
-            collectionItemId: itemIds[i],
+            buffId: itemId, // e.g. "roman-coin" (not ATK-COMMON-01)
+            collectionItemId: itemId,
             buffType,
             rarity,
             buffValue: value,
@@ -324,7 +335,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
       );
     }
 
-    this.logger.log(`Seeded ${docs.length} buff items`);
+    this.logger.log(`Seeded ${docs.length} buff items (deduplicated)`);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────

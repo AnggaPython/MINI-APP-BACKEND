@@ -109,7 +109,7 @@ export class AuctionHouseService {
       const user = await this.userModel.findOne({ telegramId });
       if (!user) return { success: false, error: "User not found" };
 
-      const currentAmount = (user.cryptoBalances as Record<string, number>)?.[baseItemId] || 0;
+      const currentAmount = ((user as any).materials as Record<string, number>)?.[baseItemId] || 0;
       if (currentAmount < amount) {
         return { success: false, error: `Insufficient ${baseItemId}. Setup requires ${amount} but you have ${currentAmount}.` };
       }
@@ -154,7 +154,7 @@ export class AuctionHouseService {
     } else if (itemCategory === "material") {
       await this.userModel.findOneAndUpdate(
         { telegramId },
-        { $inc: { [`cryptoBalances.${actualBaseItemId}`]: -amount } },
+        { $inc: { [`materials.${actualBaseItemId}`]: -amount } },
       ).exec();
     }
 
@@ -261,7 +261,7 @@ export class AuctionHouseService {
     } else if (listing.itemCategory === "material") {
       await this.userModel.findOneAndUpdate(
         { telegramId },
-        { $inc: { [`cryptoBalances.${listing.baseItemId}`]: listing.amount || 1 } },
+        { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } },
       ).exec();
     }
 
@@ -314,7 +314,7 @@ export class AuctionHouseService {
     } else if (listing.itemCategory === "material") {
       await this.userModel.findOneAndUpdate(
         { telegramId },
-        { $inc: { [`cryptoBalances.${listing.baseItemId}`]: listing.amount || 1 } },
+        { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } },
       ).exec();
     }
 
@@ -371,7 +371,7 @@ export class AuctionHouseService {
       } else if (listing.itemCategory === "material") {
         await this.userModel.findOneAndUpdate(
           { telegramId: listing.sellerId },
-          { $inc: { [`cryptoBalances.${listing.baseItemId}`]: listing.amount || 1 } },
+          { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } },
         ).exec();
       }
 

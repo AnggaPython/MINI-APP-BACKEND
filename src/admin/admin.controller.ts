@@ -244,18 +244,84 @@ export class AdminController {
 
   @Post("trade-spot/bot")
   async updateTradeSpotBot(
-    @Body() body: { enabled?: boolean; intervalMinutes?: number },
+    @Body() body: { pair?: string; enabled?: boolean; intervalMinutes?: number; tradesPerCycle?: number },
   ) {
     return this.tradeSpotService.updateBotConfig(body || {});
   }
 
   @Post("trade-spot/bot/run-now")
-  async runTradeSpotBotNow() {
-    const res = await this.marketMakerService.runNow();
-    const status = await this.tradeSpotService.getBotStatus();
+  async runTradeSpotBotNow(@Body() body: { pair?: string }) {
+    const pair = body?.pair || 'ELIXCOIN/ELIXIR';
+    const res = await this.marketMakerService.runNow(pair);
+    const status = await this.tradeSpotService.getBotStatus(pair);
     return {
       ...status,
       runNow: res,
     };
+  }
+
+  @Get("trade-spot/bot/schedules")
+  async getBotSchedules() {
+    return { success: true, schedules: this.marketMakerService.getSchedules() };
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Admin Price Control — set bid/ask range per pair.
+  // Bot MM will only trade within this range.
+  // ──────────────────────────────────────────────────────────────────
+
+  @Get("trade-spot/pools")
+  async getAllPools() {
+    const pools = await this.tradeSpotService.getAllPools();
+    return { success: true, pools };
+  }
+
+  @Post("trade-spot/price-control")
+  async setPriceControl(
+    @Body() body: { pair: string; bidFloor: number; askCeiling: number },
+  ) {
+    if (!body.pair || !body.bidFloor || !body.askCeiling) {
+      return { success: false, error: "Missing pair, bidFloor, or askCeiling" };
+    }
+    if (body.bidFloor >= body.askCeiling) {
+      return { success: false, error: "bidFloor must be less than askCeiling" };
+    }
+    return this.tradeSpotService.setAdminPriceControl(
+      body.pair,
+      body.bidFloor,
+      body.askCeiling,
+    );
+  }
+
+  @Post("trade-spot/price-control/clear")
+  async clearPriceControl(@Body() body: { pair: string }) {
+    if (!body.pair) return { success: false, error: "Missing pair" };
+    return this.tradeSpotService.clearAdminPriceControl(body.pair);
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Admin Order Book Walls — synthetic depth for each pair.
+  // ──────────────────────────────────────────────────────────────────
+
+  @Post("trade-spot/walls")
+  async setWalls(
+    @Body() body: {
+      pair: string;
+      sellWalls?: { price: number; amount: number }[];
+      buyWalls?: { price: number; amount: number }[];
+    },
+  ) {
+    if (!body.pair) return { success: false, error: "Missing pair" };
+    return this.tradeSpotService.setAdminWalls(
+      body.pair,
+      body.sellWalls,
+      body.buyWalls,
+    );
+  }
+
+  @Post("trade-spot/walls/clear")
+  async clearWalls(@Body() body: { pair: string }) {
+    if (!body.pair) return { success: false, error: "Missing pair" };
+    return this.tradeSpotService.clearAdminWalls(body.pair);
   }
 }

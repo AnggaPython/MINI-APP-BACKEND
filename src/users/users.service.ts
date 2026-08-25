@@ -893,6 +893,7 @@ export class UsersService {
         return {
             elixirBalance: user?.elixirBalance || 0,
             cryptoBalances: user?.cryptoBalances || {},
+            materials: (user as any).materials || {},
             ownedPickaxes: user?.ownedPickaxes?.length
                 ? user.ownedPickaxes
                 : ["Common"],

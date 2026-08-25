@@ -14,8 +14,12 @@ export class TradeSpotController {
 
   /** Order book ladder (asks/bids) around the real-time mid — display data. */
   @Get("orderbook")
-  async orderbook(@Query("depth") depth?: string, @Query("pair") pair?: string) {
-    return this.tradeSpotService.getOrderBook(Number(depth) || 10, pair);
+  async orderbook(
+    @User("telegramId") telegramId: string,
+    @Query("depth") depth?: string,
+    @Query("pair") pair?: string,
+  ) {
+    return this.tradeSpotService.getOrderBook(Number(depth) || 10, pair, telegramId);
   }
 
   /** Recent market trades — the live tape (bot + user fills). */
@@ -41,6 +45,21 @@ export class TradeSpotController {
   async holdings(@User("telegramId") telegramId: string, @Query("pair") pair?: string) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
     return this.tradeSpotService.getHoldings(telegramId, pair);
+  }
+
+  /**
+   * Max tradeable amount for the caller, accounting for anti-whale slippage.
+   * Returns the maximum BASE amount the user can BUY (or SELL) without
+   * the backend rejecting for insufficient balance.
+   */
+  @Get("max-tradeable")
+  async maxTradeable(
+    @User("telegramId") telegramId: string,
+    @Query("pair") pair?: string,
+    @Query("side") side?: string,
+  ) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return this.tradeSpotService.getMaxTradeable(telegramId, pair, side);
   }
 
   /** The caller's resting limit orders. */
