@@ -484,7 +484,11 @@ export class CaseBoxService {
       buffGranted = grantResult;
       if (grantResult?.buffItem) {
         rarity = grantResult.buffItem.rarity;
-        loot = { [grantResult.buffItem.name]: 1 };
+        // Store display name for history/UI, but use buffId slug for cryptoBalances.
+        // NOTE: grantBuffItem already wrote cryptoBalances with correct slug —
+        // the loot loop below must NOT double-count.
+        const buffSlug = grantResult.buffItem.buffId.toUpperCase().replace(/ /g, "-");
+        loot = { [grantResult.buffItem.name]: 1, __buffSlug: buffSlug };
       } else {
         // Fallback: if collection is complete or grant failed, give ELIXCOIN
         // Fetch user level for reward scaling
@@ -509,6 +513,12 @@ export class CaseBoxService {
     this.destroyTimestamps.set(telegramId, userTimestamps);
 
     // ── Persist the outcome on the case record (audit + history) ─────────
+    // Clean sentinel keys from loot before storing
+    if (loot) {
+      for (const k of Object.keys(loot)) {
+        if (k.startsWith("__")) delete (loot as any)[k];
+      }
+    }
     await this.caseBoxModel
       .updateOne(
         { _id: caseId },
@@ -620,12 +630,19 @@ export class CaseBoxService {
         ...CASE_MATERIALS.RARE,
       ];
       const inc: Record<string, number> = {};
+      // __buffSlug is a sentinel — buff items are already synced by grantBuffItem,
+      // so skip them in the loot cryptoBalances write to avoid double-counting.
+      const buffSlug = (loot as any).__buffSlug as string | undefined;
       for (const [key, value] of Object.entries(loot)) {
+        if (key.startsWith("__")) continue; // skip sentinel keys
         if (allMaterialNames.includes(key)) {
           // Materials: credit BOTH fields so trade spot + material-tools page both work
           inc[`materials.${key}`] = value;
           const slug = materialNameToSlug(key); // "Rusty Nail" → "RUSTY-NAIL"
           inc[`cryptoBalances.${slug}`] = value;
+        } else if (buffSlug) {
+          // Buff item: already granted by grantBuffItem → skip cryptoBalances write.
+          // (grantBuffItem wrote cryptoBalances["PERSIAN-ASTRO"] = 1)
         } else {
           inc[`cryptoBalances.${key}`] = value;
         }
