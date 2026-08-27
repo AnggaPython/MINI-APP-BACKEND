@@ -493,9 +493,19 @@ let CaseBoxService = class CaseBoxService {
             }
         }
         if (outcome !== "ZONK" && loot) {
+            const allMaterialNames = [
+                ...exports.CASE_MATERIALS.COMMON,
+                ...exports.CASE_MATERIALS.MEDIUM,
+                ...exports.CASE_MATERIALS.RARE,
+            ];
             const inc = {};
             for (const [key, value] of Object.entries(loot)) {
-                inc[`cryptoBalances.${key}`] = value;
+                if (allMaterialNames.includes(key)) {
+                    inc[`materials.${key}`] = value;
+                }
+                else {
+                    inc[`cryptoBalances.${key}`] = value;
+                }
             }
             if (adRequired)
                 inc["adTickets"] = -1;

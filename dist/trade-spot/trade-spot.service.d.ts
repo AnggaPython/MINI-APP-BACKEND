@@ -3,27 +3,45 @@ import { Trade } from "./schemas/trade.schema";
 import { LiquidityPool } from "./schemas/pool.schema";
 import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
+import { AssetRegistryService } from "./asset-registry.service";
+import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 export declare const DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 export declare const FEE_PCT = 0.015;
 export declare const SPREAD_PCT = 0.004;
+export declare const CORE_BOT_PAIRS: Set<string>;
 export declare const MINERAL_INITIAL_RATES: Record<string, number>;
 export declare class TradeSpotService {
     private readonly tradeModel;
     private readonly poolModel;
     private readonly orderModel;
     private readonly userModel;
+    private readonly assetRegistry;
+    private readonly buffCollectionsService;
     private readonly orderTimestamps;
     private readonly cancelTimestamps;
     private tickerCache;
     private bookCache;
     private tradesCache;
-    constructor(tradeModel: Model<Trade>, poolModel: Model<LiquidityPool>, orderModel: Model<OpenOrder>, userModel: Model<User>);
+    private readonly logger;
+    constructor(tradeModel: Model<Trade>, poolModel: Model<LiquidityPool>, orderModel: Model<OpenOrder>, userModel: Model<User>, assetRegistry: AssetRegistryService, buffCollectionsService: BuffItemCollectionsService);
     private evictRateLimit;
     private checkRateLimit;
     getAllActivePools(): Promise<LiquidityPool[]>;
+    getAllPools(): Promise<LiquidityPool[]>;
+    setAdminPriceControl(pair: string, bidFloor: number, askCeiling: number): Promise<any>;
+    clearAdminPriceControl(pair: string): Promise<any>;
+    setAdminWalls(pair: string, sellWalls?: {
+        price: number;
+        amount: number;
+    }[], buyWalls?: {
+        price: number;
+        amount: number;
+    }[]): Promise<any>;
+    clearAdminWalls(pair: string): Promise<any>;
     getPool(pair?: string): Promise<LiquidityPool>;
     getTicker(pair?: string): Promise<any>;
-    getOrderBook(depth?: number, pair?: string): Promise<any>;
+    getTickers(pairs: string[]): Promise<any[]>;
+    getOrderBook(depth?: number, pair?: string, telegramId?: string): Promise<any>;
     getTrades(limit?: number, pair?: string): Promise<any>;
     getStats(pair?: string): Promise<{
         success: boolean;
@@ -75,8 +93,10 @@ export declare class TradeSpotService {
         hourly: any[];
     }>;
     getBotStatus(pair?: string): Promise<{
+        pair: string;
         enabled: boolean;
         intervalMinutes: number;
+        tradesPerCycle: number;
         lastBotRunAt: Date;
         nextBotRunAt: Date;
         success: boolean;
@@ -97,12 +117,18 @@ export declare class TradeSpotService {
         pair?: string;
         enabled?: boolean;
         intervalMinutes?: number;
+        tradesPerCycle?: number;
     }): Promise<{
+        success: boolean;
+        error: string;
+    } | {
+        success: boolean;
+        pair: string;
         enabled: boolean;
         intervalMinutes: number;
+        tradesPerCycle: number;
         lastBotRunAt: Date;
         nextBotRunAt: Date;
-        success: boolean;
         botRunCount: number;
         botTrades: number;
         userTrades: number;
@@ -115,9 +141,7 @@ export declare class TradeSpotService {
         lastMid: number;
         feePct: number;
         spreadPct: number;
-    } | {
-        success: boolean;
-        error: string;
+        error?: undefined;
     }>;
     getHoldings(telegramId: string, pair?: string): Promise<{
         success: boolean;
@@ -128,6 +152,23 @@ export declare class TradeSpotService {
         elixcoin: number;
         elixir: number;
     }>;
+    getMaxTradeable(telegramId: string, pair?: string, side?: string): Promise<{
+        success: boolean;
+        error: string;
+        maxBase?: undefined;
+        maxQuote?: undefined;
+        price?: undefined;
+        base?: undefined;
+        quote?: undefined;
+    } | {
+        success: boolean;
+        maxBase: number;
+        maxQuote: number;
+        price: number;
+        base: string;
+        quote: string;
+        error?: undefined;
+    }>;
     placeOrder(telegramId: string, body: {
         pair?: string;
         side?: string;
@@ -135,24 +176,48 @@ export declare class TradeSpotService {
         amount?: number;
         price?: number;
     }): Promise<{
+        message: string;
+        autoGranted?: number | undefined;
         success: boolean;
+        resting: boolean;
         trade: {
             id: string;
-            side: "BUY" | "SELL";
+            side: "BUY";
             price: number;
             amount: number;
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             baseBalance: number;
             quoteBalance: number;
-            elixcoin: number;
             elixir: number;
+            elixcoin: number;
         };
-        message: string | undefined;
+        error?: undefined;
+    } | {
+        message: string;
+        buffRemoved?: number | undefined;
+        success: boolean;
+        resting: boolean;
+        trade: {
+            id: string;
+            side: "SELL";
+            price: number;
+            amount: number;
+            total: number;
+            fee: number;
+            feeCurrency: string;
+            source: "BOT" | "USER";
+        };
+        balances: {
+            baseBalance: number;
+            quoteBalance: number;
+            elixir: number;
+            elixcoin: number;
+        };
         error?: undefined;
     } | {
         success: boolean;
@@ -202,7 +267,10 @@ export declare class TradeSpotService {
         total: number;
     }>;
     matchOpenOrders(pair?: string): Promise<any[]>;
+    private static readonly STABLE_ASSETS;
+    private driftedThisCycle;
     driftMid(pair?: string): Promise<void>;
+    clearDriftCycle(): void;
     botCycle(pair?: string): Promise<{
         count: number;
         trades: any[];

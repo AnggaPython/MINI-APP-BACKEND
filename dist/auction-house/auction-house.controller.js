@@ -24,7 +24,7 @@ let AuctionHouseController = class AuctionHouseController {
     async createListing(telegramId, body) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
-        return this.auctionService.createListing(telegramId, body.buffId, body.price);
+        return this.auctionService.createListing(telegramId, body.price, body.itemCategory, body.instanceId, body.baseItemId, body.amount);
     }
     async buyListing(telegramId, body) {
         if (!telegramId)
@@ -47,6 +47,13 @@ let AuctionHouseController = class AuctionHouseController {
             page: query.page ? parseInt(query.page, 10) : 1,
             limit: query.limit ? parseInt(query.limit, 10) : 50,
         });
+    }
+    async browseItem(telegramId, baseItemId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        if (!baseItemId)
+            return { success: false, error: "Missing baseItemId" };
+        return this.auctionService.browseItemListings(baseItemId);
     }
     async myListings(telegramId) {
         if (!telegramId)
@@ -92,6 +99,14 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], AuctionHouseController.prototype, "browse", null);
+__decorate([
+    (0, common_1.Get)("browse-item"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Query)("baseItemId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AuctionHouseController.prototype, "browseItem", null);
 __decorate([
     (0, common_1.Get)("my-listings"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),

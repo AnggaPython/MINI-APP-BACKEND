@@ -29,12 +29,17 @@ let LiquidityPool = class LiquidityPool {
     lifetimeVolume;
     botEnabled;
     botIntervalMinutes;
+    botTradesPerCycle;
     high24h;
     low24h;
     volume24h;
     quoteVolume24h;
     open24h;
     dayResetAt;
+    adminAskCeiling;
+    adminBidFloor;
+    adminSellWalls;
+    adminBuyWalls;
 };
 exports.LiquidityPool = LiquidityPool;
 __decorate([
@@ -106,6 +111,10 @@ __decorate([
     __metadata("design:type", Number)
 ], LiquidityPool.prototype, "botIntervalMinutes", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ default: 10, min: 2, max: 100 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "botTradesPerCycle", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
 ], LiquidityPool.prototype, "high24h", void 0);
@@ -129,6 +138,22 @@ __decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", Date)
 ], LiquidityPool.prototype, "dayResetAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "adminAskCeiling", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "adminBidFloor", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [{ price: Number, amount: Number }], default: [] }),
+    __metadata("design:type", Array)
+], LiquidityPool.prototype, "adminSellWalls", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [{ price: Number, amount: Number }], default: [] }),
+    __metadata("design:type", Array)
+], LiquidityPool.prototype, "adminBuyWalls", void 0);
 exports.LiquidityPool = LiquidityPool = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], LiquidityPool);

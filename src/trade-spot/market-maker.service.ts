@@ -4,7 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import { TradeSpotService } from "./trade-spot.service";
+import { TradeSpotService, CORE_BOT_PAIRS } from "./trade-spot.service";
 import { AssetRegistryService } from "./asset-registry.service";
 
 /**
@@ -106,6 +106,8 @@ export class MarketMakerService implements OnModuleInit, OnModuleDestroy {
     const pools = await this.tradeSpotService.getAllActivePools();
     for (const pool of pools) {
       if (pool.botEnabled === false) continue;
+      // Safety net: only run bot for core pairs — even if DB has botEnabled=true
+      if (!CORE_BOT_PAIRS.has(pool.pair)) continue;
 
       const tradesPerHour = pool.botTradesPerCycle ?? 10;
       this.ensureSchedule(pool.pair, tradesPerHour);

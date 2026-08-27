@@ -7,12 +7,14 @@ import {
   UserBuffCollection,
   UserBuffCollectionSchema,
 } from "./schemas/user-buff-collection.schema";
+import { User, UserSchema } from "../users/schemas/user.schema";
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: BuffItem.name, schema: BuffItemSchema },
       { name: UserBuffCollection.name, schema: UserBuffCollectionSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [BuffItemCollectionsController],

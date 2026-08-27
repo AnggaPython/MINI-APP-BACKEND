@@ -1,10 +1,43 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
@@ -17,8 +50,10 @@ exports.BuffItemCollectionsService = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
+const crypto = __importStar(require("crypto"));
 const buff_item_schema_1 = require("./schemas/buff-item.schema");
 const user_buff_collection_schema_1 = require("./schemas/user-buff-collection.schema");
+const user_schema_1 = require("../users/schemas/user.schema");
 const BUFF_VALUES = {
     COMMON: [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.55, 0.60],
     MEDIUM: [1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 3.25, 3.50],
@@ -28,202 +63,202 @@ const BUFF_VALUES = {
 const BUFF_ASSIGNMENTS = {
     ATK: {
         COMMON: [
-            "artefak-romawi",
-            "artefak-inca",
-            "artefak-afrika",
-            "artefak-tartar",
-            "artefak-keltik",
-            "patung-banteng",
-            "patung-elang",
-            "patung-naga-kecil",
-            "patung-serigala",
-            "patung-beruang",
+            "roman-coin",
+            "inca-gold",
+            "iron-coin",
+            "tartar-bow",
+            "celtic-torc",
+            "bronze-bull",
+            "eagle-figure",
+            "small-dragon",
+            "wolf-figure",
+            "bear-statue",
         ],
         MEDIUM: [
-            "patung-dewa-yunani",
-            "patung-garuda-emas",
-            "patung-singa-marmer",
-            "patung-knight",
-            "patung-samurai-statue",
-            "guci-tutup-naga",
-            "guci-dinasti-ming",
-            "guci-cloisonne",
-            "cincin-firaun",
-            "bros-permata",
+            "greek-god",
+            "golden-garuda",
+            "marble-lion",
+            "knight-statue",
+            "samurai-armor",
+            "dragon-lid",
+            "ming-vase",
+            "cloisonne",
+            "pharaoh-ring",
+            "gem-brooch",
         ],
         RARE: [
-            "pedang-excalibur",
-            "keris-jawa",
-            "trident-poseidon",
-            "mjolnir",
-            "panah-artemis",
-            "pedang-bayangan",
-            "perisai-athena",
-            "pedang-samurai",
-            "keris-naga",
-            "halberd-penjaga",
+            "excalibur",
+            "javanese-keris",
+            "poseidon-trident",
+            "thors-hammer",
+            "artemis-bow",
+            "shadow-blade",
+            "aegis-shield",
+            "katana",
+            "dragon-keris",
+            "guard-halberd",
         ],
         ULTRA_RARE: [
-            "mahkota-kaisar",
-            "cincin-solomon",
-            "kalung-ra",
-            "tongkat-hermes",
-            "bola-kristal-naga",
-            "peti-naga",
-            "peti-neraka",
-            "peti-dewa",
-            "peti-multiverse",
-            "peti-emas-raja",
+            "super-emperor-crown",
+            "super-solomon-ring",
+            "super-ras-necklace",
+            "super-caduceus",
+            "super-dragon-orb",
+            "super-dragon-chest",
+            "super-hellfire-chest",
+            "super-divine-chest",
+            "super-multiverse-chest",
+            "super-kings-gold-chest",
         ],
     },
     ECONOMY: {
         COMMON: [
-            "artefak-sumeria",
-            "artefak-maya",
-            "artefak-cina-kuno",
-            "artefak-persia",
-            "artefak-babilonia",
-            "artefak-mesir-mini",
-            "artefak-aztec-mini",
-            "artefak-timur-tengah",
-            "kotak-kayu",
-            "kotak-logam",
+            "sumerian-tablet",
+            "mayan-disk",
+            "chinese-seal",
+            "persian-astro",
+            "babylon-seal",
+            "mini-scarab",
+            "mini-sun-disk",
+            "brass-lamp",
+            "wooden-box",
+            "metal-tin",
         ],
         MEDIUM: [
-            "mahkota-raja",
-            "mahkota-ratu",
-            "kalung-mutiara",
-            "gelang-perak",
-            "liontin-bulan",
-            "anting-giok",
-            "diadem-bintang",
-            "circlet-bulan",
-            "guci-jade-hijau",
-            "guci-permata",
+            "kings-crown",
+            "queens-tiara",
+            "pearl-necklace",
+            "silver-bracelet",
+            "moon-pendant",
+            "jade-earrings",
+            "star-diadem",
+            "moon-circlet",
+            "jade-vase",
+            "jeweled-vase",
         ],
         RARE: [
-            "peti-permata",
-            "peti-kristal",
-            "peti-misterius",
-            "peti-abadi",
-            "peti-langit",
-            "peta-naga",
-            "surat-naga",
-            "kitab-naga",
-            "kompas-naga",
-            "segel-naga",
+            "gem-chest",
+            "crystal-chest",
+            "mystery-chest",
+            "eternal-chest",
+            "sky-chest",
+            "dragon-map",
+            "dragon-letter",
+            "dragon-tome",
+            "dragon-compass",
+            "dragon-seal",
         ],
         ULTRA_RARE: [
-            "guci-meissen",
-            "guci-wedgwood",
-            "guci-millefiori",
-            "guci-urn-yunani",
-            "guci-kubisme",
-            "guci-dunia",
-            "patung-firaun-emas",
-            "patung-naga-jade",
-            "patung-feniks",
-            "patung-tortoise",
+            "super-meissen-porcelain",
+            "super-wedgwood-jasper",
+            "super-millefiori",
+            "super-greek-amphora",
+            "super-cubist-vase",
+            "super-globe-vase",
+            "super-golden-pharaoh",
+            "super-jade-dragon",
+            "super-phoenix-statue",
+            "super-jade-tortoise",
         ],
     },
     DURABILITY: {
         COMMON: [
-            "guci-tanah-liat",
-            "guci-keramik-biru",
-            "guci-porselen-putih",
-            "guci-tembikar-romawi",
-            "guci-batik-jawa",
-            "guci-sakura-jepang",
-            "guci-celadon",
-            "guci-majolica",
-            "guci-raku",
-            "guci-sancai",
+            "clay-pot",
+            "blue-ceramic",
+            "white-porcelain",
+            "roman-pottery",
+            "batik-vase",
+            "sakura-vase",
+            "celadon-vase",
+            "majolica-vase",
+            "raku-pottery",
+            "sancai-vase",
         ],
         MEDIUM: [
-            "guci-meissen",
-            "guci-jade-hijau",
-            "guci-cloisonne",
-            "patung-dewi-lakshmi",
-            "patung-dewa-yunani",
-            "kristal-kuarsa",
-            "batu-ruby",
-            "batu-sapphire",
-            "batu-emerald",
-            "kristal-amethyst",
+            "meissen-porcelain",
+            "jade-vase",
+            "cloisonne",
+            "goddess-lakshmi",
+            "greek-god",
+            "quartz-crystal",
+            "ruby-stone",
+            "sapphire-stone",
+            "emerald-stone",
+            "amethyst-crystal",
         ],
         RARE: [
-            "peti-permata",
-            "peti-kristal",
-            "bola-kristal-naga",
-            "kalung-ra",
-            "cincin-solomon",
-            "tongkat-hermes",
-            "mahkota-kaisar",
-            "peti-dewa",
-            "peti-abadi",
-            "peti-multiverse",
+            "gem-chest",
+            "crystal-chest",
+            "dragon-orb",
+            "ras-necklace",
+            "solomon-ring",
+            "caduceus",
+            "emperor-crown",
+            "divine-chest",
+            "eternal-chest",
+            "multiverse-chest",
         ],
         ULTRA_RARE: [
-            "guci-kubisme",
-            "guci-permata",
-            "guci-dunia",
-            "guci-millefiori",
-            "guci-urn-yunani",
-            "guci-wedgwood",
-            "patung-firaun-emas",
-            "patung-naga-jade",
-            "patung-feniks",
-            "patung-tortoise",
+            "super-cubist-vase",
+            "super-jeweled-vase",
+            "super-globe-vase",
+            "super-millefiori",
+            "super-greek-amphora",
+            "super-wedgwood-jasper",
+            "super-golden-pharaoh",
+            "super-jade-dragon",
+            "super-phoenix-statue",
+            "super-jade-tortoise",
         ],
     },
     DROPRATE: {
         COMMON: [
-            "artefak-viking",
-            "artefak-yunani",
-            "artefak-aborigin",
-            "artefak-norse",
-            "artefak-korea",
-            "artefak-india",
-            "artefak-polinesia",
-            "patung-buddha",
-            "patung-kucing-mesir",
-            "patung-merak",
+            "viking-compass",
+            "greek-figure",
+            "dream-rock",
+            "norse-rune",
+            "korean-cup",
+            "ancient-chakra",
+            "tiki-figure",
+            "small-buddha",
+            "bastet-cat",
+            "peacock-figure",
         ],
         MEDIUM: [
-            "kitab-sihir",
-            "peta-harta-karun",
-            "surat-raja",
-            "codex-kuno",
-            "scroll-buddha",
-            "manuskrip-maya",
-            "atlas-kuno",
-            "buku-ramalan",
-            "tabel-bintang",
-            "gulungan-mesir",
+            "spell-book",
+            "treasure-map",
+            "royal-decree",
+            "ancient-codex",
+            "buddhist-sutra",
+            "mayan-codex",
+            "ancient-atlas",
+            "prophecy-book",
+            "star-chart",
+            "egypt-papyrus",
         ],
         RARE: [
-            "peti-misterius",
-            "peti-langit",
-            "peta-naga",
-            "surat-naga",
-            "kitab-naga",
-            "kompas-naga",
-            "segel-naga",
-            "peti-naga",
-            "peti-neraka",
-            "peti-emas-raja",
+            "mystery-chest",
+            "sky-chest",
+            "dragon-map",
+            "dragon-letter",
+            "dragon-tome",
+            "dragon-compass",
+            "dragon-seal",
+            "dragon-chest",
+            "hellfire-chest",
+            "kings-gold-chest",
         ],
         ULTRA_RARE: [
-            "batu-topaz",
-            "batu-opal",
-            "kristal-lapis",
-            "batu-garnet",
-            "kristal-aquamarine",
-            "bros-permata",
-            "cincin-firaun",
-            "mahkota-raja",
-            "mahkota-ratu",
-            "kalung-mutiara",
+            "super-topaz-stone",
+            "super-opal-stone",
+            "super-lapis-lazuli",
+            "super-garnet-stone",
+            "super-aquamarine",
+            "super-gem-brooch",
+            "super-pharaoh-ring",
+            "super-kings-crown",
+            "super-queens-tiara",
+            "super-pearl-necklace",
         ],
     },
 };
@@ -257,36 +292,47 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
     static { BuffItemCollectionsService_1 = this; }
     buffItemModel;
     userBuffModel;
+    userModel;
     logger = new common_1.Logger(BuffItemCollectionsService_1.name);
-    constructor(buffItemModel, userBuffModel) {
+    constructor(buffItemModel, userBuffModel, userModel) {
         this.buffItemModel = buffItemModel;
         this.userBuffModel = userBuffModel;
+        this.userModel = userModel;
     }
     async onModuleInit() {
         await this.seedBuffItems();
     }
     async seedBuffItems() {
+        const legacy = await this.buffItemModel.findOne({ buffId: /^ATK-|^ECONOMY-|^DURABILITY-|^DROPRATE-/ }).lean();
+        if (legacy) {
+            this.logger.log("Clearing legacy buff items (ATK-COMMON-01 format)...");
+            await this.buffItemModel.deleteMany({});
+        }
         const count = await this.buffItemModel.countDocuments();
-        if (count >= 160) {
+        if (count >= 120) {
             this.logger.log(`Buff items already seeded (${count} found)`);
             return;
         }
-        this.logger.log("Seeding 160 buff items...");
+        this.logger.log("Seeding buff items (item-name format)...");
         const docs = [];
+        const seenItems = new Set();
         for (const buffType of ["ATK", "ECONOMY", "DURABILITY", "DROPRATE"]) {
             for (const rarity of ["COMMON", "MEDIUM", "RARE", "ULTRA_RARE"]) {
                 const itemIds = BUFF_ASSIGNMENTS[buffType][rarity];
                 const values = BUFF_VALUES[rarity];
                 const meta = BUFF_TYPE_META[buffType];
                 for (let i = 0; i < 10; i++) {
-                    const buffId = `${buffType}-${rarity}-${String(i + 1).padStart(2, "0")}`;
+                    const itemId = itemIds[i];
+                    if (seenItems.has(itemId))
+                        continue;
+                    seenItems.add(itemId);
                     const value = values[i];
                     const description = meta.unit === "percent"
                         ? `+${value}% ${meta.label}`
                         : `+${value} ${meta.label}`;
                     docs.push({
-                        buffId,
-                        collectionItemId: itemIds[i],
+                        buffId: itemId,
+                        collectionItemId: itemId,
                         buffType,
                         rarity,
                         buffValue: value,
@@ -301,7 +347,7 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
         for (const doc of docs) {
             await this.buffItemModel.updateOne({ buffId: doc.buffId }, { $set: doc }, { upsert: true });
         }
-        this.logger.log(`Seeded ${docs.length} buff items`);
+        this.logger.log(`Seeded ${docs.length} buff items (deduplicated)`);
     }
     async getAllBuffItems() {
         const items = await this.buffItemModel.find().sort({ buffType: 1, rarity: 1, buffId: 1 }).lean();
@@ -335,28 +381,56 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
         if (!collection) {
             const created = await this.userBuffModel.create({
                 telegramId,
-                ownedBuffIds: [],
-                activeBuffIds: [],
+                inventory: [],
+                activeInstanceIds: [],
             });
             collection = created.toObject();
         }
-        const ownedBuffIds = collection.ownedBuffIds || [];
-        const activeBuffIds = collection.activeBuffIds || [];
-        const ownedItems = ownedBuffIds.length > 0
+        const inventory = collection.inventory || [];
+        const activeInstanceIds = collection.activeInstanceIds || [];
+        const baseItemIds = [...new Set(inventory.map(i => i.baseItemId))];
+        const baseItems = baseItemIds.length > 0
             ? await this.buffItemModel
-                .find({ buffId: { $in: ownedBuffIds } })
+                .find({ buffId: { $in: baseItemIds } })
                 .lean()
             : [];
-        const activeItems = activeBuffIds.length > 0
-            ? await this.buffItemModel
-                .find({ buffId: { $in: activeBuffIds } })
-                .lean()
-            : [];
+        const baseItemMap = new Map(baseItems.map(item => [item.buffId, item]));
+        const ownedItems = inventory.map(inst => {
+            const itemData = baseItemMap.get(inst.baseItemId);
+            return {
+                instanceId: inst.instanceId,
+                baseItemId: inst.baseItemId,
+                acquiredAt: inst.acquiredAt,
+                buffType: itemData?.buffType,
+                rarity: itemData?.rarity,
+                buffValue: itemData?.buffValue,
+                buffUnit: itemData?.buffUnit,
+                name: itemData?.name,
+                description: itemData?.description,
+                icon: itemData?.icon,
+            };
+        });
+        const activeInstances = inventory.filter(inst => activeInstanceIds.includes(inst.instanceId));
+        const activeItems = activeInstances.map(inst => {
+            const itemData = baseItemMap.get(inst.baseItemId);
+            return {
+                instanceId: inst.instanceId,
+                baseItemId: inst.baseItemId,
+                acquiredAt: inst.acquiredAt,
+                buffType: itemData?.buffType,
+                rarity: itemData?.rarity,
+                buffValue: itemData?.buffValue,
+                buffUnit: itemData?.buffUnit,
+                name: itemData?.name,
+                description: itemData?.description,
+                icon: itemData?.icon,
+            };
+        });
         const totals = this.calculateBuffTotals(activeItems);
         return {
             success: true,
-            ownedBuffIds,
-            activeBuffIds,
+            inventory,
+            activeInstanceIds,
             ownedItems,
             activeItems,
             totals,
@@ -364,89 +438,98 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
     }
     async grantBuffItem(telegramId, buffId) {
         const buffItem = await this.buffItemModel.findOne({ buffId }).lean();
-        if (!buffItem) {
+        if (!buffItem)
             return { success: false, error: "Buff item not found" };
-        }
-        await this.userBuffModel.updateOne({ telegramId }, { $addToSet: { ownedBuffIds: buffId } }, { upsert: true });
+        const instanceId = crypto.randomUUID();
+        const newInstance = { instanceId, baseItemId: buffId, acquiredAt: new Date() };
+        await this.userBuffModel.updateOne({ telegramId }, { $push: { inventory: newInstance } }, { upsert: true });
+        await this.userModel.updateOne({ telegramId }, { $inc: { [`cryptoBalances.${buffId}`]: 1 } }).exec();
         return {
             success: true,
             buffItem,
+            instanceId,
             message: `Granted "${buffItem.name}" (${buffItem.description})`,
         };
     }
-    async activateBuff(telegramId, buffId) {
+    async removeBuffItem(telegramId, buffId, count = 1) {
         const collection = await this.userBuffModel.findOne({ telegramId });
-        if (!collection) {
-            return { success: false, error: "User collection not found" };
-        }
-        if (!collection.ownedBuffIds.includes(buffId)) {
-            return { success: false, error: "You do not own this buff item" };
-        }
-        if (collection.activeBuffIds.includes(buffId)) {
-            return { success: false, error: "Buff is already active" };
-        }
-        collection.activeBuffIds.push(buffId);
+        if (!collection)
+            return 0;
+        const removableInstances = collection.inventory.filter(i => i.baseItemId === buffId && !collection.activeInstanceIds.includes(i.instanceId));
+        const toRemove = removableInstances.slice(0, count);
+        if (toRemove.length === 0)
+            return 0;
+        const instanceIdsToRemove = new Set(toRemove.map(i => i.instanceId));
+        collection.inventory = collection.inventory.filter(i => !instanceIdsToRemove.has(i.instanceId));
         await collection.save();
-        return { success: true, activeBuffIds: collection.activeBuffIds };
+        return toRemove.length;
     }
-    async deactivateBuff(telegramId, buffId) {
+    async activateBuff(telegramId, instanceId) {
         const collection = await this.userBuffModel.findOne({ telegramId });
-        if (!collection) {
+        if (!collection)
             return { success: false, error: "User collection not found" };
+        const hasInstance = collection.inventory.some(i => i.instanceId === instanceId);
+        if (!hasInstance)
+            return { success: false, error: "You do not own this instance" };
+        if (collection.activeInstanceIds.includes(instanceId)) {
+            return { success: false, error: "Instance is already active" };
         }
-        if (!collection.activeBuffIds.includes(buffId)) {
-            return { success: false, error: "Buff is not active" };
-        }
-        collection.activeBuffIds = collection.activeBuffIds.filter((id) => id !== buffId);
+        collection.activeInstanceIds.push(instanceId);
         await collection.save();
-        return { success: true, activeBuffIds: collection.activeBuffIds };
+        return { success: true, activeInstanceIds: collection.activeInstanceIds };
+    }
+    async deactivateBuff(telegramId, instanceId) {
+        const collection = await this.userBuffModel.findOne({ telegramId });
+        if (!collection)
+            return { success: false, error: "User collection not found" };
+        if (!collection.activeInstanceIds.includes(instanceId)) {
+            return { success: false, error: "Instance is not active" };
+        }
+        collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== instanceId);
+        await collection.save();
+        return { success: true, activeInstanceIds: collection.activeInstanceIds };
     }
     async activateAllByType(telegramId, buffType) {
         const collection = await this.userBuffModel.findOne({ telegramId });
-        if (!collection) {
+        if (!collection)
             return { success: false, error: "User collection not found" };
-        }
-        const items = await this.buffItemModel
-            .find({ buffType, buffId: { $in: collection.ownedBuffIds } })
-            .lean();
-        const toActivate = items
-            .map((i) => i.buffId)
-            .filter((id) => !collection.activeBuffIds.includes(id));
+        const items = await this.buffItemModel.find({ buffType }).lean();
+        const typeBaseIds = new Set(items.map(i => i.buffId));
+        const instancesOfType = collection.inventory.filter(i => typeBaseIds.has(i.baseItemId));
+        const toActivate = instancesOfType
+            .map(i => i.instanceId)
+            .filter(id => !collection.activeInstanceIds.includes(id));
         if (toActivate.length === 0) {
-            return { success: true, activated: 0, activeBuffIds: collection.activeBuffIds };
+            return { success: true, activated: 0, activeInstanceIds: collection.activeInstanceIds };
         }
-        collection.activeBuffIds.push(...toActivate);
+        collection.activeInstanceIds.push(...toActivate);
         await collection.save();
-        return {
-            success: true,
-            activated: toActivate.length,
-            activeBuffIds: collection.activeBuffIds,
-        };
+        return { success: true, activated: toActivate.length, activeInstanceIds: collection.activeInstanceIds };
     }
     calculateBuffTotals(activeItems) {
         const totals = {
-            ATK: 0,
-            ECONOMY: 0,
-            DURABILITY: 0,
-            DROPRATE: 0,
+            ATK: 0, ECONOMY: 0, DURABILITY: 0, DROPRATE: 0,
         };
-        for (const item of activeItems) {
+        for (const item of activeItems)
             totals[item.buffType] += item.buffValue;
-        }
         return totals;
     }
     async getUserBuffTotals(telegramId) {
         const collection = await this.userBuffModel.findOne({ telegramId }).lean();
-        if (!collection || collection.activeBuffIds.length === 0) {
+        if (!collection || !collection.activeInstanceIds || collection.activeInstanceIds.length === 0) {
             return {
                 success: true,
                 totals: { ATK: 0, ECONOMY: 0, DURABILITY: 0, DROPRATE: 0 },
             };
         }
+        const inventory = collection.inventory || [];
+        const activeInstances = inventory.filter(inst => collection.activeInstanceIds.includes(inst.instanceId));
+        const activeBaseItemIds = activeInstances.map(inst => inst.baseItemId);
         const activeItems = await this.buffItemModel
-            .find({ buffId: { $in: collection.activeBuffIds } })
+            .find({ buffId: { $in: activeBaseItemIds } })
             .lean();
-        const totals = this.calculateBuffTotals(activeItems);
+        const calculatedItems = activeInstances.map(inst => activeItems.find(item => item.buffId === inst.baseItemId)).filter(Boolean);
+        const totals = this.calculateBuffTotals(calculatedItems);
         return { success: true, totals };
     }
     static BUFF_RARITY_WEIGHTS = {
@@ -478,7 +561,7 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
             }
         }
         const collection = await this.userBuffModel.findOne({ telegramId }).lean();
-        const ownedIds = collection?.ownedBuffIds || [];
+        const ownedIds = collection?.inventory?.map(i => i.baseItemId) || [];
         const available = await this.buffItemModel
             .find({
             rarity: selectedRarity,
@@ -511,7 +594,9 @@ exports.BuffItemCollectionsService = BuffItemCollectionsService = BuffItemCollec
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(buff_item_schema_1.BuffItem.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_buff_collection_schema_1.UserBuffCollection.name)),
+    __param(2, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
         mongoose_2.Model])
 ], BuffItemCollectionsService);
 //# sourceMappingURL=buff-item-collections.service.js.map

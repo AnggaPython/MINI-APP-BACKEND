@@ -3,7 +3,13 @@ export declare class TradeSpotController {
     private readonly tradeSpotService;
     constructor(tradeSpotService: TradeSpotService);
     ticker(pair?: string): Promise<any>;
-    orderbook(depth?: string, pair?: string): Promise<any>;
+    tickers(body: {
+        pairs?: string[];
+    }): Promise<{
+        success: boolean;
+        tickers: any[];
+    }>;
+    orderbook(telegramId: string, depth?: string, pair?: string): Promise<any>;
     trades(limit?: string, pair?: string): Promise<any>;
     stats(pair?: string): Promise<{
         success: boolean;
@@ -66,6 +72,18 @@ export declare class TradeSpotController {
         success: boolean;
         error: string;
     }>;
+    maxTradeable(telegramId: string, pair?: string, side?: string): Promise<{
+        success: boolean;
+        maxBase: number;
+        maxQuote: number;
+        price: number;
+        base: string;
+        quote: string;
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
     openOrders(telegramId: string, pair?: string): Promise<{
         success: boolean;
         orders: any;
@@ -90,24 +108,48 @@ export declare class TradeSpotController {
         amount?: number;
         price?: number;
     }): Promise<{
+        message: string;
+        autoGranted?: number | undefined;
         success: boolean;
+        resting: boolean;
         trade: {
             id: string;
-            side: "BUY" | "SELL";
+            side: "BUY";
             price: number;
             amount: number;
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             baseBalance: number;
             quoteBalance: number;
-            elixcoin: number;
             elixir: number;
+            elixcoin: number;
         };
-        message: string | undefined;
+        error?: undefined;
+    } | {
+        message: string;
+        buffRemoved?: number | undefined;
+        success: boolean;
+        resting: boolean;
+        trade: {
+            id: string;
+            side: "SELL";
+            price: number;
+            amount: number;
+            total: number;
+            fee: number;
+            feeCurrency: string;
+            source: "BOT" | "USER";
+        };
+        balances: {
+            baseBalance: number;
+            quoteBalance: number;
+            elixir: number;
+            elixcoin: number;
+        };
         error?: undefined;
     } | {
         success: boolean;

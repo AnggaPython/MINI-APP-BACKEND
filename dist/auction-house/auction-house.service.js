@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 var AuctionHouseService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuctionHouseService = exports.LISTING_DURATION_MS = exports.COLLATERAL_DEPOSIT = exports.MIN_PRICE_TABLE = void 0;
+const material_tools_1 = require("../constants/material-tools");
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
@@ -49,70 +50,92 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         this.userBuffModel = userBuffModel;
         this.usersService = usersService;
     }
-    async createListing(telegramId, buffId, price) {
+    async createListing(telegramId, price, itemCategory, instanceId, baseItemId, amount = 1) {
         if (!price || price <= 0 || !isFinite(price)) {
             return { success: false, error: "Invalid price" };
         }
-        const buffItem = await this.buffItemModel.findOne({ buffId }).lean();
-        if (!buffItem) {
-            return { success: false, error: "Buff item not found" };
+        let buffType = "MATERIAL";
+        let rarity = "COMMON";
+        let actualBaseItemId = baseItemId;
+        if (itemCategory === "buff") {
+            if (!instanceId)
+                return { success: false, error: "Missing instanceId for buff" };
+            const collection = await this.userBuffModel.findOne({ telegramId });
+            if (!collection || !collection.inventory) {
+                return { success: false, error: "No buff collection found" };
+            }
+            const ownedIndex = collection.inventory.findIndex(i => i.instanceId === instanceId);
+            if (ownedIndex === -1) {
+                return { success: false, error: "You do not own this item instance" };
+            }
+            actualBaseItemId = collection.inventory[ownedIndex].baseItemId;
+            const buffItem = await this.buffItemModel.findOne({ buffId: actualBaseItemId }).lean();
+            if (!buffItem)
+                return { success: false, error: "Buff item not found" };
+            const minPrice = MIN_PRICE_TABLE[buffItem.buffType][buffItem.rarity];
+            if (price < minPrice) {
+                return { success: false, error: `Minimum listing price is ${minPrice.toLocaleString()} ELIXCOIN` };
+            }
+            buffType = buffItem.buffType;
+            rarity = buffItem.rarity;
+            const existingListing = await this.auctionModel.findOne({ sellerId: telegramId, instanceId, status: "active" });
+            if (existingListing)
+                return { success: false, error: "This item instance is already listed" };
         }
-        const minPrice = MIN_PRICE_TABLE[buffItem.buffType][buffItem.rarity];
-        if (price < minPrice) {
-            return {
-                success: false,
-                error: `Minimum listing price for ${buffItem.rarity} ${buffItem.buffType} is ${minPrice.toLocaleString()} ELIXCOIN`,
-            };
-        }
-        const collection = await this.userBuffModel.findOne({ telegramId });
-        if (!collection) {
-            return { success: false, error: "No buff collection found" };
-        }
-        const ownedIndex = collection.ownedBuffIds.indexOf(buffId);
-        if (ownedIndex === -1) {
-            return { success: false, error: "You do not own this item" };
-        }
-        const existingListing = await this.auctionModel.findOne({
-            sellerId: telegramId,
-            buffId,
-            status: "active",
-        });
-        if (existingListing) {
-            return { success: false, error: "This item is already listed for sale" };
+        else if (itemCategory === "material") {
+            if (!baseItemId)
+                return { success: false, error: "Missing baseItemId (Material Name)" };
+            actualBaseItemId = baseItemId;
+            const user = await this.userModel.findOne({ telegramId });
+            if (!user)
+                return { success: false, error: "User not found" };
+            const currentAmount = user.materials?.[baseItemId] || 0;
+            if (currentAmount < amount) {
+                return { success: false, error: `Insufficient ${baseItemId}. Setup requires ${amount} but you have ${currentAmount}.` };
+            }
+            rarity = material_tools_1.MATERIAL_TOOLS_RARITY_MAP[baseItemId] || "COMMON";
+            buffType = "MATERIAL";
         }
         const user = await this.userModel.findOne({ telegramId });
-        if (!user) {
+        if (!user)
             return { success: false, error: "User not found" };
-        }
         const balance = user.cryptoBalances?.["ELIXCOIN"] || 0;
         if (balance < COLLATERAL_DEPOSIT) {
             return {
                 success: false,
-                error: `Insufficient ELIXCOIN for collateral deposit. You need ${COLLATERAL_DEPOSIT.toLocaleString()} ELIXCOIN but have ${balance.toFixed(2)}`,
+                error: `Insufficient ELIXCOIN for collateral deposit. You need ${COLLATERAL_DEPOSIT.toLocaleString()} ELIXCOIN`,
             };
         }
         const tax = Math.round(price * PLATFORM_TAX_RATE * 100) / 100;
         const netAmount = Math.round((price - tax) * 100) / 100;
         const sellerName = user.firstName || user.username || "Unknown";
-        const depositResult = await this.userModel.findOneAndUpdate({
-            telegramId,
-            "cryptoBalances.ELIXCOIN": { $gte: COLLATERAL_DEPOSIT },
-        }, {
-            $inc: { "cryptoBalances.ELIXCOIN": -COLLATERAL_DEPOSIT },
-        }, { returnDocument: "after" }).exec();
+        const depositResult = await this.userModel.findOneAndUpdate({ telegramId, "cryptoBalances.ELIXCOIN": { $gte: COLLATERAL_DEPOSIT } }, { $inc: { "cryptoBalances.ELIXCOIN": -COLLATERAL_DEPOSIT } }, { returnDocument: "after" }).exec();
         if (!depositResult) {
             return { success: false, error: "Insufficient ELIXCOIN for collateral deposit" };
         }
-        collection.ownedBuffIds.splice(ownedIndex, 1);
-        collection.activeBuffIds = collection.activeBuffIds.filter((id) => id !== buffId);
-        await collection.save();
+        if (itemCategory === "buff") {
+            const collection = await this.userBuffModel.findOne({ telegramId });
+            if (collection) {
+                const ownedIndex = collection.inventory.findIndex(i => i.instanceId === instanceId);
+                if (ownedIndex !== -1)
+                    collection.inventory.splice(ownedIndex, 1);
+                collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== instanceId);
+                await collection.save();
+            }
+        }
+        else if (itemCategory === "material") {
+            await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { [`materials.${actualBaseItemId}`]: -amount } }).exec();
+        }
         const now = Date.now();
         const auction = await this.auctionModel.create({
             sellerId: telegramId,
             sellerName,
-            buffId,
-            buffType: buffItem.buffType,
-            rarity: buffItem.rarity,
+            itemCategory,
+            instanceId,
+            baseItemId: actualBaseItemId,
+            amount,
+            buffType,
+            rarity,
             price,
             tax,
             netAmount,
@@ -128,16 +151,17 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             listingDurationDays: 7,
             auction: {
                 id: auction._id.toString(),
-                buffId,
-                buffType: buffItem.buffType,
-                rarity: buffItem.rarity,
+                itemCategory,
+                instanceId,
+                baseItemId: actualBaseItemId,
+                amount,
+                buffType,
+                rarity,
                 price,
                 tax,
                 netAmount,
                 sellerName,
                 listedAt: auction.listedAt,
-                expiresAt: auction.expiresAt,
-                collateralDeposit: COLLATERAL_DEPOSIT,
             },
         };
     }
@@ -146,9 +170,8 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             _id: auctionId,
             status: "active",
         });
-        if (!listing) {
+        if (!listing)
             return { success: false, error: "Listing not found or already sold" };
-        }
         if (listing.expiresAt && new Date() > listing.expiresAt) {
             return { success: false, error: "This listing has expired" };
         }
@@ -156,9 +179,8 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             return { success: false, error: "Cannot buy your own listing" };
         }
         const buyer = await this.userModel.findOne({ telegramId });
-        if (!buyer) {
+        if (!buyer)
             return { success: false, error: "User not found" };
-        }
         const buyerBalance = buyer.cryptoBalances?.["ELIXCOIN"] || 0;
         if (buyerBalance < listing.price) {
             return {
@@ -166,18 +188,22 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
                 error: `Insufficient ELIXCOIN. You need ${listing.price.toLocaleString()} but have ${buyerBalance.toFixed(2)}`,
             };
         }
-        const buyerUpdate = await this.userModel.findOneAndUpdate({
-            telegramId,
-            "cryptoBalances.ELIXCOIN": { $gte: listing.price },
-        }, {
-            $inc: { "cryptoBalances.ELIXCOIN": -listing.price },
-        }, { returnDocument: "after" }).exec();
-        if (!buyerUpdate) {
+        const buyerUpdate = await this.userModel.findOneAndUpdate({ telegramId, "cryptoBalances.ELIXCOIN": { $gte: listing.price } }, { $inc: { "cryptoBalances.ELIXCOIN": -listing.price } }, { returnDocument: "after" }).exec();
+        if (!buyerUpdate)
             return { success: false, error: "Insufficient ELIXCOIN balance" };
-        }
         const sellerPayout = listing.netAmount + listing.collateralDeposit;
         await this.userModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $inc: { "cryptoBalances.ELIXCOIN": sellerPayout } }).exec();
-        await this.userBuffModel.findOneAndUpdate({ telegramId }, { $addToSet: { ownedBuffIds: listing.buffId } }, { upsert: true }).exec();
+        if (listing.itemCategory === "buff") {
+            const transferredInstance = {
+                instanceId: listing.instanceId,
+                baseItemId: listing.baseItemId,
+                acquiredAt: new Date(),
+            };
+            await this.userBuffModel.findOneAndUpdate({ telegramId }, { $push: { inventory: transferredInstance } }, { upsert: true }).exec();
+        }
+        else if (listing.itemCategory === "material") {
+            await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } }).exec();
+        }
         listing.status = "sold";
         listing.buyerId = telegramId;
         listing.resolvedAt = new Date();
@@ -186,7 +212,8 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         return {
             success: true,
             purchased: {
-                buffId: listing.buffId,
+                instanceId: listing.instanceId,
+                baseItemId: listing.baseItemId,
                 buffType: listing.buffType,
                 rarity: listing.rarity,
                 price: listing.price,
@@ -201,10 +228,19 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             sellerId: telegramId,
             status: "active",
         });
-        if (!listing) {
+        if (!listing)
             return { success: false, error: "Listing not found or not yours" };
+        if (listing.itemCategory === "buff") {
+            const instanceToReturn = {
+                instanceId: listing.instanceId,
+                baseItemId: listing.baseItemId,
+                acquiredAt: new Date(),
+            };
+            await this.userBuffModel.findOneAndUpdate({ telegramId }, { $push: { inventory: instanceToReturn } }, { upsert: true }).exec();
         }
-        await this.userBuffModel.findOneAndUpdate({ telegramId }, { $addToSet: { ownedBuffIds: listing.buffId } }, { upsert: true }).exec();
+        else if (listing.itemCategory === "material") {
+            await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } }).exec();
+        }
         const returnedDeposit = Math.round(listing.collateralDeposit * COLLATERAL_PENALTY_RATE);
         const penalty = listing.collateralDeposit - returnedDeposit;
         if (returnedDeposit > 0) {
@@ -216,7 +252,7 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         await listing.save();
         return {
             success: true,
-            buffId: listing.buffId,
+            instanceId: listing.instanceId,
             collateralDeposit: listing.collateralDeposit,
             penalty,
             returnedDeposit,
@@ -231,7 +267,17 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             return 0;
         let count = 0;
         for (const listing of expired) {
-            await this.userBuffModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $addToSet: { ownedBuffIds: listing.buffId } }, { upsert: true }).exec();
+            if (listing.itemCategory === "buff") {
+                const instanceToReturn = {
+                    instanceId: listing.instanceId,
+                    baseItemId: listing.baseItemId,
+                    acquiredAt: new Date(),
+                };
+                await this.userBuffModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $push: { inventory: instanceToReturn } }, { upsert: true }).exec();
+            }
+            else if (listing.itemCategory === "material") {
+                await this.userModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } }).exec();
+            }
             if (listing.collateralDeposit > 0 && !listing.collateralReturned) {
                 await this.userModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $inc: { "cryptoBalances.ELIXCOIN": listing.collateralDeposit } }).exec();
             }
@@ -259,9 +305,9 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             const matchingBuffItems = await this.buffItemModel
                 .find({ $or: [{ name: regex }, { buffId: regex }] })
                 .lean();
-            const matchingBuffIds = matchingBuffItems.map((b) => b.buffId);
-            if (matchingBuffIds.length > 0) {
-                filter.buffId = { $in: matchingBuffIds };
+            const matchingBaseIds = matchingBuffItems.map((b) => b.buffId);
+            if (matchingBaseIds.length > 0) {
+                filter.baseItemId = { $in: matchingBaseIds };
             }
             else {
                 return { success: true, listings: [], total: 0, page, totalPages: 0 };
@@ -270,46 +316,53 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         let sortObj = { listedAt: -1 };
         switch (sort) {
             case "price_asc":
-                sortObj = { price: 1 };
+                sortObj = { floorPrice: 1 };
                 break;
             case "price_desc":
-                sortObj = { price: -1 };
+                sortObj = { floorPrice: -1 };
                 break;
             case "oldest":
                 sortObj = { listedAt: 1 };
                 break;
             default: sortObj = { listedAt: -1 };
         }
-        const total = await this.auctionModel.countDocuments(filter);
-        const totalPages = Math.ceil(total / limit);
         const skip = (page - 1) * limit;
-        const listings = await this.auctionModel
-            .find(filter)
-            .sort(sortObj)
-            .skip(skip)
-            .limit(limit)
-            .lean();
-        const buffIds = [...new Set(listings.map((l) => l.buffId))];
+        const pipeline = [{ $match: filter }];
+        pipeline.push({
+            $group: {
+                _id: "$baseItemId",
+                floorPrice: { $min: "$price" },
+                volume: { $sum: 1 },
+                buffType: { $first: "$buffType" },
+                rarity: { $first: "$rarity" },
+                listedAt: { $max: "$listedAt" },
+            },
+        });
+        pipeline.push({ $sort: sortObj });
+        pipeline.push({
+            $facet: {
+                metadata: [{ $count: "total" }],
+                data: [{ $skip: skip }, { $limit: limit }],
+            },
+        });
+        const result = await this.auctionModel.aggregate(pipeline);
+        const data = result[0]?.data || [];
+        const total = result[0]?.metadata[0]?.total || 0;
+        const totalPages = Math.ceil(total / limit);
+        const baseItemIds = data.map((d) => d._id);
         const buffItems = await this.buffItemModel
-            .find({ buffId: { $in: buffIds } })
+            .find({ buffId: { $in: baseItemIds } })
             .lean();
         const buffMap = new Map(buffItems.map((b) => [b.buffId, b]));
-        const enriched = listings.map((l) => {
-            const buff = buffMap.get(l.buffId);
+        const enriched = data.map((d) => {
+            const buff = buffMap.get(d._id);
             return {
-                id: l._id.toString(),
-                buffId: l.buffId,
-                buffType: l.buffType,
-                rarity: l.rarity,
-                price: l.price,
-                tax: l.tax,
-                netAmount: l.netAmount,
-                sellerId: l.sellerId,
-                sellerName: l.sellerName,
-                listedAt: l.listedAt,
-                expiresAt: l.expiresAt,
-                collateralDeposit: l.collateralDeposit,
-                name: buff?.name || l.buffId,
+                baseItemId: d._id,
+                buffType: d.buffType,
+                rarity: d.rarity,
+                floorPrice: d.floorPrice,
+                volume: d.volume,
+                name: buff?.name || d._id,
                 description: buff?.description || "",
                 icon: buff?.icon || "📦",
                 buffValue: buff?.buffValue || 0,
@@ -324,6 +377,31 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             totalPages,
         };
     }
+    async browseItemListings(baseItemId) {
+        await this.expireOldListings();
+        const listings = await this.auctionModel
+            .find({ baseItemId, status: "active" })
+            .sort({ price: 1 })
+            .lean();
+        const buffItem = await this.buffItemModel.findOne({ buffId: baseItemId }).lean();
+        const enriched = listings.map((l) => ({
+            id: l._id.toString(),
+            instanceId: l.instanceId,
+            baseItemId: l.baseItemId,
+            sellerId: l.sellerId,
+            sellerName: l.sellerName,
+            price: l.price,
+            tax: l.tax,
+            netAmount: l.netAmount,
+            listedAt: l.listedAt,
+            expiresAt: l.expiresAt,
+        }));
+        return {
+            success: true,
+            buffItem,
+            listings: enriched,
+        };
+    }
     async myListings(telegramId) {
         await this.expireOldListings();
         const listings = await this.auctionModel
@@ -331,18 +409,19 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             .sort({ listedAt: -1 })
             .limit(100)
             .lean();
-        const buffIds = [...new Set(listings.map((l) => l.buffId))];
+        const baseItemIds = [...new Set(listings.map((l) => l.baseItemId))];
         const buffItems = await this.buffItemModel
-            .find({ buffId: { $in: buffIds } })
+            .find({ buffId: { $in: baseItemIds } })
             .lean();
         const buffMap = new Map(buffItems.map((b) => [b.buffId, b]));
         return {
             success: true,
             listings: listings.map((l) => {
-                const buff = buffMap.get(l.buffId);
+                const buff = buffMap.get(l.baseItemId);
                 return {
                     id: l._id.toString(),
-                    buffId: l.buffId,
+                    instanceId: l.instanceId,
+                    baseItemId: l.baseItemId,
                     buffType: l.buffType,
                     rarity: l.rarity,
                     price: l.price,
@@ -356,7 +435,7 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
                     resolvedAt: l.resolvedAt || null,
                     collateralDeposit: l.collateralDeposit,
                     collateralReturned: l.collateralReturned || false,
-                    name: buff?.name || l.buffId,
+                    name: buff?.name || l.baseItemId,
                     description: buff?.description || "",
                     icon: buff?.icon || "📦",
                     buffValue: buff?.buffValue || 0,

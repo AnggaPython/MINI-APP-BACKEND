@@ -165,13 +165,45 @@ let AdminController = class AdminController {
     async updateTradeSpotBot(body) {
         return this.tradeSpotService.updateBotConfig(body || {});
     }
-    async runTradeSpotBotNow() {
-        const res = await this.marketMakerService.runNow();
-        const status = await this.tradeSpotService.getBotStatus();
+    async runTradeSpotBotNow(body) {
+        const pair = body?.pair || 'ELIXCOIN/ELIXIR';
+        const res = await this.marketMakerService.runNow(pair);
+        const status = await this.tradeSpotService.getBotStatus(pair);
         return {
             ...status,
             runNow: res,
         };
+    }
+    async getBotSchedules() {
+        return { success: true, schedules: this.marketMakerService.getSchedules() };
+    }
+    async getAllPools() {
+        const pools = await this.tradeSpotService.getAllPools();
+        return { success: true, pools };
+    }
+    async setPriceControl(body) {
+        if (!body.pair || !body.bidFloor || !body.askCeiling) {
+            return { success: false, error: "Missing pair, bidFloor, or askCeiling" };
+        }
+        if (body.bidFloor >= body.askCeiling) {
+            return { success: false, error: "bidFloor must be less than askCeiling" };
+        }
+        return this.tradeSpotService.setAdminPriceControl(body.pair, body.bidFloor, body.askCeiling);
+    }
+    async clearPriceControl(body) {
+        if (!body.pair)
+            return { success: false, error: "Missing pair" };
+        return this.tradeSpotService.clearAdminPriceControl(body.pair);
+    }
+    async setWalls(body) {
+        if (!body.pair)
+            return { success: false, error: "Missing pair" };
+        return this.tradeSpotService.setAdminWalls(body.pair, body.sellWalls, body.buyWalls);
+    }
+    async clearWalls(body) {
+        if (!body.pair)
+            return { success: false, error: "Missing pair" };
+        return this.tradeSpotService.clearAdminWalls(body.pair);
     }
 };
 exports.AdminController = AdminController;
@@ -295,10 +327,51 @@ __decorate([
 ], AdminController.prototype, "updateTradeSpotBot", null);
 __decorate([
     (0, common_1.Post)("trade-spot/bot/run-now"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "runTradeSpotBotNow", null);
+__decorate([
+    (0, common_1.Get)("trade-spot/bot/schedules"),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
-], AdminController.prototype, "runTradeSpotBotNow", null);
+], AdminController.prototype, "getBotSchedules", null);
+__decorate([
+    (0, common_1.Get)("trade-spot/pools"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "getAllPools", null);
+__decorate([
+    (0, common_1.Post)("trade-spot/price-control"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "setPriceControl", null);
+__decorate([
+    (0, common_1.Post)("trade-spot/price-control/clear"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "clearPriceControl", null);
+__decorate([
+    (0, common_1.Post)("trade-spot/walls"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "setWalls", null);
+__decorate([
+    (0, common_1.Post)("trade-spot/walls/clear"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "clearWalls", null);
 exports.AdminController = AdminController = __decorate([
     (0, common_1.Controller)("admin"),
     (0, common_1.UseGuards)(admin_guard_1.AdminAuthGuard),

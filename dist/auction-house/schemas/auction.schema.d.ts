@@ -4,7 +4,10 @@ export type AuctionStatus = "active" | "sold" | "cancelled";
 export declare class Auction {
     sellerId: string;
     sellerName: string;
-    buffId: string;
+    itemCategory: string;
+    instanceId?: string;
+    baseItemId: string;
+    amount: number;
     buffType: string;
     rarity: string;
     price: number;
@@ -45,7 +48,34 @@ export declare const AuctionSchema: import("mongoose").Schema<Auction, import("m
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
-    buffId?: import("mongoose").SchemaDefinitionProperty<string, Auction, Document<unknown, {}, Auction, {
+    itemCategory?: import("mongoose").SchemaDefinitionProperty<string, Auction, Document<unknown, {}, Auction, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    instanceId?: import("mongoose").SchemaDefinitionProperty<string | undefined, Auction, Document<unknown, {}, Auction, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    baseItemId?: import("mongoose").SchemaDefinitionProperty<string, Auction, Document<unknown, {}, Auction, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    amount?: import("mongoose").SchemaDefinitionProperty<number, Auction, Document<unknown, {}, Auction, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
         _id: import("mongoose").Types.ObjectId;

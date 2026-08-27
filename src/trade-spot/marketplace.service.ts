@@ -130,8 +130,8 @@ const BUFF_ASSIGNMENTS: Record<string, Record<string, string[]>> = {
       "shadow-blade", "aegis-shield", "katana", "dragon-keris", "guard-halberd",
     ],
     ULTRA_RARE: [
-      "emperor-crown", "solomon-ring", "ras-necklace", "caduceus", "dragon-orb",
-      "dragon-chest", "hellfire-chest", "divine-chest", "multiverse-chest", "kings-gold-chest",
+      "super-emperor-crown", "super-solomon-ring", "super-ras-necklace", "super-caduceus", "super-dragon-orb",
+      "super-dragon-chest", "super-hellfire-chest", "super-divine-chest", "super-multiverse-chest", "super-kings-gold-chest",
     ],
   },
   ECONOMY: {
@@ -148,8 +148,8 @@ const BUFF_ASSIGNMENTS: Record<string, Record<string, string[]>> = {
       "dragon-map", "dragon-letter", "dragon-tome", "dragon-compass", "dragon-seal",
     ],
     ULTRA_RARE: [
-      "meissen-porcelain", "wedgwood-jasper", "millefiori", "greek-amphora", "cubist-vase",
-      "globe-vase", "golden-pharaoh", "jade-dragon", "phoenix-statue", "jade-tortoise",
+      "super-meissen-porcelain", "super-wedgwood-jasper", "super-millefiori", "super-greek-amphora", "super-cubist-vase",
+      "super-globe-vase", "super-golden-pharaoh", "super-jade-dragon", "super-phoenix-statue", "super-jade-tortoise",
     ],
   },
   DURABILITY: {
@@ -166,8 +166,8 @@ const BUFF_ASSIGNMENTS: Record<string, Record<string, string[]>> = {
       "caduceus", "emperor-crown", "divine-chest", "eternal-chest", "multiverse-chest",
     ],
     ULTRA_RARE: [
-      "cubist-vase", "jeweled-vase", "globe-vase", "millefiori", "greek-amphora",
-      "wedgwood-jasper", "golden-pharaoh", "jade-dragon", "phoenix-statue", "jade-tortoise",
+      "super-cubist-vase", "super-jeweled-vase", "super-globe-vase", "super-millefiori", "super-greek-amphora",
+      "super-wedgwood-jasper", "super-golden-pharaoh", "super-jade-dragon", "super-phoenix-statue", "super-jade-tortoise",
     ],
   },
   DROPRATE: {
@@ -184,8 +184,8 @@ const BUFF_ASSIGNMENTS: Record<string, Record<string, string[]>> = {
       "dragon-compass", "dragon-seal", "dragon-chest", "hellfire-chest", "kings-gold-chest",
     ],
     ULTRA_RARE: [
-      "topaz-stone", "opal-stone", "lapis-lazuli", "garnet-stone", "aquamarine",
-      "gem-brooch", "pharaoh-ring", "kings-crown", "queens-tiara", "pearl-necklace",
+      "super-topaz-stone", "super-opal-stone", "super-lapis-lazuli", "super-garnet-stone", "super-aquamarine",
+      "super-gem-brooch", "super-pharaoh-ring", "super-kings-crown", "super-queens-tiara", "super-pearl-necklace",
     ],
   },
 };
@@ -265,6 +265,24 @@ const COLLECTION_ITEM_NAMES: Record<string, string> = {
   "dragon-chest": "Dragon Chest", "mystery-chest": "Mystery Chest", "divine-chest": "Divine Chest",
   "eternal-chest": "Eternal Chest", "sky-chest": "Sky Chest", "hellfire-chest": "Hellfire Chest",
   "multiverse-chest": "Multiverse Chest",
+  // SUPER (ULTRA_RARE renames)
+  "super-emperor-crown": "Super Emperor's Crown", "super-solomon-ring": "Super Solomon's Ring",
+  "super-ras-necklace": "Super Ra's Necklace", "super-caduceus": "Super Caduceus",
+  "super-dragon-orb": "Super Dragon Orb", "super-dragon-chest": "Super Dragon Chest",
+  "super-hellfire-chest": "Super Hellfire Chest", "super-divine-chest": "Super Divine Chest",
+  "super-multiverse-chest": "Super Multiverse Chest", "super-kings-gold-chest": "Super King's Gold Chest",
+  "super-meissen-porcelain": "Super Meissen Porcelain",
+  "super-gem-brooch": "Super Gem Brooch", "super-pharaoh-ring": "Super Pharaoh's Ring",
+  "super-kings-crown": "Super King's Crown", "super-queens-tiara": "Super Queen's Tiara",
+  "super-pearl-necklace": "Super Pearl Necklace",
+  "super-wedgwood-jasper": "Super Wedgwood Jasper", "super-millefiori": "Super Millefiori",
+  "super-greek-amphora": "Super Greek Amphora", "super-cubist-vase": "Super Cubist Vase",
+  "super-globe-vase": "Super Globe Vase", "super-golden-pharaoh": "Super Golden Pharaoh",
+  "super-jade-dragon": "Super Jade Dragon", "super-phoenix-statue": "Super Phoenix Statue",
+  "super-jade-tortoise": "Super Jade Tortoise", "super-jeweled-vase": "Super Jeweled Vase",
+  "super-topaz-stone": "Super Topaz Stone", "super-opal-stone": "Super Opal Stone",
+  "super-lapis-lazuli": "Super Lapis Lazuli", "super-garnet-stone": "Super Garnet Stone",
+  "super-aquamarine": "Super Aquamarine",
 };
 
 const BUFF_TYPE_META: Record<string, { label: string; icon: string }> = {
@@ -288,7 +306,7 @@ export class MarketplaceService implements OnModuleInit {
   constructor(
     @InjectModel(MarketplaceItem.name)
     private marketplaceModel: Model<MarketplaceItemDocument>,
-  ) {}
+  ) { }
 
   async onModuleInit() {
     await this.seedMarketplace();
@@ -330,8 +348,8 @@ export class MarketplaceService implements OnModuleInit {
           // Liquidity varies by rarity (rarer = less stock)
           const baseLiquidity = rarity === "COMMON" ? 5000
             : rarity === "MEDIUM" ? 2000
-            : rarity === "RARE" ? 500
-            : 100;
+              : rarity === "RARE" ? 500
+                : 100;
 
           docs.push({
             itemId,
@@ -366,10 +384,10 @@ export class MarketplaceService implements OnModuleInit {
         sellPrice: basePrice.sell,
         liquidity: material.rarity === "COMMON" ? 10000
           : material.rarity === "MEDIUM" ? 3000
-          : 800,
+            : 800,
         maxLiquidity: material.rarity === "COMMON" ? 100000
           : material.rarity === "MEDIUM" ? 30000
-          : 8000,
+            : 8000,
         icon: RARITY_ICONS[material.rarity],
         active: true,
       });

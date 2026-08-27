@@ -7,6 +7,7 @@ import {
   UserBuffCollection,
   UserBuffCollectionDocument,
 } from "./schemas/user-buff-collection.schema";
+import { User, UserDocument } from "../users/schemas/user.schema";
 
 // ── Buff Value Tables ──────────────────────────────────────────────────────
 // Each rarity has exactly 10 values. Order matters — index maps to position.
@@ -59,16 +60,16 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
       "guard-halberd",      // Guard's Halberd
     ],
     ULTRA_RARE: [
-      "emperor-crown",       // Emperor's Crown
-      "solomon-ring",       // Solomon's Ring
-      "ras-necklace",            // Ra's Necklace
-      "caduceus",       // Caduceus
-      "dragon-orb",    // Dragon Crystal Ball
-      "dragon-chest",            // Dragon Chest
-      "hellfire-chest",          // Hellfire Chest
-      "divine-chest",            // Divine Chest
-      "multiverse-chest",      // Multiverse Chest
-      "kings-gold-chest",       // King's Gold Chest
+      "super-emperor-crown",  // Super Emperor's Crown
+      "super-solomon-ring",   // Super Solomon's Ring
+      "super-ras-necklace",   // Super Ra's Necklace
+      "super-caduceus",       // Super Caduceus
+      "super-dragon-orb",     // Super Dragon Crystal Ball
+      "super-dragon-chest",   // Super Dragon Chest
+      "super-hellfire-chest", // Super Hellfire Chest
+      "super-divine-chest",   // Super Divine Chest
+      "super-multiverse-chest", // Super Multiverse Chest
+      "super-kings-gold-chest", // Super King's Gold Chest
     ],
   },
 
@@ -111,16 +112,16 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
       "dragon-seal",           // Dragon Seal
     ],
     ULTRA_RARE: [
-      "meissen-porcelain",         // Meissen Porcelain
-      "wedgwood-jasper",        // Wedgwood Jasper
-      "millefiori",      // Millefiori Glass
-      "greek-amphora",      // Greek Amphora
-      "cubist-vase",         // Cubist Vase
-      "globe-vase",           // Globe Vase
-      "golden-pharaoh",   // Golden Pharaoh
-      "jade-dragon",     // Jade Dragon
-      "phoenix-statue",        // Phoenix Statue
-      "jade-tortoise",      // Jade Tortoise
+      "super-meissen-porcelain", // Super Meissen Porcelain
+      "super-wedgwood-jasper",         // Wedgwood Jasper
+      "super-millefiori",              // Millefiori Glass
+      "super-greek-amphora",           // Greek Amphora
+      "super-cubist-vase",             // Cubist Vase
+      "super-globe-vase",              // Globe Vase
+      "super-golden-pharaoh",          // Golden Pharaoh
+      "super-jade-dragon",             // Jade Dragon
+      "super-phoenix-statue",          // Phoenix Statue
+      "super-jade-tortoise",           // Jade Tortoise
     ],
   },
 
@@ -163,16 +164,16 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
       "multiverse-chest",      // Multiverse Chest
     ],
     ULTRA_RARE: [
-      "cubist-vase",         // Cubist Vase
-      "jeweled-vase",         // Jeweled Vase
-      "globe-vase",           // Globe Vase
-      "millefiori",      // Millefiori Glass
-      "greek-amphora",      // Greek Amphora
-      "wedgwood-jasper",        // Wedgwood Jasper
-      "golden-pharaoh",   // Golden Pharaoh
-      "jade-dragon",     // Jade Dragon
-      "phoenix-statue",        // Phoenix Statue
-      "jade-tortoise",      // Jade Tortoise
+      "super-cubist-vase",         // Cubist Vase
+      "super-jeweled-vase",         // Jeweled Vase
+      "super-globe-vase",           // Globe Vase
+      "super-millefiori",      // Millefiori Glass
+      "super-greek-amphora",      // Greek Amphora
+      "super-wedgwood-jasper",        // Wedgwood Jasper
+      "super-golden-pharaoh",   // Golden Pharaoh
+      "super-jade-dragon",     // Jade Dragon
+      "super-phoenix-statue",        // Phoenix Statue
+      "super-jade-tortoise",      // Jade Tortoise
     ],
   },
 
@@ -215,16 +216,16 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
       "kings-gold-chest",       // King's Gold Chest
     ],
     ULTRA_RARE: [
-      "topaz-stone",           // Topaz Stone
-      "opal-stone",            // Opal Stone
-      "lapis-lazuli",        // Lapis Lazuli
-      "garnet-stone",          // Garnet Stone
-      "aquamarine",   // Aquamarine
-      "gem-brooch",         // Gemstone Brooch
-      "pharaoh-ring",        // Pharaoh's Ring
-      "kings-crown",         // King's Crown
-      "queens-tiara",         // Queen's Tiara
-      "pearl-necklace",       // Pearl Necklace
+      "super-topaz-stone",              // Topaz Stone
+      "super-opal-stone",               // Opal Stone
+      "super-lapis-lazuli",             // Lapis Lazuli
+      "super-garnet-stone",             // Garnet Stone
+      "super-aquamarine",               // Aquamarine
+      "super-gem-brooch",         // Super Gemstone Brooch
+      "super-pharaoh-ring",       // Super Pharaoh's Ring
+      "super-kings-crown",        // Super King's Crown
+      "super-queens-tiara",       // Super Queen's Tiara
+      "super-pearl-necklace",     // Super Pearl Necklace
     ],
   },
 };
@@ -265,6 +266,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
     @InjectModel(BuffItem.name) private buffItemModel: Model<BuffItemDocument>,
     @InjectModel(UserBuffCollection.name)
     private userBuffModel: Model<UserBuffCollectionDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) { }
 
   // ── Seed on startup ────────────────────────────────────────────────────────
@@ -465,12 +467,41 @@ export class BuffItemCollectionsService implements OnModuleInit {
       { upsert: true }
     );
 
+    // [SYNC] Also credit cryptoBalances so trade spot can see the balance
+    await this.userModel.updateOne(
+      { telegramId },
+      { $inc: { [`cryptoBalances.${buffId}`]: 1 } },
+    ).exec();
+
     return {
       success: true,
       buffItem,
       instanceId,
       message: `Granted "${buffItem.name}" (${buffItem.description})`,
     };
+  }
+
+  /**
+   * Remove buff item instances from user's collection (called when selling at trade spot).
+   * Removes up to `count` instances of the given buffId.
+   */
+  async removeBuffItem(telegramId: string, buffId: string, count: number = 1): Promise<number> {
+    const collection = await this.userBuffModel.findOne({ telegramId });
+    if (!collection) return 0;
+
+    // Find instances of this buff that are NOT active (can't sell equipped items)
+    const removableInstances = collection.inventory.filter(
+      i => i.baseItemId === buffId && !collection.activeInstanceIds.includes(i.instanceId)
+    );
+
+    const toRemove = removableInstances.slice(0, count);
+    if (toRemove.length === 0) return 0;
+
+    const instanceIdsToRemove = new Set(toRemove.map(i => i.instanceId));
+    collection.inventory = collection.inventory.filter(i => !instanceIdsToRemove.has(i.instanceId));
+    await collection.save();
+
+    return toRemove.length;
   }
 
   /**

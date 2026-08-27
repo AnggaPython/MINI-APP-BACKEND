@@ -24,8 +24,14 @@ let TradeSpotController = class TradeSpotController {
     async ticker(pair) {
         return this.tradeSpotService.getTicker(pair);
     }
-    async orderbook(depth, pair) {
-        return this.tradeSpotService.getOrderBook(Number(depth) || 10, pair);
+    async tickers(body) {
+        if (!body?.pairs || !Array.isArray(body.pairs))
+            return { success: false, tickers: [] };
+        const tickers = await this.tradeSpotService.getTickers(body.pairs);
+        return { success: true, tickers };
+    }
+    async orderbook(telegramId, depth, pair) {
+        return this.tradeSpotService.getOrderBook(Number(depth) || 10, pair, telegramId);
     }
     async trades(limit, pair) {
         return this.tradeSpotService.getTrades(Number(limit) || 30, pair);
@@ -40,6 +46,11 @@ let TradeSpotController = class TradeSpotController {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
         return this.tradeSpotService.getHoldings(telegramId, pair);
+    }
+    async maxTradeable(telegramId, pair, side) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.tradeSpotService.getMaxTradeable(telegramId, pair, side);
     }
     async openOrders(telegramId, pair) {
         if (!telegramId)
@@ -72,11 +83,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "ticker", null);
 __decorate([
-    (0, common_1.Get)("orderbook"),
-    __param(0, (0, common_1.Query)("depth")),
-    __param(1, (0, common_1.Query)("pair")),
+    (0, common_1.Post)("tickers"),
+    __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "tickers", null);
+__decorate([
+    (0, common_1.Get)("orderbook"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Query)("depth")),
+    __param(2, (0, common_1.Query)("pair")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "orderbook", null);
 __decorate([
@@ -109,6 +128,15 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "holdings", null);
+__decorate([
+    (0, common_1.Get)("max-tradeable"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Query)("pair")),
+    __param(2, (0, common_1.Query)("side")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "maxTradeable", null);
 __decorate([
     (0, common_1.Get)("open-orders"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),

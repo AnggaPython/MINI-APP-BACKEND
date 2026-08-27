@@ -17,6 +17,27 @@ export const FEE_PCT = 0.015;
 /** Full quoted spread (0.4% → ±0.2% around mid). */
 export const SPREAD_PCT = 0.004;
 
+/** Known coin bases — anything else is an integer item (buff, material tool). */
+const COIN_BASES = new Set([
+  "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
+  "ELIXCOIN", "ELIXIR", "USDC",
+]);
+
+/** Returns true if the base currency is a whole-number item (buff, material tool). */
+function isItemBase(base: string): boolean {
+  return !COIN_BASES.has(base.toUpperCase());
+}
+
+/** Core pairs where the MM bot runs automatically. All other pairs (items, buffs,
+ * material tools) have bot disabled — liquidity is managed manually via admin. */
+export const CORE_BOT_PAIRS = new Set([
+  "ELIXCOIN/ELIXIR",
+  "ELIXCOIN/USDC",
+  "IRON/USDC", "COPPER/USDC", "SILVER/USDC", "GOLD/USDC", "DIAMOND/USDC",
+  "ELIXCOIN/IRON", "ELIXCOIN/COPPER", "ELIXCOIN/SILVER",
+  "ELIXCOIN/GOLD", "ELIXCOIN/DIAMOND",
+]);
+
 export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "ELIXCOIN/ELIXIR": 0.09674384,
   "ELIXCOIN/USDC": 0.00000967,
@@ -52,8 +73,8 @@ export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "DRAGON-LID/ELIXCOIN": 1428,
   "MING-VASE/ELIXCOIN": 1570,
   "CLOISONNE/ELIXCOIN": 1713,
-  "PHARAOH-RING/ELIXCOIN": 1856,
-  "GEM-BROOCH/ELIXCOIN": 1999,
+  "SUPER-PHARAOH-RING/ELIXCOIN": 1856,
+  "SUPER-GEM-BROOCH/ELIXCOIN": 1999,
   "EXCALIBUR/ELIXCOIN": 12499,
   "JAVANESE-KERIS/ELIXCOIN": 13332,
   "POSEIDON-TRIDENT/ELIXCOIN": 14165,
@@ -64,16 +85,16 @@ export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "KATANA/ELIXCOIN": 18332,
   "DRAGON-KERIS/ELIXCOIN": 19165,
   "GUARD-HALBERD/ELIXCOIN": 19998,
-  "EMPEROR-CROWN/ELIXCOIN": 45456,
-  "SOLOMON-RING/ELIXCOIN": 68184,
-  "RAS-NECKLACE/ELIXCOIN": 90912,
-  "CADUCEUS/ELIXCOIN": 113640,
-  "DRAGON-ORB/ELIXCOIN": 136368,
-  "DRAGON-CHEST/ELIXCOIN": 159096,
-  "HELLFIRE-CHEST/ELIXCOIN": 181824,
-  "DIVINE-CHEST/ELIXCOIN": 204552,
-  "MULTIVERSE-CHEST/ELIXCOIN": 227280,
-  "KINGS-GOLD-CHEST/ELIXCOIN": 250008,
+  "SUPER-EMPEROR-CROWN/ELIXCOIN": 45456,
+  "SUPER-SOLOMON-RING/ELIXCOIN": 68184,
+  "SUPER-RAS-NECKLACE/ELIXCOIN": 90912,
+  "SUPER-CADUCEUS/ELIXCOIN": 113640,
+  "SUPER-DRAGON-ORB/ELIXCOIN": 136368,
+  "SUPER-DRAGON-CHEST/ELIXCOIN": 159096,
+  "SUPER-HELLFIRE-CHEST/ELIXCOIN": 181824,
+  "SUPER-DIVINE-CHEST/ELIXCOIN": 204552,
+  "SUPER-MULTIVERSE-CHEST/ELIXCOIN": 227280,
+  "SUPER-KINGS-GOLD-CHEST/ELIXCOIN": 250008,
   "SUMERIAN-TABLET/ELIXCOIN": 40,
   "MAYAN-DISK/ELIXCOIN": 60,
   "CHINESE-SEAL/ELIXCOIN": 80,
@@ -84,9 +105,9 @@ export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "BRASS-LAMP/ELIXCOIN": 180,
   "WOODEN-BOX/ELIXCOIN": 220,
   "METAL-TIN/ELIXCOIN": 240,
-  "KINGS-CROWN/ELIXCOIN": 714,
-  "QUEENS-TIARA/ELIXCOIN": 857,
-  "PEARL-NECKLACE/ELIXCOIN": 999,
+  "SUPER-KINGS-CROWN/ELIXCOIN": 714,
+  "SUPER-QUEENS-TIARA/ELIXCOIN": 857,
+  "SUPER-PEARL-NECKLACE/ELIXCOIN": 999,
   "SILVER-BRACELET/ELIXCOIN": 1142,
   "MOON-PENDANT/ELIXCOIN": 1285,
   "JADE-EARRINGS/ELIXCOIN": 1428,
@@ -104,16 +125,17 @@ export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "DRAGON-TOME/ELIXCOIN": 18332,
   "DRAGON-COMPASS/ELIXCOIN": 19165,
   "DRAGON-SEAL/ELIXCOIN": 19998,
-  "MEISSEN-PORCELAIN/ELIXCOIN": 45456,
-  "WEDGWOOD-JASPER/ELIXCOIN": 68184,
-  "MILLEFIORI/ELIXCOIN": 90912,
-  "GREEK-AMPHORA/ELIXCOIN": 113640,
-  "CUBIST-VASE/ELIXCOIN": 136368,
-  "GLOBE-VASE/ELIXCOIN": 159096,
-  "GOLDEN-PHARAOH/ELIXCOIN": 181824,
-  "JADE-DRAGON/ELIXCOIN": 204552,
-  "PHOENIX-STATUE/ELIXCOIN": 227280,
-  "JADE-TORTOISE/ELIXCOIN": 250008,
+  "SUPER-MEISSEN-PORCELAIN/ELIXCOIN": 45456,
+  "SUPER-WEDGWOOD-JASPER/ELIXCOIN": 68184,
+  "SUPER-JEWELED-VASE/ELIXCOIN": 68184,
+  "SUPER-MILLEFIORI/ELIXCOIN": 90912,
+  "SUPER-GREEK-AMPHORA/ELIXCOIN": 113640,
+  "SUPER-CUBIST-VASE/ELIXCOIN": 136368,
+  "SUPER-GLOBE-VASE/ELIXCOIN": 159096,
+  "SUPER-GOLDEN-PHARAOH/ELIXCOIN": 181824,
+  "SUPER-JADE-DRAGON/ELIXCOIN": 204552,
+  "SUPER-PHOENIX-STATUE/ELIXCOIN": 227280,
+  "SUPER-JADE-TORTOISE/ELIXCOIN": 250008,
   "CLAY-POT/ELIXCOIN": 40,
   "BLUE-CERAMIC/ELIXCOIN": 60,
   "WHITE-PORCELAIN/ELIXCOIN": 80,
@@ -150,11 +172,11 @@ export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "PROPHECY-BOOK/ELIXCOIN": 1713,
   "STAR-CHART/ELIXCOIN": 1856,
   "EGYPT-PAPYRUS/ELIXCOIN": 1999,
-  "TOPAZ-STONE/ELIXCOIN": 45456,
-  "OPAL-STONE/ELIXCOIN": 68184,
-  "LAPIS-LAZULI/ELIXCOIN": 90912,
-  "GARNET-STONE/ELIXCOIN": 113640,
-  "AQUAMARINE/ELIXCOIN": 136368,
+  "SUPER-TOPAZ-STONE/ELIXCOIN": 45456,
+  "SUPER-OPAL-STONE/ELIXCOIN": 68184,
+  "SUPER-LAPIS-LAZULI/ELIXCOIN": 90912,
+  "SUPER-GARNET-STONE/ELIXCOIN": 113640,
+  "SUPER-AQUAMARINE/ELIXCOIN": 136368,
   "RUSTY-NAIL/ELIXCOIN": 50,
   "WOODEN-HANDLE/ELIXCOIN": 50,
   "IRON-SHARD/ELIXCOIN": 50,
@@ -437,6 +459,8 @@ export class TradeSpotService {
     if (!pool) {
       if (MINERAL_INITIAL_RATES[pair]) {
         const initialMid = MINERAL_INITIAL_RATES[pair];
+        // Bot only runs on core pairs — item/buff pairs are managed by admin
+        const isBotEnabled = CORE_BOT_PAIRS.has(pair);
         try {
           pool = await this.poolModel.create({
             pair,
@@ -447,6 +471,7 @@ export class TradeSpotService {
             feePct: FEE_PCT,
             midMin: initialMid * 0.5,
             midMax: initialMid * 10,
+            botEnabled: isBotEnabled,
           });
         } catch (err: any) {
           if (err?.code === 11000) {
@@ -979,10 +1004,12 @@ export class TradeSpotService {
 
     if (side.toUpperCase() === "SELL") {
       // User spends BASE directly — no slippage issue
+      // Items: floor to whole number (can't sell 2.5 items)
+      const itemBalance = isItemBase(base) ? Math.floor(baseBalance) : baseBalance;
       return {
         success: true,
-        maxBase: round4(baseBalance),
-        maxQuote: round4(baseBalance * bid),
+        maxBase: isItemBase(base) ? itemBalance : round4(baseBalance),
+        maxQuote: round4(itemBalance * bid),
         price: round8(bid),
         base,
         quote,
@@ -996,24 +1023,33 @@ export class TradeSpotService {
     // For small amounts, shiftPct ≈ 0, so amount ≈ quoteBalance / ask.
     // For large amounts, shiftPct caps at 5%, so amount ≈ quoteBalance / (ask × 1.05).
     //
-    // We use iterative approach for accuracy:
+    // CRITICAL: We use round8 to match executeFill's price rounding.
+    // For tiny-price pairs (IRON 0.00000030), unrounded prices cause the
+    // binary search to overshoot by ~1.4%, leading to "Insufficient balance".
+    const itemBase = isItemBase(base);
     let low = 0;
     let high = quoteBalance / (ask * 0.95); // generous upper bound
     for (let i = 0; i < 20; i++) {
       const mid2 = (low + high) / 2;
       const impactRatio = mid2 / Math.max(1, pool.baseReserve ?? 10_000_000);
       const slippage = Math.min(0.05, impactRatio * 0.5);
-      const effectivePrice = ask * (1 + slippage);
+      const effectivePrice = round8(ask * (1 + slippage)); // MATCH executeFill rounding
       const cost = round4(mid2 * effectivePrice);
-      if (cost <= quoteBalance) low = mid2;
+      // Items: fee is in QUOTE (ELIXCOIN) on top of cost; Coins: fee is in BASE
+      const totalCost = itemBase ? round4(cost * (1 + FEE_PCT)) : cost;
+      if (totalCost <= quoteBalance) low = mid2;
       else high = mid2;
     }
-    const maxBase = round4(low);
+    // Items: convert to whole numbers (can't buy 2.5 items)
+    const maxBase = itemBase ? Math.floor(low) : round4(low);
+    // For items, maxQuote includes the ELIXCOIN fee
+    const rawQuote = round4(maxBase * ask);
+    const maxQuote = itemBase ? round4(rawQuote * (1 + FEE_PCT)) : rawQuote;
 
     return {
       success: true,
       maxBase,
-      maxQuote: round4(maxBase * ask),
+      maxQuote,
       price: round8(ask),
       base,
       quote,
@@ -1162,38 +1198,62 @@ export class TradeSpotService {
     let updated: any = null;
     let fee = 0;
     let feeCurrency = base;
+    let receivedBase = 0; // defined at outer scope for auto-grant + message
 
     if (side === "BUY") {
       // ── BUY accounting ────────────────────────────────────────────────
-      // User spends `spendQuote` (quote) → receives `receivedBase` (base net of fee)
-      // Fee is charged in BASE (the currency they receive).
+      // Coins: fee charged in BASE (the currency they receive)
+      // Items: fee charged in QUOTE (ELIXCOIN) — items must stay whole numbers
       const spendQuote = round4(amount * price);   // quote leaving user
-      fee = round4(amount * FEE_PCT); // platform cut in BASE
-      const receivedBase = round4(amount - fee);     // net base credited to user
-      feeCurrency = base;
+      const itemBase = isItemBase(base);
+      let actualSpend = 0;
+      if (itemBase) {
+        // Item fee in ELIXCOIN (added to spendQuote)
+        fee = round4(spendQuote * FEE_PCT);
+        actualSpend = round4(spendQuote + fee);  // ELIXCOIN total including fee
+        receivedBase = amount;                    // full item qty — no splitting
+        feeCurrency = quote;
 
-      updated = await this.userModel
-        .findOneAndUpdate(
-          { telegramId, [quoteKey]: { $gte: spendQuote } },
-          { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } },
-          { returnDocument: "after" },
-        )
-        .exec();
-      if (!updated)
-        return { success: false, error: `Insufficient ${quote} balance` };
+        updated = await this.userModel
+          .findOneAndUpdate(
+            { telegramId, [quoteKey]: { $gte: actualSpend } },
+            { $inc: { [quoteKey]: -actualSpend, [baseKey]: receivedBase } },
+            { returnDocument: "after" },
+          )
+          .exec();
+        if (!updated)
+          return { success: false, error: `Insufficient ${quote} balance` };
+      } else {
+        // Coin fee in BASE (deducted from received amount)
+        fee = round4(amount * FEE_PCT);
+        receivedBase = round4(amount - fee);
+        actualSpend = spendQuote;
+        feeCurrency = base;
+
+        updated = await this.userModel
+          .findOneAndUpdate(
+            { telegramId, [quoteKey]: { $gte: spendQuote } },
+            { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } },
+            { returnDocument: "after" },
+          )
+          .exec();
+        if (!updated)
+          return { success: false, error: `Insufficient ${quote} balance` };
+      }
 
       // Mid nudges UP by HALF the slippage only — the spread itself already
       // provides the other half, preventing price from running away on tiny orders.
       const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
       const newMid = round8(pool.lastMid * (1 + midNudge));
 
+      // For pool accounting: use actualSpend (total ELIXCOIN taken from user)
       await this.poolModel
         .updateOne(
           { pair },
           {
             $inc: {
               baseReserve: -amount,
-              quoteReserve: spendQuote,
+              quoteReserve: actualSpend,
               platformFeesAccumulated: fee,
               spreadProfitAccumulated: round4(Math.abs(price - pool.lastMid) * amount),
             },
@@ -1205,15 +1265,14 @@ export class TradeSpotService {
       // [CROSS-PAIR SYNC] Update global asset reserves + propagate price
       // to all pairs that share these assets.
       await this.assetRegistry.updateReservesAfterFill(
-        base, quote, -amount, spendQuote,
+        base, quote, -amount, actualSpend,
       );
       const updatedPairs = await this.assetRegistry.propagateToAffectedPools(base, quote);
       if (updatedPairs.length > 0) {
         this.logger.log(`[CrossPair] BUY ${pair}: propagated to ${updatedPairs.join(', ')}`);
       }
 
-      // Swap `total` to spendQuote so the trade record is consistently quote-denominated
-      const total = spendQuote;
+      const total = actualSpend;
       const trade = await this.tradeModel.create({
         pair, side, price, amount, total, fee, feeCurrency, source,
         ...(source === "USER" ? { telegramId } : {}),
@@ -1223,7 +1282,7 @@ export class TradeSpotService {
         .updateOne(
           { pair },
           {
-            $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: spendQuote },
+            $inc: { lifetimeVolume: amount, volume24h: amount, quoteVolume24h: actualSpend },
             $max: { high24h: price },
             $min: { low24h: price },
           },
@@ -1265,7 +1324,9 @@ export class TradeSpotService {
           elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
         },
         ...(autoGranted > 0 ? { autoGranted, message: `Auto-granted ${autoGranted}x ${base} to your buff collection!` } : {}),
-        message: `Bought ${receivedBase} ${base} @ ${price} ${quote}. Fee: ${fee} ${base}.`,
+        message: itemBase
+          ? `Bought ${amount} ${base} @ ${price} ${quote}. Fee: ${fee} ${quote}.`
+          : `Bought ${receivedBase} ${base} @ ${price} ${quote}. Fee: ${fee} ${base}.`,
       };
 
     } else {
@@ -1336,6 +1397,18 @@ export class TradeSpotService {
       this.tickerCache.delete(pair);
       this.tradesCache.delete(pair);
 
+      // [SYNC] If selling a buff item, also remove from buff collection inventory
+      let buffRemoved = 0;
+      if (source === "USER" && telegramId) {
+        try {
+          const itemId = base.toLowerCase();
+          const buffItem = await this.buffCollectionsService.getBuffItem(itemId);
+          if (buffItem?.success) {
+            buffRemoved = await this.buffCollectionsService.removeBuffItem(telegramId, itemId, Math.floor(amount));
+          }
+        } catch { /* not a buff item or service unavailable — skip gracefully */ }
+      }
+
       const crypto = updated?.cryptoBalances as Record<string, number> | undefined;
       const getB = (k: string) =>
         k === "elixirBalance" ? (updated?.elixirBalance ?? 0)
@@ -1351,6 +1424,7 @@ export class TradeSpotService {
           elixir: round4(updated?.elixirBalance ?? 0),
           elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
         },
+        ...(buffRemoved > 0 ? { buffRemoved, message: `Sold ${amount} ${base} @ ${price} ${quote}. Removed ${buffRemoved} from buff collection.` } : {}),
         message: `Sold ${amount} ${base} @ ${price} ${quote}. Proceeds: ${proceeds} ${quote}. Fee: ${fee} ${quote}.`,
       };
     }
@@ -1477,7 +1551,7 @@ export class TradeSpotService {
             { $set: { status: "FILLED", filledAmount: o.amount } },
           )
           .exec();
-        fills.push({ orderId: String(o._id), trade: res.trade });
+        fills.push({ orderId: String(o._id), trade: (res as any).trade });
       }
     }
     return fills;

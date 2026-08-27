@@ -3,7 +3,10 @@ export declare class AuctionHouseController {
     private readonly auctionService;
     constructor(auctionService: AuctionHouseService);
     createListing(telegramId: string, body: {
-        buffId: string;
+        instanceId?: string;
+        baseItemId?: string;
+        itemCategory: "buff" | "material";
+        amount?: number;
         price: number;
     }): Promise<{
         success: boolean;
@@ -11,16 +14,17 @@ export declare class AuctionHouseController {
         listingDurationDays: number;
         auction: {
             id: string;
-            buffId: string;
-            buffType: import("../buff-item-collections/schemas/buff-item.schema").BuffType;
-            rarity: import("../buff-item-collections/schemas/buff-item.schema").BuffRarity;
+            itemCategory: "buff" | "material";
+            instanceId: string | undefined;
+            baseItemId: string | undefined;
+            amount: number;
+            buffType: string;
+            rarity: string;
             price: number;
             tax: number;
             netAmount: number;
             sellerName: string;
             listedAt: Date;
-            expiresAt: Date;
-            collateralDeposit: number;
         };
         error?: undefined;
     } | {
@@ -32,7 +36,8 @@ export declare class AuctionHouseController {
     }): Promise<{
         success: boolean;
         purchased: {
-            buffId: string;
+            instanceId: string | undefined;
+            baseItemId: string;
             buffType: string;
             rarity: string;
             price: number;
@@ -48,7 +53,7 @@ export declare class AuctionHouseController {
         auctionId: string;
     }): Promise<{
         success: boolean;
-        buffId: string;
+        instanceId: string | undefined;
         collateralDeposit: number;
         penalty: number;
         returnedDeposit: number;
@@ -66,28 +71,33 @@ export declare class AuctionHouseController {
         limit?: string;
     }): Promise<{
         success: boolean;
+        listings: any;
+        total: any;
+        page: number;
+        totalPages: number;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    browseItem(telegramId: string, baseItemId: string): Promise<{
+        success: boolean;
+        buffItem: (import("../buff-item-collections/schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        }) | null;
         listings: {
             id: string;
-            buffId: string;
-            buffType: string;
-            rarity: string;
+            instanceId: string | undefined;
+            baseItemId: string;
+            sellerId: string;
+            sellerName: string;
             price: number;
             tax: number;
             netAmount: number;
-            sellerId: string;
-            sellerName: string;
             listedAt: Date;
             expiresAt: Date;
-            collateralDeposit: number;
-            name: string;
-            description: string;
-            icon: string;
-            buffValue: number;
-            buffUnit: "flat" | "percent";
         }[];
-        total: number;
-        page: number;
-        totalPages: number;
     } | {
         success: boolean;
         error: string;
@@ -96,7 +106,8 @@ export declare class AuctionHouseController {
         success: boolean;
         listings: {
             id: string;
-            buffId: string;
+            instanceId: string | undefined;
+            baseItemId: string;
             buffType: string;
             rarity: string;
             price: number;

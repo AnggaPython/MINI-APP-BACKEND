@@ -2,7 +2,7 @@ import { Model } from "mongoose";
 import { AuctionDocument } from "./schemas/auction.schema";
 import { UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
-import { BuffItemDocument, BuffType, BuffRarity } from "../buff-item-collections/schemas/buff-item.schema";
+import { BuffItem, BuffItemDocument, BuffType, BuffRarity } from "../buff-item-collections/schemas/buff-item.schema";
 import { UserBuffCollectionDocument } from "../buff-item-collections/schemas/user-buff-collection.schema";
 declare const COLLATERAL_DEPOSIT = 10000;
 declare const LISTING_DURATION_MS: number;
@@ -16,7 +16,7 @@ export declare class AuctionHouseService {
     private readonly usersService;
     private readonly logger;
     constructor(auctionModel: Model<AuctionDocument>, userModel: Model<UserDocument>, buffItemModel: Model<BuffItemDocument>, userBuffModel: Model<UserBuffCollectionDocument>, usersService: UsersService);
-    createListing(telegramId: string, buffId: string, price: number): Promise<{
+    createListing(telegramId: string, price: number, itemCategory: "buff" | "material", instanceId?: string, baseItemId?: string, amount?: number): Promise<{
         success: boolean;
         error: string;
         collateralDeposit?: undefined;
@@ -28,16 +28,17 @@ export declare class AuctionHouseService {
         listingDurationDays: number;
         auction: {
             id: string;
-            buffId: string;
-            buffType: BuffType;
-            rarity: BuffRarity;
+            itemCategory: "buff" | "material";
+            instanceId: string | undefined;
+            baseItemId: string | undefined;
+            amount: number;
+            buffType: string;
+            rarity: string;
             price: number;
             tax: number;
             netAmount: number;
             sellerName: string;
             listedAt: Date;
-            expiresAt: Date;
-            collateralDeposit: number;
         };
         error?: undefined;
     }>;
@@ -48,7 +49,8 @@ export declare class AuctionHouseService {
     } | {
         success: boolean;
         purchased: {
-            buffId: string;
+            instanceId: string | undefined;
+            baseItemId: string;
             buffType: string;
             rarity: string;
             price: number;
@@ -60,13 +62,13 @@ export declare class AuctionHouseService {
     cancelListing(telegramId: string, auctionId: string): Promise<{
         success: boolean;
         error: string;
-        buffId?: undefined;
+        instanceId?: undefined;
         collateralDeposit?: undefined;
         penalty?: undefined;
         returnedDeposit?: undefined;
     } | {
         success: boolean;
-        buffId: string;
+        instanceId: string | undefined;
         collateralDeposit: number;
         penalty: number;
         returnedDeposit: number;
@@ -82,34 +84,37 @@ export declare class AuctionHouseService {
         limit?: number;
     }): Promise<{
         success: boolean;
+        listings: any;
+        total: any;
+        page: number;
+        totalPages: number;
+    }>;
+    browseItemListings(baseItemId: string): Promise<{
+        success: boolean;
+        buffItem: (BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        }) | null;
         listings: {
             id: string;
-            buffId: string;
-            buffType: string;
-            rarity: string;
+            instanceId: string | undefined;
+            baseItemId: string;
+            sellerId: string;
+            sellerName: string;
             price: number;
             tax: number;
             netAmount: number;
-            sellerId: string;
-            sellerName: string;
             listedAt: Date;
             expiresAt: Date;
-            collateralDeposit: number;
-            name: string;
-            description: string;
-            icon: string;
-            buffValue: number;
-            buffUnit: "flat" | "percent";
         }[];
-        total: number;
-        page: number;
-        totalPages: number;
     }>;
     myListings(telegramId: string): Promise<{
         success: boolean;
         listings: {
             id: string;
-            buffId: string;
+            instanceId: string | undefined;
+            baseItemId: string;
             buffType: string;
             rarity: string;
             price: number;

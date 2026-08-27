@@ -202,6 +202,7 @@ export declare class UsersService {
     getBalance(telegramId: string): Promise<{
         elixirBalance: number;
         cryptoBalances: Record<string, number>;
+        materials: any;
         ownedPickaxes: string[];
         cwalletUid: string | null;
         solanaAddress: string | null;

@@ -18,12 +18,23 @@ export declare class LiquidityPool {
     lifetimeVolume: number;
     botEnabled: boolean;
     botIntervalMinutes: number;
+    botTradesPerCycle: number;
     high24h: number;
     low24h: number;
     volume24h: number;
     quoteVolume24h: number;
     open24h: number;
     dayResetAt: Date;
+    adminAskCeiling: number;
+    adminBidFloor: number;
+    adminSellWalls: {
+        price: number;
+        amount: number;
+    }[];
+    adminBuyWalls: {
+        price: number;
+        amount: number;
+    }[];
 }
 export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPool, import("mongoose").Model<LiquidityPool, any, any, any, any, any, LiquidityPool>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, LiquidityPool, Document<unknown, {}, LiquidityPool, {
     id: string;
@@ -187,6 +198,15 @@ export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPoo
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
+    botTradesPerCycle?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
     high24h?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
@@ -233,6 +253,48 @@ export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPoo
         id: string;
     }>> | undefined;
     dayResetAt?: import("mongoose").SchemaDefinitionProperty<Date, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    adminAskCeiling?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    adminBidFloor?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    adminSellWalls?: import("mongoose").SchemaDefinitionProperty<{
+        price: number;
+        amount: number;
+    }[], LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    adminBuyWalls?: import("mongoose").SchemaDefinitionProperty<{
+        price: number;
+        amount: number;
+    }[], LiquidityPool, Document<unknown, {}, LiquidityPool, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
         _id: import("mongoose").Types.ObjectId;

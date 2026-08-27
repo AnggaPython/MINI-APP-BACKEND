@@ -51,7 +51,7 @@ export declare class AdminController {
             averagePayoutPerImpressionUSD: number;
             lastSevenDaysRevenueUSD: number;
             dailyRunRateUSD: number;
-            primaryMilestoneUsd: 100 | 250 | 500 | 1000;
+            primaryMilestoneUsd: 1000 | 100 | 250 | 500;
             remainingUSD: number;
             progressPercent: number;
             estimatedImpressionsRemaining: number;
@@ -65,7 +65,7 @@ export declare class AdminController {
                 estImpressionsRemaining: number;
             };
             milestonesRoadmap: {
-                targetUSD: 100 | 250 | 500 | 1000;
+                targetUSD: 1000 | 100 | 250 | 500;
                 achieved: boolean;
                 progressPercent: number;
                 remainingUSD: number;
@@ -201,8 +201,10 @@ export declare class AdminController {
         treasury: any;
     }>;
     getTradeSpotBot(): Promise<{
+        pair: string;
         enabled: boolean;
         intervalMinutes: number;
+        tradesPerCycle: number;
         lastBotRunAt: Date;
         nextBotRunAt: Date;
         success: boolean;
@@ -220,14 +222,21 @@ export declare class AdminController {
         spreadPct: number;
     }>;
     updateTradeSpotBot(body: {
+        pair?: string;
         enabled?: boolean;
         intervalMinutes?: number;
+        tradesPerCycle?: number;
     }): Promise<{
+        success: boolean;
+        error: string;
+    } | {
+        success: boolean;
+        pair: string;
         enabled: boolean;
         intervalMinutes: number;
+        tradesPerCycle: number;
         lastBotRunAt: Date;
         nextBotRunAt: Date;
-        success: boolean;
         botRunCount: number;
         botTrades: number;
         userTrades: number;
@@ -240,17 +249,19 @@ export declare class AdminController {
         lastMid: number;
         feePct: number;
         spreadPct: number;
-    } | {
-        success: boolean;
-        error: string;
+        error?: undefined;
     }>;
-    runTradeSpotBotNow(): Promise<{
+    runTradeSpotBotNow(body: {
+        pair?: string;
+    }): Promise<{
         runNow: {
             ran: boolean;
             count: number;
         };
+        pair: string;
         enabled: boolean;
         intervalMinutes: number;
+        tradesPerCycle: number;
         lastBotRunAt: Date;
         nextBotRunAt: Date;
         success: boolean;
@@ -267,4 +278,39 @@ export declare class AdminController {
         feePct: number;
         spreadPct: number;
     }>;
+    getBotSchedules(): Promise<{
+        success: boolean;
+        schedules: Record<string, {
+            hourWindowStart: number;
+            tradesDone: number;
+            tradesTotal: number;
+            nextExecutions: number[];
+        }>;
+    }>;
+    getAllPools(): Promise<{
+        success: boolean;
+        pools: import("../trade-spot/schemas/pool.schema").LiquidityPool[];
+    }>;
+    setPriceControl(body: {
+        pair: string;
+        bidFloor: number;
+        askCeiling: number;
+    }): Promise<any>;
+    clearPriceControl(body: {
+        pair: string;
+    }): Promise<any>;
+    setWalls(body: {
+        pair: string;
+        sellWalls?: {
+            price: number;
+            amount: number;
+        }[];
+        buyWalls?: {
+            price: number;
+            amount: number;
+        }[];
+    }): Promise<any>;
+    clearWalls(body: {
+        pair: string;
+    }): Promise<any>;
 }

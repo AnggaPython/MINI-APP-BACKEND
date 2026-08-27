@@ -14,7 +14,10 @@ const mongoose_1 = require("@nestjs/mongoose");
 let Auction = class Auction {
     sellerId;
     sellerName;
-    buffId;
+    itemCategory;
+    instanceId;
+    baseItemId;
+    amount;
     buffType;
     rarity;
     price;
@@ -38,11 +41,23 @@ __decorate([
     __metadata("design:type", String)
 ], Auction.prototype, "sellerName", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ required: true, enum: ["buff", "material"], default: "buff" }),
+    __metadata("design:type", String)
+], Auction.prototype, "itemCategory", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: false, index: true }),
+    __metadata("design:type", String)
+], Auction.prototype, "instanceId", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
-], Auction.prototype, "buffId", void 0);
+], Auction.prototype, "baseItemId", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, enum: ["ATK", "ECONOMY", "DURABILITY", "DROPRATE"] }),
+    (0, mongoose_1.Prop)({ required: false, default: 1 }),
+    __metadata("design:type", Number)
+], Auction.prototype, "amount", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, enum: ["ATK", "ECONOMY", "DURABILITY", "DROPRATE", "MATERIAL"] }),
     __metadata("design:type", String)
 ], Auction.prototype, "buffType", void 0);
 __decorate([
