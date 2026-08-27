@@ -1,10 +1,18 @@
 import { Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { TradeSpotService } from "./trade-spot.service";
+import { MINERAL_INITIAL_RATES } from "./trade-spot.service";
 import { User } from "../auth/telegram-user.decorator";
 
 @Controller("trade-spot")
 export class TradeSpotController {
   constructor(private readonly tradeSpotService: TradeSpotService) { }
+
+  /** All available trading pairs from MINERAL_INITIAL_RATES. */
+  @Get("pairs")
+  async pairs() {
+    const pairs = Object.keys(MINERAL_INITIAL_RATES).sort();
+    return { success: true, pairs };
+  }
 
   /** Real-time ticker: last price, 24h change/high/low/volume, fee & spread. */
   @Get("ticker")
