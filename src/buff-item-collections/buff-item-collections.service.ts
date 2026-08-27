@@ -454,7 +454,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
   /**
    * Grant a buff item to a user (e.g. after mining/case loot).
    */
-  async grantBuffItem(telegramId: string, buffId: string) {
+  async grantBuffItem(telegramId: string, buffId: string, skipCryptoSync = false) {
     const buffItem = await this.buffItemModel.findOne({ buffId }).lean();
     if (!buffItem) return { success: false, error: "Buff item not found" };
 
@@ -467,11 +467,15 @@ export class BuffItemCollectionsService implements OnModuleInit {
       { upsert: true }
     );
 
-    // [SYNC] Also credit cryptoBalances so trade spot can see the balance
-    await this.userModel.updateOne(
-      { telegramId },
-      { $inc: { [`cryptoBalances.${buffId}`]: 1 } },
-    ).exec();
+    // [SYNC] Also credit cryptoBalances so trade spot can see the balance.
+    // Use UPPERCASE key to match trade spot pair naming (e.g. ROMAN-COIN not roman-coin).
+    if (!skipCryptoSync) {
+      const cryptoKey = buffId.toUpperCase().replace(/ /g, "-");
+      await this.userModel.updateOne(
+        { telegramId },
+        { $inc: { [`cryptoBalances.${cryptoKey}`]: 1 } },
+      ).exec();
+    }
 
     return {
       success: true,
@@ -502,6 +506,35 @@ export class BuffItemCollectionsService implements OnModuleInit {
     await collection.save();
 
     return toRemove.length;
+  }
+
+  // ── Material Tools Sync ────────────────────────────────────────────────
+  // Materials are stored in the `materials` field (title-case keys like "Rusty Nail").
+  // Trade spot uses `cryptoBalances` with UPPERCASE slug keys like "RUSTY-NAIL".
+  // We need to keep both in sync so material-tools page and trade spot both work.
+
+  /** Credit material tools in the `materials` field (for material-tools page). */
+  async grantMaterial(telegramId: string, displayName: string, amount: number = 1): Promise<void> {
+    if (amount <= 0) return;
+    await this.userModel.updateOne(
+      { telegramId },
+      { $inc: { [`materials.${displayName}`]: amount } },
+    ).exec();
+  }
+
+  /** Deduct material tools from the `materials` field. Returns amount actually removed. */
+  async removeMaterial(telegramId: string, displayName: string, count: number = 1): Promise<number> {
+    if (count <= 0) return 0;
+    const user = await this.userModel.findOne({ telegramId }).lean().exec();
+    if (!user) return 0;
+    const current = (user as any).materials?.[displayName] ?? 0;
+    const toRemove = Math.min(count, current);
+    if (toRemove <= 0) return 0;
+    await this.userModel.updateOne(
+      { telegramId },
+      { $inc: { [`materials.${displayName}`]: -toRemove } },
+    ).exec();
+    return toRemove;
   }
 
   /**

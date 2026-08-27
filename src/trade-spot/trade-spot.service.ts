@@ -7,6 +7,10 @@ import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
 import { AssetRegistryService } from "./asset-registry.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
+import { isItemBase, isMaterialBase, slugToMaterialName } from "./item-sync";
+
+// Re-export for use by other modules
+export { isItemBase } from "./item-sync";
 
 // ── Pair constants ────────────────────────────────────────────────────────
 export const DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
@@ -16,17 +20,6 @@ export const FEE_PCT = 0.015;
 
 /** Full quoted spread (0.4% → ±0.2% around mid). */
 export const SPREAD_PCT = 0.004;
-
-/** Known coin bases — anything else is an integer item (buff, material tool). */
-const COIN_BASES = new Set([
-  "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
-  "ELIXCOIN", "ELIXIR", "USDC",
-]);
-
-/** Returns true if the base currency is a whole-number item (buff, material tool). */
-function isItemBase(base: string): boolean {
-  return !COIN_BASES.has(base.toUpperCase());
-}
 
 /** Core pairs where the MM bot runs automatically. All other pairs (items, buffs,
  * material tools) have bot disabled — liquidity is managed manually via admin. */
@@ -1297,20 +1290,31 @@ export class TradeSpotService {
         k === "elixirBalance" ? (updated?.elixirBalance ?? 0)
           : (crypto?.[k.replace("cryptoBalances.", "")] ?? 0);
 
-      // [AUTO-GRANT] If the bought item is a buff item, auto-grant to user's collection
+      // [AUTO-GRANT] Sync bought items to their respective collections.
+      // Buff items → buffCollection.inventory + cryptoBalances (already done by executeFill above)
+      // Material tools → materials field (for material-tools page)
       let autoGranted = 0;
+      let materialSynced = 0;
       if (source === "USER" && telegramId) {
+        const qty = Math.floor(receivedBase);
         try {
+          // [DUAL-PURPOSE] Some items (26 RARE) are BOTH materials AND buffs.
+          // Run BOTH paths — not if/else — so they sync to both storage fields.
+          if (isMaterialBase(base)) {
+            const displayName = slugToMaterialName(base);
+            await this.buffCollectionsService.grantMaterial(telegramId, displayName, qty);
+            materialSynced = qty;
+          }
+          // Also check if it's a buff item (skipCryptoSync=true, executeFill already did it)
           const itemId = base.toLowerCase();
           const buffItem = await this.buffCollectionsService.getBuffItem(itemId);
           if (buffItem?.success) {
-            // Grant each purchased item as a buff instance
-            for (let i = 0; i < Math.floor(receivedBase); i++) {
-              await this.buffCollectionsService.grantBuffItem(telegramId, itemId);
+            for (let i = 0; i < qty; i++) {
+              await this.buffCollectionsService.grantBuffItem(telegramId, itemId, true);
               autoGranted++;
             }
           }
-        } catch { /* not a buff item or service unavailable — skip gracefully */ }
+        } catch (err) { this.logger.warn(`[AutoGrant] ${base}: ${(err as any)?.message}`); }
       }
 
       return {
@@ -1324,6 +1328,7 @@ export class TradeSpotService {
           elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
         },
         ...(autoGranted > 0 ? { autoGranted, message: `Auto-granted ${autoGranted}x ${base} to your buff collection!` } : {}),
+        ...(materialSynced > 0 ? { materialSynced, message: `Auto-synced ${materialSynced}x ${base} to your materials!` } : {}),
         message: itemBase
           ? `Bought ${amount} ${base} @ ${price} ${quote}. Fee: ${fee} ${quote}.`
           : `Bought ${receivedBase} ${base} @ ${price} ${quote}. Fee: ${fee} ${base}.`,
@@ -1397,16 +1402,25 @@ export class TradeSpotService {
       this.tickerCache.delete(pair);
       this.tradesCache.delete(pair);
 
-      // [SYNC] If selling a buff item, also remove from buff collection inventory
+      // [SYNC] When selling an item, remove from the appropriate collection.
+      // Buff items → buffCollection.inventory
+      // Material tools → materials field
       let buffRemoved = 0;
+      let materialRemoved = 0;
       if (source === "USER" && telegramId) {
+        const qty = Math.floor(amount);
         try {
+          // [DUAL-PURPOSE] Run BOTH paths — some items are both material AND buff.
+          if (isMaterialBase(base)) {
+            const displayName = slugToMaterialName(base);
+            materialRemoved = await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
+          }
           const itemId = base.toLowerCase();
           const buffItem = await this.buffCollectionsService.getBuffItem(itemId);
           if (buffItem?.success) {
-            buffRemoved = await this.buffCollectionsService.removeBuffItem(telegramId, itemId, Math.floor(amount));
+            buffRemoved = await this.buffCollectionsService.removeBuffItem(telegramId, itemId, qty);
           }
-        } catch { /* not a buff item or service unavailable — skip gracefully */ }
+        } catch (err) { this.logger.warn(`[SyncSell] ${base}: ${(err as any)?.message}`); }
       }
 
       const crypto = updated?.cryptoBalances as Record<string, number> | undefined;
@@ -1424,7 +1438,8 @@ export class TradeSpotService {
           elixir: round4(updated?.elixirBalance ?? 0),
           elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
         },
-        ...(buffRemoved > 0 ? { buffRemoved, message: `Sold ${amount} ${base} @ ${price} ${quote}. Removed ${buffRemoved} from buff collection.` } : {}),
+        ...(buffRemoved > 0 ? { buffRemoved, message: `Sold ${amount} ${base}. Removed ${buffRemoved} from buff collection.` } : {}),
+        ...(materialRemoved > 0 ? { materialRemoved, message: `Sold ${amount} ${base}. Removed ${materialRemoved} from materials.` } : {}),
         message: `Sold ${amount} ${base} @ ${price} ${quote}. Proceeds: ${proceeds} ${quote}. Fee: ${fee} ${quote}.`,
       };
     }

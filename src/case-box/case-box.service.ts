@@ -12,6 +12,7 @@ import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 import { LevelingService, getLevelMultiplier } from "../leveling-miner/leveling.service";
+import { materialNameToSlug } from "../trade-spot/item-sync";
 
 // ─────────────────────────────────────────────────────────────
 // MULTI-LAYER RNG — server-authoritative case-box loot table.
@@ -610,8 +611,9 @@ export class CaseBoxService {
 
     if (outcome !== "ZONK" && loot) {
       // Separate materials from crypto balances — materials go to the
-      // "materials" field (used by pickaxe upgrade), while ELIXCOIN
-      // and other currencies go to cryptoBalances.
+      // "materials" field (used by pickaxe upgrade) AND cryptoBalances
+      // (used by trade spot), while ELIXCOIN and other currencies go to
+      // cryptoBalances only.
       const allMaterialNames = [
         ...CASE_MATERIALS.COMMON,
         ...CASE_MATERIALS.MEDIUM,
@@ -620,7 +622,10 @@ export class CaseBoxService {
       const inc: Record<string, number> = {};
       for (const [key, value] of Object.entries(loot)) {
         if (allMaterialNames.includes(key)) {
+          // Materials: credit BOTH fields so trade spot + material-tools page both work
           inc[`materials.${key}`] = value;
+          const slug = materialNameToSlug(key); // "Rusty Nail" → "RUSTY-NAIL"
+          inc[`cryptoBalances.${slug}`] = value;
         } else {
           inc[`cryptoBalances.${key}`] = value;
         }
