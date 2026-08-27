@@ -181,6 +181,7 @@ export class UsersController {
       success: true,
       balance: result.elixirBalance,
       cryptoBalances: result.cryptoBalances,
+      materials: result.materials,
       ownedPickaxes: result.ownedPickaxes,
       cwalletUid: result.cwalletUid,
       solanaAddress: result.solanaAddress,

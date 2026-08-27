@@ -285,10 +285,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
     }
 
     const count = await this.buffItemModel.countDocuments();
-    if (count >= 120) {
-      this.logger.log(`Buff items already seeded (${count} found)`);
-      return;
-    }
+    // Always seed/upsert to ensure names, stats, and prefixes stay aligned with code
 
     this.logger.log("Seeding buff items (item-name format)...");
 
@@ -454,7 +451,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
   /**
    * Grant a buff item to a user (e.g. after mining/case loot).
    */
-  async grantBuffItem(telegramId: string, buffId: string, skipCryptoSync = false) {
+  async grantBuffItem(telegramId: string, buffId: string) {
     const buffItem = await this.buffItemModel.findOne({ buffId }).lean();
     if (!buffItem) return { success: false, error: "Buff item not found" };
 
@@ -467,15 +464,9 @@ export class BuffItemCollectionsService implements OnModuleInit {
       { upsert: true }
     );
 
-    // [SYNC] Also credit cryptoBalances so trade spot can see the balance.
-    // Use UPPERCASE key to match trade spot pair naming (e.g. ROMAN-COIN not roman-coin).
-    if (!skipCryptoSync) {
-      const cryptoKey = buffId.toUpperCase().replace(/ /g, "-");
-      await this.userModel.updateOne(
-        { telegramId },
-        { $inc: { [`cryptoBalances.${cryptoKey}`]: 1 } },
-      ).exec();
-    }
+    // NOTE: buff items are stored ONLY in UserBuffCollection.inventory.
+    // cryptoBalances is reserved for crypto tokens (IRON, COPPER, ELIXCOIN, etc.)
+    // The Trade Spot reads item balance via countBuffInstances(), not cryptoBalances.
 
     return {
       success: true,
@@ -508,12 +499,27 @@ export class BuffItemCollectionsService implements OnModuleInit {
     return toRemove.length;
   }
 
+  /**
+   * Count how many instances of a buff item a user owns (for Trade Spot holdings).
+   * Only counts uninequipped (available) instances — active (equipped) items
+   * cannot be sold and should NOT show as tradeable qty.
+   */
+  async countBuffInstances(telegramId: string, buffId: string): Promise<number> {
+    const col = await this.userBuffModel.findOne({ telegramId }).lean();
+    if (!col) return 0;
+    const inventory = col.inventory || [];
+    return inventory.filter(i => i.baseItemId === buffId).length;
+  }
+
   // ── Material Tools Sync ────────────────────────────────────────────────
   // Materials are stored in the `materials` field (title-case keys like "Rusty Nail").
   // Trade spot uses `cryptoBalances` with UPPERCASE slug keys like "RUSTY-NAIL".
   // We need to keep both in sync so material-tools page and trade spot both work.
 
-  /** Credit material tools in the `materials` field (for material-tools page). */
+  /** Credit material tools in the `materials` field only.
+   * NOTE: cryptoBalances is NOT updated here — material tools live exclusively
+   * in user.materials. Trade Spot reads material balances directly from that field.
+   */
   async grantMaterial(telegramId: string, displayName: string, amount: number = 1): Promise<void> {
     if (amount <= 0) return;
     await this.userModel.updateOne(
@@ -522,7 +528,9 @@ export class BuffItemCollectionsService implements OnModuleInit {
     ).exec();
   }
 
-  /** Deduct material tools from the `materials` field. Returns amount actually removed. */
+  /** Deduct material tools from the `materials` field only. Returns amount actually removed.
+   * NOTE: cryptoBalances is NOT touched — only the materials field is updated.
+   */
   async removeMaterial(telegramId: string, displayName: string, count: number = 1): Promise<number> {
     if (count <= 0) return 0;
     const user = await this.userModel.findOne({ telegramId }).lean().exec();
@@ -538,36 +546,37 @@ export class BuffItemCollectionsService implements OnModuleInit {
   }
 
   /**
-   * Activate (equip) a buff instance.
+   * Activate (equip) a buff instance by its base item ID (e.g. 'super-excalibur').
+   * Finds the first owned instance that is not currently equipped.
    */
-  async activateBuff(telegramId: string, instanceId: string) {
+  async activateBuff(telegramId: string, buffId: string) {
     const collection = await this.userBuffModel.findOne({ telegramId });
     if (!collection) return { success: false, error: "User collection not found" };
 
-    const hasInstance = collection.inventory.some(i => i.instanceId === instanceId);
-    if (!hasInstance) return { success: false, error: "You do not own this instance" };
+    const unequippedInstance = collection.inventory.find(
+      i => i.baseItemId === buffId && !collection.activeInstanceIds.includes(i.instanceId)
+    );
+    if (!unequippedInstance) return { success: false, error: "You do not own this item or all are already active" };
 
-    if (collection.activeInstanceIds.includes(instanceId)) {
-      return { success: false, error: "Instance is already active" };
-    }
-
-    collection.activeInstanceIds.push(instanceId);
+    collection.activeInstanceIds.push(unequippedInstance.instanceId);
     await collection.save();
     return { success: true, activeInstanceIds: collection.activeInstanceIds };
   }
 
   /**
-   * Deactivate (unequip) a buff instance.
+   * Deactivate (unequip) a buff instance by its base item ID.
+   * Finds the first equipped instance of this item and unequips it.
    */
-  async deactivateBuff(telegramId: string, instanceId: string) {
+  async deactivateBuff(telegramId: string, buffId: string) {
     const collection = await this.userBuffModel.findOne({ telegramId });
     if (!collection) return { success: false, error: "User collection not found" };
 
-    if (!collection.activeInstanceIds.includes(instanceId)) {
-      return { success: false, error: "Instance is not active" };
-    }
+    const equippedInstance = collection.inventory.find(
+      i => i.baseItemId === buffId && collection.activeInstanceIds.includes(i.instanceId)
+    );
+    if (!equippedInstance) return { success: false, error: "No active item found for this buff" };
 
-    collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== instanceId);
+    collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== equippedInstance.instanceId);
     await collection.save();
     return { success: true, activeInstanceIds: collection.activeInstanceIds };
   }

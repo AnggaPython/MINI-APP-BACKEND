@@ -5,6 +5,7 @@ import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
 import { AssetRegistryService } from "./asset-registry.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
+export { isItemBase } from "./item-sync";
 export declare const DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 export declare const FEE_PCT = 0.015;
 export declare const SPREAD_PCT = 0.004;
@@ -176,8 +177,6 @@ export declare class TradeSpotService {
         amount?: number;
         price?: number;
     }): Promise<{
-        message: string;
-        autoGranted?: number | undefined;
         success: boolean;
         resting: boolean;
         trade: {
@@ -191,15 +190,12 @@ export declare class TradeSpotService {
             source: "BOT" | "USER";
         };
         balances: {
-            baseBalance: number;
             quoteBalance: number;
-            elixir: number;
             elixcoin: number;
         };
+        message: string;
         error?: undefined;
     } | {
-        message: string;
-        buffRemoved?: number | undefined;
         success: boolean;
         resting: boolean;
         trade: {
@@ -213,11 +209,10 @@ export declare class TradeSpotService {
             source: "BOT" | "USER";
         };
         balances: {
-            baseBalance: number;
             quoteBalance: number;
-            elixir: number;
             elixcoin: number;
         };
+        message: string;
         error?: undefined;
     } | {
         success: boolean;

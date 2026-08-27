@@ -392,7 +392,8 @@ let CaseBoxService = class CaseBoxService {
             buffGranted = grantResult;
             if (grantResult?.buffItem) {
                 rarity = grantResult.buffItem.rarity;
-                loot = { [grantResult.buffItem.name]: 1 };
+                const buffSlug = grantResult.buffItem.buffId.toUpperCase().replace(/ /g, "-");
+                loot = { [grantResult.buffItem.name]: 1, __buffSlug: buffSlug };
             }
             else {
                 let levelMultFallback = 1;
@@ -413,6 +414,12 @@ let CaseBoxService = class CaseBoxService {
         const userTimestamps = this.destroyTimestamps.get(telegramId) || [];
         userTimestamps.push(now);
         this.destroyTimestamps.set(telegramId, userTimestamps);
+        if (loot) {
+            for (const k of Object.keys(loot)) {
+                if (k.startsWith("__"))
+                    delete loot[k];
+            }
+        }
         await this.caseBoxModel
             .updateOne({ _id: caseId }, {
             $set: {
@@ -499,9 +506,14 @@ let CaseBoxService = class CaseBoxService {
                 ...exports.CASE_MATERIALS.RARE,
             ];
             const inc = {};
+            const buffSlug = loot.__buffSlug;
             for (const [key, value] of Object.entries(loot)) {
+                if (key.startsWith("__"))
+                    continue;
                 if (allMaterialNames.includes(key)) {
                     inc[`materials.${key}`] = value;
+                }
+                else if (buffSlug) {
                 }
                 else {
                     inc[`cryptoBalances.${key}`] = value;

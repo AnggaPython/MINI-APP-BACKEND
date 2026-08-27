@@ -181,6 +181,7 @@ export declare class UsersController {
         success: boolean;
         balance: number;
         cryptoBalances: Record<string, number>;
+        materials: any;
         ownedPickaxes: string[];
         cwalletUid: string | null;
         solanaAddress: string | null;

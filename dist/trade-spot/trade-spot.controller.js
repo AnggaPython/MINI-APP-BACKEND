@@ -15,11 +15,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradeSpotController = void 0;
 const common_1 = require("@nestjs/common");
 const trade_spot_service_1 = require("./trade-spot.service");
+const trade_spot_service_2 = require("./trade-spot.service");
 const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let TradeSpotController = class TradeSpotController {
     tradeSpotService;
     constructor(tradeSpotService) {
         this.tradeSpotService = tradeSpotService;
+    }
+    async pairs() {
+        const pairs = Object.keys(trade_spot_service_2.MINERAL_INITIAL_RATES).sort();
+        return { success: true, pairs };
     }
     async ticker(pair) {
         return this.tradeSpotService.getTicker(pair);
@@ -75,6 +80,12 @@ let TradeSpotController = class TradeSpotController {
     }
 };
 exports.TradeSpotController = TradeSpotController;
+__decorate([
+    (0, common_1.Get)("pairs"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "pairs", null);
 __decorate([
     (0, common_1.Get)("ticker"),
     __param(0, (0, common_1.Query)("pair")),

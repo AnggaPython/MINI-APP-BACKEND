@@ -106,7 +106,10 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         error?: undefined;
     }>;
     removeBuffItem(telegramId: string, buffId: string, count?: number): Promise<number>;
-    activateBuff(telegramId: string, instanceId: string): Promise<{
+    countBuffInstances(telegramId: string, buffId: string): Promise<number>;
+    grantMaterial(telegramId: string, displayName: string, amount?: number): Promise<void>;
+    removeMaterial(telegramId: string, displayName: string, count?: number): Promise<number>;
+    activateBuff(telegramId: string, buffId: string): Promise<{
         success: boolean;
         error: string;
         activeInstanceIds?: undefined;
@@ -115,7 +118,7 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         activeInstanceIds: string[];
         error?: undefined;
     }>;
-    deactivateBuff(telegramId: string, instanceId: string): Promise<{
+    deactivateBuff(telegramId: string, buffId: string): Promise<{
         success: boolean;
         error: string;
         activeInstanceIds?: undefined;

@@ -309,10 +309,6 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
             await this.buffItemModel.deleteMany({});
         }
         const count = await this.buffItemModel.countDocuments();
-        if (count >= 120) {
-            this.logger.log(`Buff items already seeded (${count} found)`);
-            return;
-        }
         this.logger.log("Seeding buff items (item-name format)...");
         const docs = [];
         const seenItems = new Set();
@@ -443,7 +439,6 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
         const instanceId = crypto.randomUUID();
         const newInstance = { instanceId, baseItemId: buffId, acquiredAt: new Date() };
         await this.userBuffModel.updateOne({ telegramId }, { $push: { inventory: newInstance } }, { upsert: true });
-        await this.userModel.updateOne({ telegramId }, { $inc: { [`cryptoBalances.${buffId}`]: 1 } }).exec();
         return {
             success: true,
             buffItem,
@@ -464,28 +459,50 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
         await collection.save();
         return toRemove.length;
     }
-    async activateBuff(telegramId, instanceId) {
+    async countBuffInstances(telegramId, buffId) {
+        const col = await this.userBuffModel.findOne({ telegramId }).lean();
+        if (!col)
+            return 0;
+        const inventory = col.inventory || [];
+        return inventory.filter(i => i.baseItemId === buffId).length;
+    }
+    async grantMaterial(telegramId, displayName, amount = 1) {
+        if (amount <= 0)
+            return;
+        await this.userModel.updateOne({ telegramId }, { $inc: { [`materials.${displayName}`]: amount } }).exec();
+    }
+    async removeMaterial(telegramId, displayName, count = 1) {
+        if (count <= 0)
+            return 0;
+        const user = await this.userModel.findOne({ telegramId }).lean().exec();
+        if (!user)
+            return 0;
+        const current = user.materials?.[displayName] ?? 0;
+        const toRemove = Math.min(count, current);
+        if (toRemove <= 0)
+            return 0;
+        await this.userModel.updateOne({ telegramId }, { $inc: { [`materials.${displayName}`]: -toRemove } }).exec();
+        return toRemove;
+    }
+    async activateBuff(telegramId, buffId) {
         const collection = await this.userBuffModel.findOne({ telegramId });
         if (!collection)
             return { success: false, error: "User collection not found" };
-        const hasInstance = collection.inventory.some(i => i.instanceId === instanceId);
-        if (!hasInstance)
-            return { success: false, error: "You do not own this instance" };
-        if (collection.activeInstanceIds.includes(instanceId)) {
-            return { success: false, error: "Instance is already active" };
-        }
-        collection.activeInstanceIds.push(instanceId);
+        const unequippedInstance = collection.inventory.find(i => i.baseItemId === buffId && !collection.activeInstanceIds.includes(i.instanceId));
+        if (!unequippedInstance)
+            return { success: false, error: "You do not own this item or all are already active" };
+        collection.activeInstanceIds.push(unequippedInstance.instanceId);
         await collection.save();
         return { success: true, activeInstanceIds: collection.activeInstanceIds };
     }
-    async deactivateBuff(telegramId, instanceId) {
+    async deactivateBuff(telegramId, buffId) {
         const collection = await this.userBuffModel.findOne({ telegramId });
         if (!collection)
             return { success: false, error: "User collection not found" };
-        if (!collection.activeInstanceIds.includes(instanceId)) {
-            return { success: false, error: "Instance is not active" };
-        }
-        collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== instanceId);
+        const equippedInstance = collection.inventory.find(i => i.baseItemId === buffId && collection.activeInstanceIds.includes(i.instanceId));
+        if (!equippedInstance)
+            return { success: false, error: "No active item found for this buff" };
+        collection.activeInstanceIds = collection.activeInstanceIds.filter((id) => id !== equippedInstance.instanceId);
         await collection.save();
         return { success: true, activeInstanceIds: collection.activeInstanceIds };
     }

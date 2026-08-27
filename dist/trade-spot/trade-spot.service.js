@@ -13,7 +13,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 var TradeSpotService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TradeSpotService = exports.MINERAL_INITIAL_RATES = exports.CORE_BOT_PAIRS = exports.SPREAD_PCT = exports.FEE_PCT = exports.DEFAULT_PAIR = void 0;
+exports.TradeSpotService = exports.MINERAL_INITIAL_RATES = exports.CORE_BOT_PAIRS = exports.SPREAD_PCT = exports.FEE_PCT = exports.DEFAULT_PAIR = exports.isItemBase = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
@@ -23,16 +23,12 @@ const open_order_schema_1 = require("./schemas/open-order.schema");
 const user_schema_1 = require("../users/schemas/user.schema");
 const asset_registry_service_1 = require("./asset-registry.service");
 const buff_item_collections_service_1 = require("../buff-item-collections/buff-item-collections.service");
+const item_sync_1 = require("./item-sync");
+var item_sync_2 = require("./item-sync");
+Object.defineProperty(exports, "isItemBase", { enumerable: true, get: function () { return item_sync_2.isItemBase; } });
 exports.DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
 exports.FEE_PCT = 0.015;
 exports.SPREAD_PCT = 0.004;
-const COIN_BASES = new Set([
-    "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
-    "ELIXCOIN", "ELIXIR", "USDC",
-]);
-function isItemBase(base) {
-    return !COIN_BASES.has(base.toUpperCase());
-}
 exports.CORE_BOT_PAIRS = new Set([
     "ELIXCOIN/ELIXIR",
     "ELIXCOIN/USDC",
@@ -71,6 +67,8 @@ exports.MINERAL_INITIAL_RATES = {
     "DRAGON-LID/ELIXCOIN": 1428,
     "MING-VASE/ELIXCOIN": 1570,
     "CLOISONNE/ELIXCOIN": 1713,
+    "PHARAOH-RING/ELIXCOIN": 1000,
+    "GEM-BROOCH/ELIXCOIN": 1100,
     "SUPER-PHARAOH-RING/ELIXCOIN": 1856,
     "SUPER-GEM-BROOCH/ELIXCOIN": 1999,
     "EXCALIBUR/ELIXCOIN": 12499,
@@ -83,11 +81,21 @@ exports.MINERAL_INITIAL_RATES = {
     "KATANA/ELIXCOIN": 18332,
     "DRAGON-KERIS/ELIXCOIN": 19165,
     "GUARD-HALBERD/ELIXCOIN": 19998,
+    "EMPEROR-CROWN/ELIXCOIN": 8000,
+    "SOLOMON-RING/ELIXCOIN": 10000,
+    "RAS-NECKLACE/ELIXCOIN": 12000,
+    "CADUCEUS/ELIXCOIN": 14000,
+    "DRAGON-ORB/ELIXCOIN": 16000,
     "SUPER-EMPEROR-CROWN/ELIXCOIN": 45456,
     "SUPER-SOLOMON-RING/ELIXCOIN": 68184,
     "SUPER-RAS-NECKLACE/ELIXCOIN": 90912,
     "SUPER-CADUCEUS/ELIXCOIN": 113640,
     "SUPER-DRAGON-ORB/ELIXCOIN": 136368,
+    "DRAGON-CHEST/ELIXCOIN": 10000,
+    "HELLFIRE-CHEST/ELIXCOIN": 12000,
+    "KINGS-GOLD-CHEST/ELIXCOIN": 14000,
+    "DIVINE-CHEST/ELIXCOIN": 16000,
+    "MULTIVERSE-CHEST/ELIXCOIN": 18000,
     "SUPER-DRAGON-CHEST/ELIXCOIN": 159096,
     "SUPER-HELLFIRE-CHEST/ELIXCOIN": 181824,
     "SUPER-DIVINE-CHEST/ELIXCOIN": 204552,
@@ -103,6 +111,9 @@ exports.MINERAL_INITIAL_RATES = {
     "BRASS-LAMP/ELIXCOIN": 180,
     "WOODEN-BOX/ELIXCOIN": 220,
     "METAL-TIN/ELIXCOIN": 240,
+    "KINGS-CROWN/ELIXCOIN": 500,
+    "QUEENS-TIARA/ELIXCOIN": 600,
+    "PEARL-NECKLACE/ELIXCOIN": 700,
     "SUPER-KINGS-CROWN/ELIXCOIN": 714,
     "SUPER-QUEENS-TIARA/ELIXCOIN": 857,
     "SUPER-PEARL-NECKLACE/ELIXCOIN": 999,
@@ -144,6 +155,7 @@ exports.MINERAL_INITIAL_RATES = {
     "MAJOLICA-VASE/ELIXCOIN": 180,
     "RAKU-POTTERY/ELIXCOIN": 220,
     "SANCAI-VASE/ELIXCOIN": 240,
+    "MEISSEN-PORCELAIN/ELIXCOIN": 1000,
     "GODDESS-LAKSHMI/ELIXCOIN": 1142,
     "QUARTZ-CRYSTAL/ELIXCOIN": 1428,
     "RUBY-STONE/ELIXCOIN": 1570,
@@ -823,11 +835,23 @@ let TradeSpotService = class TradeSpotService {
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
         const [base, quote] = pair.split("/");
         const crypto = user?.cryptoBalances;
+        const materials = user?.materials;
+        let baseBalance = 0;
+        if ((0, item_sync_1.isMaterialBase)(base)) {
+            const displayName = (0, item_sync_1.slugToMaterialName)(base);
+            baseBalance = materials?.[displayName] ?? 0;
+        }
+        else if (!item_sync_1.COIN_BASES.has(base.toUpperCase())) {
+            baseBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
+        }
+        else {
+            baseBalance = base === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[base] || 0;
+        }
         return {
             success: true,
             base,
             quote,
-            baseBalance: round4(base === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[base] || 0),
+            baseBalance: round4(baseBalance),
             quoteBalance: round4(quote === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[quote] || 0),
             elixcoin: round4(crypto?.["ELIXCOIN"] || 0),
             elixir: round4(user?.elixirBalance || 0),
@@ -840,24 +864,35 @@ let TradeSpotService = class TradeSpotService {
         if (!user)
             return { success: false, error: "Account not found" };
         const crypto = user.cryptoBalances;
-        const baseBalance = base === "ELIXIR" ? user.elixirBalance || 0 : crypto?.[base] || 0;
+        const materials = user?.materials;
         const quoteBalance = quote === "ELIXIR" ? user.elixirBalance || 0 : crypto?.[quote] || 0;
         const mid = pool.lastMid;
         const half = pool.spreadPct / 2;
         const ask = mid * (1 + half);
         const bid = mid * (1 - half);
         if (side.toUpperCase() === "SELL") {
-            const itemBalance = isItemBase(base) ? Math.floor(baseBalance) : baseBalance;
+            let baseBalance = 0;
+            if ((0, item_sync_1.isMaterialBase)(base)) {
+                const displayName = (0, item_sync_1.slugToMaterialName)(base);
+                baseBalance = materials?.[displayName] ?? 0;
+            }
+            else if (!item_sync_1.COIN_BASES.has(base.toUpperCase())) {
+                baseBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
+            }
+            else {
+                baseBalance = base === "ELIXIR" ? user.elixirBalance || 0 : crypto?.[base] || 0;
+            }
+            const itemBalance = (0, item_sync_1.isItemBase)(base) ? Math.floor(baseBalance) : baseBalance;
             return {
                 success: true,
-                maxBase: isItemBase(base) ? itemBalance : round4(baseBalance),
+                maxBase: (0, item_sync_1.isItemBase)(base) ? itemBalance : round4(baseBalance),
                 maxQuote: round4(itemBalance * bid),
                 price: round8(bid),
                 base,
                 quote,
             };
         }
-        const itemBase = isItemBase(base);
+        const itemBase = (0, item_sync_1.isItemBase)(base);
         let low = 0;
         let high = quoteBalance / (ask * 0.95);
         for (let i = 0; i < 20; i++) {
@@ -967,7 +1002,7 @@ let TradeSpotService = class TradeSpotService {
         let receivedBase = 0;
         if (side === "BUY") {
             const spendQuote = round4(amount * price);
-            const itemBase = isItemBase(base);
+            const itemBase = (0, item_sync_1.isItemBase)(base);
             let actualSpend = 0;
             if (itemBase) {
                 fee = round4(spendQuote * exports.FEE_PCT);
@@ -975,10 +1010,28 @@ let TradeSpotService = class TradeSpotService {
                 receivedBase = amount;
                 feeCurrency = quote;
                 updated = await this.userModel
-                    .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: actualSpend } }, { $inc: { [quoteKey]: -actualSpend, [baseKey]: receivedBase } }, { returnDocument: "after" })
+                    .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: actualSpend } }, { $inc: { [quoteKey]: -actualSpend } }, { returnDocument: "after" })
                     .exec();
                 if (!updated)
                     return { success: false, error: `Insufficient ${quote} balance` };
+                const qty = Math.floor(receivedBase);
+                if (source === "USER" && qty > 0) {
+                    try {
+                        if ((0, item_sync_1.isMaterialBase)(base)) {
+                            const displayName = (0, item_sync_1.slugToMaterialName)(base);
+                            await this.buffCollectionsService.grantMaterial(telegramId, displayName, qty);
+                        }
+                        else {
+                            const itemId = base.toLowerCase();
+                            for (let i = 0; i < qty; i++) {
+                                await this.buffCollectionsService.grantBuffItem(telegramId, itemId);
+                            }
+                        }
+                    }
+                    catch (err) {
+                        this.logger.warn(`[BuyGrant] ${base}: ${err?.message}`);
+                    }
+                }
             }
             else {
                 fee = round4(amount * exports.FEE_PCT);
@@ -1024,33 +1077,14 @@ let TradeSpotService = class TradeSpotService {
             this.tickerCache.delete(pair);
             this.tradesCache.delete(pair);
             const crypto = updated?.cryptoBalances;
-            const getB = (k) => k === "elixirBalance" ? (updated?.elixirBalance ?? 0)
-                : (crypto?.[k.replace("cryptoBalances.", "")] ?? 0);
-            let autoGranted = 0;
-            if (source === "USER" && telegramId) {
-                try {
-                    const itemId = base.toLowerCase();
-                    const buffItem = await this.buffCollectionsService.getBuffItem(itemId);
-                    if (buffItem?.success) {
-                        for (let i = 0; i < Math.floor(receivedBase); i++) {
-                            await this.buffCollectionsService.grantBuffItem(telegramId, itemId);
-                            autoGranted++;
-                        }
-                    }
-                }
-                catch { }
-            }
             return {
                 success: true,
                 resting: false,
                 trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
                 balances: {
-                    baseBalance: round4(getB(baseKey)),
-                    quoteBalance: round4(getB(quoteKey)),
-                    elixir: round4(updated?.elixirBalance ?? 0),
+                    quoteBalance: round4(crypto?.[quote] ?? updated?.elixirBalance ?? 0),
                     elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
                 },
-                ...(autoGranted > 0 ? { autoGranted, message: `Auto-granted ${autoGranted}x ${base} to your buff collection!` } : {}),
                 message: itemBase
                     ? `Bought ${amount} ${base} @ ${price} ${quote}. Fee: ${fee} ${quote}.`
                     : `Bought ${receivedBase} ${base} @ ${price} ${quote}. Fee: ${fee} ${base}.`,
@@ -1061,11 +1095,50 @@ let TradeSpotService = class TradeSpotService {
             fee = round4(grossQuote * exports.FEE_PCT);
             const proceeds = round4(grossQuote - fee);
             feeCurrency = quote;
-            updated = await this.userModel
-                .findOneAndUpdate({ telegramId, [baseKey]: { $gte: amount } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" })
-                .exec();
-            if (!updated)
-                return { success: false, error: `Insufficient ${base} balance` };
+            if ((0, item_sync_1.isItemBase)(base) && source === "USER") {
+                const qty = Math.floor(amount);
+                let actualBalance = 0;
+                const materialBase = (0, item_sync_1.isMaterialBase)(base);
+                try {
+                    if (materialBase) {
+                        const displayName = (0, item_sync_1.slugToMaterialName)(base);
+                        const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+                        actualBalance = userDoc?.materials?.[displayName] ?? 0;
+                    }
+                    else {
+                        actualBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
+                    }
+                }
+                catch {
+                    actualBalance = 0;
+                }
+                if (actualBalance < qty)
+                    return { success: false, error: `Insufficient ${base} balance` };
+                updated = await this.userModel
+                    .findOneAndUpdate({ telegramId }, { $inc: { [quoteKey]: proceeds } }, { returnDocument: "after" })
+                    .exec();
+                if (!updated)
+                    return { success: false, error: "Account not found" };
+                try {
+                    if (materialBase) {
+                        const displayName = (0, item_sync_1.slugToMaterialName)(base);
+                        await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
+                    }
+                    else {
+                        await this.buffCollectionsService.removeBuffItem(telegramId, base.toLowerCase(), qty);
+                    }
+                }
+                catch (err) {
+                    this.logger.warn(`[SellDebit] ${base}: ${err?.message}`);
+                }
+            }
+            else {
+                updated = await this.userModel
+                    .findOneAndUpdate({ telegramId, [baseKey]: { $gte: amount } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" })
+                    .exec();
+                if (!updated)
+                    return { success: false, error: `Insufficient ${base} balance` };
+            }
             const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
             const newMid = round8(pool.lastMid * (1 - midNudge));
             await this.poolModel
@@ -1080,9 +1153,9 @@ let TradeSpotService = class TradeSpotService {
             })
                 .exec();
             await this.assetRegistry.updateReservesAfterFill(base, quote, amount, -proceeds);
-            const updatedPairs = await this.assetRegistry.propagateToAffectedPools(base, quote);
-            if (updatedPairs.length > 0) {
-                this.logger.log(`[CrossPair] SELL ${pair}: propagated to ${updatedPairs.join(', ')}`);
+            const updatedPairs2 = await this.assetRegistry.propagateToAffectedPools(base, quote);
+            if (updatedPairs2.length > 0) {
+                this.logger.log(`[CrossPair] SELL ${pair}: propagated to ${updatedPairs2.join(', ')}`);
             }
             const total = grossQuote;
             const trade = await this.tradeModel.create({
@@ -1098,31 +1171,15 @@ let TradeSpotService = class TradeSpotService {
                 .exec();
             this.tickerCache.delete(pair);
             this.tradesCache.delete(pair);
-            let buffRemoved = 0;
-            if (source === "USER" && telegramId) {
-                try {
-                    const itemId = base.toLowerCase();
-                    const buffItem = await this.buffCollectionsService.getBuffItem(itemId);
-                    if (buffItem?.success) {
-                        buffRemoved = await this.buffCollectionsService.removeBuffItem(telegramId, itemId, Math.floor(amount));
-                    }
-                }
-                catch { }
-            }
-            const crypto = updated?.cryptoBalances;
-            const getB = (k) => k === "elixirBalance" ? (updated?.elixirBalance ?? 0)
-                : (crypto?.[k.replace("cryptoBalances.", "")] ?? 0);
+            const crypto2 = updated?.cryptoBalances;
             return {
                 success: true,
                 resting: false,
                 trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
                 balances: {
-                    baseBalance: round4(getB(baseKey)),
-                    quoteBalance: round4(getB(quoteKey)),
-                    elixir: round4(updated?.elixirBalance ?? 0),
-                    elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
+                    quoteBalance: round4(crypto2?.[quote] ?? updated?.elixirBalance ?? 0),
+                    elixcoin: round4(crypto2?.["ELIXCOIN"] ?? 0),
                 },
-                ...(buffRemoved > 0 ? { buffRemoved, message: `Sold ${amount} ${base} @ ${price} ${quote}. Removed ${buffRemoved} from buff collection.` } : {}),
                 message: `Sold ${amount} ${base} @ ${price} ${quote}. Proceeds: ${proceeds} ${quote}. Fee: ${fee} ${quote}.`,
             };
         }

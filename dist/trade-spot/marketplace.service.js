@@ -288,10 +288,6 @@ let MarketplaceService = MarketplaceService_1 = class MarketplaceService {
     }
     async seedMarketplace() {
         const count = await this.marketplaceModel.countDocuments();
-        if (count >= 235) {
-            this.logger.log(`Marketplace already seeded (${count} items)`);
-            return;
-        }
         this.logger.log("Seeding 235 marketplace items...");
         const docs = [];
         const buffTypes = ["ATK", "ECONOMY", "DURABILITY", "DROPRATE"];

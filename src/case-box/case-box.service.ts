@@ -12,7 +12,6 @@ import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 import { LevelingService, getLevelMultiplier } from "../leveling-miner/leveling.service";
-import { materialNameToSlug } from "../trade-spot/item-sync";
 
 // ─────────────────────────────────────────────────────────────
 // MULTI-LAYER RNG — server-authoritative case-box loot table.
@@ -620,30 +619,28 @@ export class CaseBoxService {
     }
 
     if (outcome !== "ZONK" && loot) {
-      // Separate materials from crypto balances — materials go to the
-      // "materials" field (used by pickaxe upgrade) AND cryptoBalances
-      // (used by trade spot), while ELIXCOIN and other currencies go to
-      // cryptoBalances only.
+      // Storage routing (post-architecture refactor):
+      //   Material tools → user.materials only (Trade Spot reads from there, not cryptoBalances)
+      //   Buff items     → UserBuffCollection.inventory only (already done by grantBuffItem/grantRandomBuff)
+      //   ELIXCOIN etc.  → user.cryptoBalances (these are actual crypto tokens)
       const allMaterialNames = [
         ...CASE_MATERIALS.COMMON,
         ...CASE_MATERIALS.MEDIUM,
         ...CASE_MATERIALS.RARE,
       ];
       const inc: Record<string, number> = {};
-      // __buffSlug is a sentinel — buff items are already synced by grantBuffItem,
-      // so skip them in the loot cryptoBalances write to avoid double-counting.
+      // __buffSlug is a sentinel — buff items are already in UserBuffCollection.inventory
+      // via grantRandomBuff → grantBuffItem. No extra write needed here.
       const buffSlug = (loot as any).__buffSlug as string | undefined;
       for (const [key, value] of Object.entries(loot)) {
         if (key.startsWith("__")) continue; // skip sentinel keys
         if (allMaterialNames.includes(key)) {
-          // Materials: credit BOTH fields so trade spot + material-tools page both work
+          // Material tools → user.materials ONLY (Trade Spot reads materials field directly)
           inc[`materials.${key}`] = value;
-          const slug = materialNameToSlug(key); // "Rusty Nail" → "RUSTY-NAIL"
-          inc[`cryptoBalances.${slug}`] = value;
         } else if (buffSlug) {
-          // Buff item: already granted by grantBuffItem → skip cryptoBalances write.
-          // (grantBuffItem wrote cryptoBalances["PERSIAN-ASTRO"] = 1)
+          // Buff item already in UserBuffCollection → nothing to write here
         } else {
+          // Crypto token (ELIXCOIN etc.) → cryptoBalances
           inc[`cryptoBalances.${key}`] = value;
         }
       }

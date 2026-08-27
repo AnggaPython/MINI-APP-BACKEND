@@ -2,6 +2,10 @@ import { TradeSpotService } from "./trade-spot.service";
 export declare class TradeSpotController {
     private readonly tradeSpotService;
     constructor(tradeSpotService: TradeSpotService);
+    pairs(): Promise<{
+        success: boolean;
+        pairs: string[];
+    }>;
     ticker(pair?: string): Promise<any>;
     tickers(body: {
         pairs?: string[];
@@ -108,8 +112,6 @@ export declare class TradeSpotController {
         amount?: number;
         price?: number;
     }): Promise<{
-        message: string;
-        autoGranted?: number | undefined;
         success: boolean;
         resting: boolean;
         trade: {
@@ -123,15 +125,12 @@ export declare class TradeSpotController {
             source: "BOT" | "USER";
         };
         balances: {
-            baseBalance: number;
             quoteBalance: number;
-            elixir: number;
             elixcoin: number;
         };
+        message: string;
         error?: undefined;
     } | {
-        message: string;
-        buffRemoved?: number | undefined;
         success: boolean;
         resting: boolean;
         trade: {
@@ -145,11 +144,10 @@ export declare class TradeSpotController {
             source: "BOT" | "USER";
         };
         balances: {
-            baseBalance: number;
             quoteBalance: number;
-            elixir: number;
             elixcoin: number;
         };
+        message: string;
         error?: undefined;
     } | {
         success: boolean;

@@ -51,7 +51,7 @@ export declare class AdminController {
             averagePayoutPerImpressionUSD: number;
             lastSevenDaysRevenueUSD: number;
             dailyRunRateUSD: number;
-            primaryMilestoneUsd: 1000 | 100 | 250 | 500;
+            primaryMilestoneUsd: 100 | 1000 | 500 | 250;
             remainingUSD: number;
             progressPercent: number;
             estimatedImpressionsRemaining: number;
@@ -65,7 +65,7 @@ export declare class AdminController {
                 estImpressionsRemaining: number;
             };
             milestonesRoadmap: {
-                targetUSD: 1000 | 100 | 250 | 500;
+                targetUSD: 100 | 1000 | 500 | 250;
                 achieved: boolean;
                 progressPercent: number;
                 remainingUSD: number;

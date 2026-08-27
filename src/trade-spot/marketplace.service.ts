@@ -317,10 +317,7 @@ export class MarketplaceService implements OnModuleInit {
    */
   private async seedMarketplace() {
     const count = await this.marketplaceModel.countDocuments();
-    if (count >= 235) {
-      this.logger.log(`Marketplace already seeded (${count} items)`);
-      return;
-    }
+    // Always seed/upsert to ensure names, stats, and prefixes stay aligned with code
 
     this.logger.log("Seeding 235 marketplace items...");
     const docs: Partial<MarketplaceItem>[] = [];
