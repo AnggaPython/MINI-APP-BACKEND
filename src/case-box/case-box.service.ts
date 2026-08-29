@@ -314,6 +314,25 @@ export class CaseBoxService {
       };
     }
 
+    // ── Anti-reroll: if the user already has an unhit active case, return it
+    // instead of spawning a new one. This prevents users from navigating
+    // in/out to reroll until they get MEDIUM/RARE.
+    const existingActive = await this.caseBoxModel
+      .findOne({ telegramId, status: "active" })
+      .lean()
+      .exec();
+    if (existingActive) {
+      return {
+        success: true,
+        durabilityCost: CASE_DURABILITY_COST,
+        box: {
+          caseId: existingActive._id.toString(),
+          tier: existingActive.tier,
+          maxHp: existingActive.maxHp,
+        },
+      };
+    }
+
     // Fetch user level for HP scaling
     let levelMultiplier = 1;
     try {
@@ -354,6 +373,29 @@ export class CaseBoxService {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // GET /case-box/status/:caseId — check if a case still exists and is active.
+  // Lightweight read-only endpoint used by the frontend to verify a case
+  // restored from localStorage before the user starts hitting it.
+  // ─────────────────────────────────────────────────────────────
+  async getStatus(telegramId: string, caseId: string) {
+    const caseBox = await this.caseBoxModel
+      .findOne({ _id: caseId, telegramId })
+      .lean()
+      .exec();
+
+    if (!caseBox) {
+      return { success: true, exists: false, status: null };
+    }
+
+    return {
+      success: true,
+      exists: true,
+      status: caseBox.status,
+      tier: caseBox.tier,
+      maxHp: caseBox.maxHp,
+    };
+  }
+
   // POST /case-box/destroy — break the lock & roll the multi-layer RNG.
   // The loot is credited atomically and idempotently (per-case lock), so a
   // replay can never double-credit a case.

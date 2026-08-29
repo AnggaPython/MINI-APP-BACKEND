@@ -24,6 +24,20 @@ export class CaseBoxController {
    * MEDIUM/RARE cases require a Monetag S2S ad ticket before the lock breaks.
    * Credits atomically — a replay can never double-pay.
    */
+  /**
+   * Check if a case still exists and is active.
+   * Lightweight verification used by the frontend to validate
+   * a case restored from localStorage before the user starts hitting it.
+   */
+  @Post("status")
+  async checkStatus(
+    @User("telegramId") telegramId: string,
+    @Body("caseId") caseId: string,
+  ) {
+    if (!caseId) return { success: false, error: "Missing caseId" };
+    return await this.caseBoxService.getStatus(telegramId, caseId);
+  }
+
   @Post("destroy")
   async destroyCase(
     @User("telegramId") telegramId: string,

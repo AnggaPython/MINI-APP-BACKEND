@@ -217,7 +217,24 @@ export class MinerStoneService {
       }
     }
 
-
+    // ── Anti-reroll: if the user already has an unhit active stone, return it
+    // instead of spawning a new one. Prevents navigating in/out to reroll
+    // until getting Medium/Rare.
+    const existingActive = await this.miningStoneModel
+      .findOne({ telegramId, status: "active" })
+      .lean()
+      .exec();
+    if (existingActive) {
+      return {
+        success: true,
+        stone: {
+          stoneId: existingActive._id.toString(),
+          tier: existingActive.tier,
+          maxHp: existingActive.maxHp,
+          zonk: existingActive.zonk,
+        },
+      };
+    }
 
     // Fetch user level for HP scaling
     let levelMultiplier = 1;

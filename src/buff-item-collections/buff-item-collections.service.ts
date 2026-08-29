@@ -246,7 +246,7 @@ const BUFF_TYPE_META: Record<BuffType, { label: string; description: string; uni
   },
   DURABILITY: {
     label: "Durability Engine",
-    description: "Restores tool durability every 5 successful hits",
+    description: "Slows down durability drain — pickaxe lasts longer",
     unit: "flat",
     icon: "🔧",
   },

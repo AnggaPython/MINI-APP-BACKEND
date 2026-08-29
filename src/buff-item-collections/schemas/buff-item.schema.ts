@@ -8,7 +8,7 @@ export type BuffItemDocument = BuffItem & Document;
  *
  *  - ATK:        Flat damage bonus per hit (mining + case box)
  *  - ECONOMY:    Percentage boost on claimed resources (iron, copper, etc.)
- *  - DURABILITY: Restores tool durability every 5 successful hits
+ *  - DURABILITY: Slows down durability drain — pickaxe lasts longer
  *  - DROPRATE:   Increases chance of rare item drops
  */
 export type BuffType = "ATK" | "ECONOMY" | "DURABILITY" | "DROPRATE";
