@@ -32,6 +32,23 @@ export class OpenOrder {
 
   @Prop({ required: true, default: "OPEN", enum: ["OPEN", "FILLED", "CANCELLED"] })
   status: "OPEN" | "FILLED" | "CANCELLED";
+
+  // ── Iceberg: split large order into smaller visible chunks ──────────
+  /** Whether this is an Iceberg order. */
+  @Prop({ default: false })
+  iceberg: boolean;
+
+  /** Total amount of the original order (before chunking). */
+  @Prop({ default: 0 })
+  icebergTotal: number;
+
+  /** Size of each visible chunk (e.g., 10000). */
+  @Prop({ default: 0 })
+  icebergChunkSize: number;
+
+  /** How many chunks have been filled so far. */
+  @Prop({ default: 0 })
+  icebergChunksFilled: number;
 }
 
 export const OpenOrderSchema = SchemaFactory.createForClass(OpenOrder);

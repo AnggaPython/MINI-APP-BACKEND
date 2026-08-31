@@ -9,6 +9,7 @@ import { LiquidityPool, LiquidityPoolSchema } from "./schemas/pool.schema";
 import { OpenOrder, OpenOrderSchema } from "./schemas/open-order.schema";
 import { AssetRegistry, AssetRegistrySchema } from "./schemas/asset-registry.schema";
 import { MarketplaceItem, MarketplaceItemSchema } from "./schemas/marketplace-item.schema";
+import { PendingTpSl, PendingTpSlSchema } from "./schemas/pending-tp-sl.schema";
 import { MarketplaceService } from "./marketplace.service";
 import { MarketplaceController } from "./marketplace.controller";
 import { SseService } from "./sse.service";
@@ -23,6 +24,7 @@ import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-co
       { name: OpenOrder.name, schema: OpenOrderSchema },
       { name: AssetRegistry.name, schema: AssetRegistrySchema },
       { name: MarketplaceItem.name, schema: MarketplaceItemSchema },
+      { name: PendingTpSl.name, schema: PendingTpSlSchema },
       { name: User.name, schema: UserSchema },
     ]),
     BuffItemCollectionsModule,

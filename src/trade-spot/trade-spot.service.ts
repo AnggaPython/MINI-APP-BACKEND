@@ -4,6 +4,7 @@ import { Model } from "mongoose";
 import { Trade } from "./schemas/trade.schema";
 import { LiquidityPool } from "./schemas/pool.schema";
 import { OpenOrder } from "./schemas/open-order.schema";
+import { PendingTpSl } from "./schemas/pending-tp-sl.schema";
 import { User } from "../users/schemas/user.schema";
 import { AssetRegistryService } from "./asset-registry.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
@@ -322,6 +323,7 @@ export class TradeSpotService {
     private readonly assetRegistry: AssetRegistryService,
     private readonly buffCollectionsService: BuffItemCollectionsService,
     private readonly sseService: SseService,
+    @InjectModel("PendingTpSl") private readonly pendingTpSlModel: any,
   ) { }
 
   // ── Rate limit helpers (in-memory sliding window) ─────────────────────
@@ -586,6 +588,9 @@ export class TradeSpotService {
         low24h: pool.lastMid,
         volume24h: 0,
         quoteVolume24h: 0,
+        // Regenerate cosmetic change% on daily reset
+        cosmeticChangePct: -1.56 + Math.random() * (2.27 - (-1.56)),
+        cosmeticPctUpdatedAt: new Date(),
       };
       await this.poolModel
         .updateOne({ pair }, { $set: resetOps })
@@ -611,14 +616,38 @@ export class TradeSpotService {
     }
 
     const pool = await this.getPool(pair);
-    const close = pool.lastMid;
-    const open = pool.open24h || close;
-    const high = pool.high24h || close;
-    const low = pool.low24h === Infinity ? close : pool.low24h || close;
+    const anchorMid = pool.lastMid; // fixed anchor price
+    const open = pool.open24h || anchorMid;
+    const high = pool.high24h || anchorMid;
+    const low = pool.low24h === Infinity ? anchorMid : pool.low24h || anchorMid;
     const volume = pool.volume24h || 0;
     const quoteVolume = pool.quoteVolume24h || 0;
-    const changePct = open ? ((close - open) / open) * 100 : 0;
     const [base, quote] = pair.split("/");
+
+    // ── Last trade price — makes ticker dynamic instead of always anchor
+    const lastTrade = await this.tradeModel
+      .findOne({ pair }, { price: 1, createdAt: 1 })
+      .sort({ createdAt: -1 })
+      .lean();
+    const close = lastTrade?.price || anchorMid;
+
+    // ── Cosmetic change% — refresh every hour with random value
+    // Real change% is always 0 for fixed-rate pairs, so we use a
+    // cosmetic random value (-1.56% to +2.27%) for realistic UI.
+    let cosmeticPct = pool.cosmeticChangePct || 0;
+    const cosmeticAge = pool.cosmeticPctUpdatedAt
+      ? now - pool.cosmeticPctUpdatedAt.getTime()
+      : Infinity;
+    if (cosmeticAge > 3600_000) {
+      // Refresh: random between -1.56 and +2.27
+      cosmeticPct = -1.56 + Math.random() * (2.27 - (-1.56)); // -1.56 to +2.27
+      await this.poolModel.updateOne(
+        { pair },
+        { $set: { cosmeticChangePct: cosmeticPct, cosmeticPctUpdatedAt: new Date() } },
+      );
+      pool.cosmeticChangePct = cosmeticPct;
+      pool.cosmeticPctUpdatedAt = new Date();
+    }
 
     const result = {
       success: true,
@@ -626,7 +655,7 @@ export class TradeSpotService {
       base,
       quote,
       last: round8(close),
-      changePct: round4(changePct),
+      changePct: round4(cosmeticPct),
       high: round8(high),
       low: round8(low),
       volume: round2(volume),
@@ -1145,6 +1174,10 @@ export class TradeSpotService {
       type?: string;
       amount?: number;
       price?: number;
+      tpPrice?: number;
+      slPrice?: number;
+      iceberg?: boolean;
+      icebergChunkSize?: number;
     },
   ) {
     const rateErr = this.checkRateLimit(
@@ -1186,7 +1219,7 @@ export class TradeSpotService {
 
     if (type === "market") {
       const execPrice = side === "BUY" ? ask : bid;
-      return this.executeFill(
+      const result = await this.executeFill(
         pair,
         telegramId,
         side,
@@ -1194,6 +1227,11 @@ export class TradeSpotService {
         round8(execPrice),
         "USER",
       );
+      // Create TP/SL pending order if provided
+      if (result.success && ((body.tpPrice ?? 0) > 0 || (body.slPrice ?? 0) > 0)) {
+        await this.createTpSlOrder(telegramId, pair, side, round2(amount), body.tpPrice ?? 0, body.slPrice ?? 0);
+      }
+      return result;
     }
 
     const limit = Number(body.price);
@@ -1218,13 +1256,22 @@ export class TradeSpotService {
         "USER",
       );
 
+    // [ICEBERG] Split large order into visible chunks
+    const useIceberg = body.iceberg === true && body.icebergChunkSize! > 0;
+    const chunkSize = useIceberg ? Math.min(round2(body.icebergChunkSize!), round2(amount)) : round2(amount);
+    const totalChunks = useIceberg ? Math.ceil(amount / chunkSize) : 1;
+
     const order = await this.orderModel.create({
       pair,
       telegramId,
       side,
       price: round8(limit),
-      amount: round2(amount),
+      amount: round2(chunkSize), // visible chunk only
       status: "OPEN",
+      iceberg: useIceberg,
+      icebergTotal: round2(amount),
+      icebergChunkSize: round2(chunkSize),
+      icebergChunksFilled: 0,
     });
     return {
       success: true,
@@ -1235,9 +1282,85 @@ export class TradeSpotService {
         price: order.price,
         amount: order.amount,
         status: "OPEN",
+        iceberg: useIceberg,
+        icebergTotal: useIceberg ? round2(amount) : undefined,
+        icebergChunkSize: useIceberg ? round2(chunkSize) : undefined,
       },
-      message: `Limit order placed — fills when the market crosses ${round8(limit)}`,
+      message: useIceberg
+        ? `Iceberg order placed — ${totalChunks} chunks of ${round2(chunkSize)} @ ${round8(limit)}`
+        : `Limit order placed — fills when the market crosses ${round8(limit)}`,
     };
+  }
+
+  // ── TP/SL: Create pending take-profit / stop-loss order ──────────────
+  private async createTpSlOrder(
+    telegramId: string,
+    pair: string,
+    originalSide: string,
+    amount: number,
+    tpPrice?: number,
+    slPrice?: number,
+  ) {
+    if (!tpPrice && !slPrice) return;
+    try {
+      const PendingTpSl = this.pendingTpSlModel;
+      if (!PendingTpSl) return; // model not registered yet
+      await PendingTpSl.create({
+        telegramId,
+        pair,
+        originalSide,
+        amount,
+        tpPrice: tpPrice || 0,
+        slPrice: slPrice || 0,
+      });
+    } catch {
+      // Non-critical — log only
+    }
+  }
+
+  /** Check pending TP/SL orders after each trade. Triggers auto-sell. */
+  private async checkTpSlOrders(pair: string, currentPrice: number) {
+    try {
+      const PendingTpSl = this.pendingTpSlModel;
+      if (!PendingTpSl) return;
+
+      const pending = await PendingTpSl.find({
+        pair,
+        triggered: false,
+        cancelled: false,
+      }).exec();
+
+      for (const order of pending) {
+        const shouldTrigger =
+          (order.tpPrice > 0 && currentPrice >= order.tpPrice) ||
+          (order.slPrice > 0 && currentPrice <= order.slPrice);
+
+        if (!shouldTrigger) continue;
+
+        // Trigger: auto-sell the opposite side
+        const sellSide = order.originalSide === "BUY" ? "SELL" : "BUY";
+        const result = await this.executeFill(
+          pair,
+          order.telegramId,
+          sellSide as "BUY" | "SELL",
+          order.amount,
+          round8(currentPrice),
+          "USER",
+        );
+
+        // Mark as triggered
+        await PendingTpSl.updateOne(
+          { _id: order._id },
+          { $set: { triggered: true, triggeredAt: new Date() } },
+        ).exec();
+
+        if (result.success) {
+          this.logger.log(`[TP/SL] Triggered ${order.tpPrice ? 'TP' : 'SL'} for ${order.telegramId} on ${pair} @ ${currentPrice}`);
+        }
+      }
+    } catch {
+      // Non-critical
+    }
   }
 
   /**
@@ -1440,6 +1563,9 @@ export class TradeSpotService {
       });
       this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
 
+      // [TP/SL] Check pending orders after this trade
+      this.checkTpSlOrders(pair, price).catch(() => {});
+
       const crypto = updated?.cryptoBalances as Record<string, number> | undefined;
 
       return {
@@ -1599,6 +1725,9 @@ export class TradeSpotService {
       });
       this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
 
+      // [TP/SL] Check pending orders after this trade
+      this.checkTpSlOrders(pair, price).catch(() => {});
+
       const crypto2 = updated?.cryptoBalances as Record<string, number> | undefined;
 
       return {
@@ -1730,12 +1859,71 @@ export class TradeSpotService {
         "USER",
       );
       if (res.success) {
-        await this.orderModel
-          .updateOne(
-            { _id: o._id },
-            { $set: { status: "FILLED", filledAmount: o.amount } },
-          )
-          .exec();
+        // [ICEBERG] Progress chunk — if more chunks remain, create next one
+        if (o.iceberg && o.icebergChunkSize > 0) {
+          const chunksFilled = (o.icebergChunksFilled || 0) + 1;
+          const totalChunks = Math.ceil((o.icebergTotal || o.amount) / o.icebergChunkSize);
+          const remainingTotal = (o.icebergTotal || o.amount) - chunksFilled * o.icebergChunkSize;
+
+          if (remainingTotal > o.icebergChunkSize) {
+            // More chunks — mark current filled, create next visible chunk
+            await this.orderModel
+              .updateOne(
+                { _id: o._id },
+                { $set: { status: "FILLED", filledAmount: o.amount } },
+              )
+              .exec();
+            // Create next chunk order
+            await this.orderModel.create({
+              pair,
+              telegramId: o.telegramId,
+              side: o.side,
+              price: o.price,
+              amount: round2(o.icebergChunkSize),
+              status: "OPEN",
+              iceberg: true,
+              icebergTotal: o.icebergTotal,
+              icebergChunkSize: o.icebergChunkSize,
+              icebergChunksFilled: chunksFilled,
+            });
+          } else if (remainingTotal > 0 && remainingTotal <= o.icebergChunkSize) {
+            // Last partial chunk
+            await this.orderModel
+              .updateOne(
+                { _id: o._id },
+                { $set: { status: "FILLED", filledAmount: o.amount } },
+              )
+              .exec();
+            await this.orderModel.create({
+              pair,
+              telegramId: o.telegramId,
+              side: o.side,
+              price: o.price,
+              amount: round2(remainingTotal),
+              status: "OPEN",
+              iceberg: true,
+              icebergTotal: o.icebergTotal,
+              icebergChunkSize: o.icebergChunkSize,
+              icebergChunksFilled: chunksFilled,
+            });
+          } else {
+            // All chunks done
+            await this.orderModel
+              .updateOne(
+                { _id: o._id },
+                { $set: { status: "FILLED", filledAmount: o.amount } },
+              )
+              .exec();
+          }
+        } else {
+          // Normal order — mark filled
+          await this.orderModel
+            .updateOne(
+              { _id: o._id },
+              { $set: { status: "FILLED", filledAmount: o.amount } },
+            )
+            .exec();
+        }
         fills.push({ orderId: String(o._id), trade: (res as any).trade });
       }
     }
@@ -1751,12 +1939,12 @@ export class TradeSpotService {
   // [TRADE LIMITS] Per-asset min/max trade amounts (backend safety net).
   // Frontend enforces these via slider + validation; backend double-checks.
   private static readonly TRADE_LIMITS: Record<string, { min: number; max: number }> = {
-    ELIXIR:   { min: 50,      max: 20_000 },
-    ELIXCOIN: { min: 100,     max: 150_000 },
-    GOLD:     { min: 100,     max: 100_000 },
-    COPPER:   { min: 1_000,   max: 1_000_000 },
-    IRON:     { min: 1_000,   max: 1_000_000 },
-    SILVER:   { min: 1_000,   max: 1_000_000 },
+    ELIXIR:   { min: 50,      max: 200_000 },
+    ELIXCOIN: { min: 100,     max: 1_500_000 },
+    GOLD:     { min: 100,     max: 1_000_000 },
+    COPPER:   { min: 1_000,   max: 10_000_000 },
+    IRON:     { min: 1_000,   max: 10_000_000 },
+    SILVER:   { min: 1_000,   max: 10_000_000 },
   };
 
   /** Tracks which assets have already been drifted this tick cycle to
@@ -1829,12 +2017,9 @@ export class TradeSpotService {
     const mid = pool.lastMid;
     const [base, quote] = pair.split("/");
 
-    // Use configurable trades per cycle (half BUY, half SELL for balance)
-    const tradesPerSide = Math.max(1, Math.floor((pool.botTradesPerCycle ?? 10) / 2));
-    const sides: ("BUY" | "SELL")[] = [
-      ...Array(tradesPerSide).fill("BUY"),
-      ...Array(tradesPerSide).fill("SELL"),
-    ].sort(() => Math.random() - 0.5);
+    // Each cycle = 1 trade, randomly BUY or SELL
+    // botTradesPerCycle controls how many times per hour this runs
+    const sides: ("BUY" | "SELL")[] = [Math.random() < 0.5 ? "BUY" : "SELL"];
 
     const trades: any[] = [];
     const baseReserveKey = "baseReserve";
@@ -1855,8 +2040,8 @@ export class TradeSpotService {
       await new Promise(r => setTimeout(r, Math.floor(Math.random() * 6000) + 2000));
 
       // [ITEM vs COIN] Determine if this pair trades items (integer units)
-      // or coins (fractional amounts). Items have mid >= 1 ELIXCOIN each.
-      const isItem = mid >= 1;
+      // or coins/minerals (fractional amounts). Use COIN_BASES not mid.
+      const isItem = isItemBase(base);
 
       let amount: number;
       if (isItem) {
@@ -1864,15 +2049,8 @@ export class TradeSpotService {
         // A buyer never purchases 0.5 of a Roman Coin!
         amount = Math.floor(Math.random() * 10) + 1; // 1 to 10 items
       } else {
-        // Coins/minerals: fractional amounts OK
-        const targetQuoteVolume = Math.random() * 290 + 10;
-        amount = targetQuoteVolume / mid;
-        if (amount < 150) {
-          amount = Math.random() * 850 + 150;
-        } else if (amount > 150_000) {
-          amount = Math.random() * 50_000 + 20_000;
-        }
-        amount = Math.floor(amount);
+        // Coins/minerals: 100-7000 per trade (realistic market activity)
+        amount = Math.floor(Math.random() * 6900) + 100; // 100 to 7000
       }
 
       // [ADMIN PRICE CONTROL] Bot trades within admin range only.

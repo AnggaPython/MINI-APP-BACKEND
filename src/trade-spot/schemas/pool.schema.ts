@@ -79,13 +79,13 @@ export class LiquidityPool {
   @Prop({ default: true })
   botEnabled: boolean;
 
-  /** Admin-tunable cooldown between bot cycles, in minutes (1–60). */
-  @Prop({ default: 15, min: 1, max: 60 })
-  botIntervalMinutes: number;
-
-  /** Admin-tunable: number of bot trades per cycle (BUY+SELL combined). Default 10 (5 BUY + 5 SELL). */
-  @Prop({ default: 10, min: 2, max: 100 })
+  /** Admin-tunable: how many random executions per hour (1 trade each). */
+  @Prop({ default: 7, min: 1, max: 100 })
   botTradesPerCycle: number;
+
+  /** Admin-tunable cooldown between bot cycles, in minutes (1–60). */
+  @Prop({ default: 5, min: 1, max: 60 })
+  botIntervalMinutes: number;
 
   // ── 24h pre-computed stats (eliminates full table scan every 5s) ────────
   // Updated on every trade (bot + user). Reset daily by the bot cycle.
@@ -106,6 +106,15 @@ export class LiquidityPool {
 
   @Prop({ default: null })
   dayResetAt: Date;
+
+  // ── Cosmetic 24h change% (random -1.56% to +2.27%, refreshes hourly) ──
+  // Since all prices are fixed, real change% is always 0.
+  // This field provides a realistic-looking percentage for UI display only.
+  @Prop({ default: 0 })
+  cosmeticChangePct: number;
+
+  @Prop({ default: null })
+  cosmeticPctUpdatedAt: Date;
 
   // ── Admin Price Control ──────────────────────────────────────────────
   // When set, the MM bot and driftMid operate within this range.
