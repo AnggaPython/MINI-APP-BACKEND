@@ -685,7 +685,12 @@ export class TradeSpotService {
       return cache.data;
     }
     const pool = await this.getPool(pair);
-    const mid = pool.lastMid; // All pairs are fixed-rate — always use global mid
+    // Use last trade price for dynamic mid display, fallback to anchor
+    const lastTrade = await this.tradeModel
+      .findOne({ pair }, { price: 1 })
+      .sort({ createdAt: -1 })
+      .lean();
+    const mid = lastTrade?.price || pool.lastMid;
     const half = pool.spreadPct / 2;
     const step = 0.0012; // 0.12% between consecutive levels
 
@@ -826,10 +831,19 @@ export class TradeSpotService {
     const bidShare =
       totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
 
+    // Get previous mid for color comparison (green if last trade > previous)
+    const prevTrade = lastTrade
+      ? await this.tradeModel
+          .findOne({ pair, _id: { $ne: lastTrade._id } }, { price: 1 })
+          .sort({ createdAt: -1 })
+          .lean()
+      : null;
+
     const result = {
       success: true,
       pair,
       mid: round8(mid),
+      prevMid: round8(prevTrade?.price || mid),
       spread: round8(finAsks[0]?.price - finBids[0]?.price || 0),
       asks: finAsks,
       bids: finBids,
@@ -1133,11 +1147,12 @@ export class TradeSpotService {
       }
       // ELIXCOIN: integer only (prevent floating-point $gte mismatch)
       // Items: integer only. Other coins: raw balance.
-      const safeMaxBase = base === "ELIXCOIN"
+      // ELIXCOIN + Minerals: integer only (prevent floating-point $gte mismatch)
+      // Items: integer only. Other coins: raw balance.
+      const isMineral = ["ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"].includes(base);
+      const safeMaxBase = (base === "ELIXCOIN" || isMineral || isItemBase(base))
         ? Math.floor(baseBalance)
-        : isItemBase(base)
-          ? Math.floor(baseBalance)
-          : baseBalance;
+        : baseBalance;
       return {
         success: true,
         maxBase: safeMaxBase,
@@ -1472,6 +1487,10 @@ export class TradeSpotService {
         // Coin fee in BASE (deducted from received amount)
         fee = round4(amount * FEE_PCT);
         receivedBase = round4(amount - fee);
+        // Minerals: floor to integer to prevent fractional amounts
+        if (["COPPER", "IRON", "SILVER", "GOLD"].includes(base)) {
+          receivedBase = Math.floor(receivedBase);
+        }
         actualSpend = spendQuote;
         feeCurrency = base;        // [FLOATING POINT TOLERANCE] Allow 0.0001 slack for rounding overshoot.
         // Without this, round8→/ask→×ask→round4 can overshoot by ~0.00002.
@@ -1634,8 +1653,8 @@ export class TradeSpotService {
 
       } else {
         // ── Coin / crypto SELL (or BOT) ─────────────────
-        // ELIXCOIN: round to integer to prevent floating-point $gte mismatch
-        if (base === "ELIXCOIN") {
+        // ELIXCOIN + Minerals: round to integer to prevent floating-point $gte mismatch
+        if (["ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"].includes(base)) {
           amount = Math.floor(amount);
           const grossQuoteInt = round4(amount * price);
           fee = round4(grossQuoteInt * FEE_PCT);
