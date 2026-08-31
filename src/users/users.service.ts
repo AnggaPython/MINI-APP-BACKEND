@@ -1303,22 +1303,22 @@ export class UsersService {
             };
         } catch (err) {
             this.logger.error(
-                `[CircularCasino] Fatal resolveHiLoBet failed, fallback: ${err}`,
+                `[CircularCasino] Fatal resolveHiLoBet failed, refunding bet: ${err}`,
             );
 
-            const reward = isWin ? betAmount * multiplier : 0;
-            const profit = isWin ? reward - betAmount : -betAmount;
-            let finalBalance = user.elixirBalance;
-            if (isWin) {
-                const winUser = await this.userModel
-                    .findOneAndUpdate(
-                        { telegramId },
-                        { $inc: { elixirBalance: reward, lifetimeElixir: reward } },
-                        { returnDocument: "after" },
-                    )
-                    .exec();
-                finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
-            }
+            // SECURITY: Do NOT credit any win in the catch block.
+            // The original isWin was computed BEFORE the casino's manipulation pass,
+            // so it may not reflect the casino's final decision. Creditting a win here
+            // could pay out when the casino would have changed the outcome to a loss.
+            // Safe default: refund the bet (the atomic deduction already took it).
+            const refund = betAmount;
+            await this.userModel
+                .updateOne(
+                    { telegramId },
+                    { $inc: { elixirBalance: refund } },
+                )
+                .exec();
+            const finalBalance = user.elixirBalance; // after refund = original
             await new this.hiloBetModel({
                 telegramId,
                 betAmount,
@@ -1327,8 +1327,8 @@ export class UsersService {
                 thresholdHI,
                 thresholdLO,
                 rolledNumber,
-                isWin,
-                profit,
+                isWin: false,
+                profit: 0,
                 newBalance: finalBalance,
                 serverSeed,
                 clientSeed,
@@ -1339,9 +1339,10 @@ export class UsersService {
                 rolledNumber,
                 thresholdHI,
                 thresholdLO,
-                isWin,
-                profit,
+                isWin: false,
+                profit: 0,
                 newBalance: finalBalance,
+                error: "Casino engine error — bet refunded.",
             };
         }
     }

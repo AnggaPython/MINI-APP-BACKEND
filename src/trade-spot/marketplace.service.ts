@@ -390,13 +390,16 @@ export class MarketplaceService implements OnModuleInit {
       });
     }
 
-    // Bulk upsert
-    for (const doc of docs) {
-      await this.marketplaceModel.updateOne(
-        { itemId: doc.itemId },
-        { $set: doc },
-        { upsert: true },
-      );
+    // Bulk upsert — single DB round-trip (was 235 individual updateOne calls = ~10s)
+    if (docs.length > 0) {
+      const ops = docs.map(doc => ({
+        updateOne: {
+          filter: { itemId: doc.itemId },
+          update: { $set: doc },
+          upsert: true,
+        },
+      }));
+      await this.marketplaceModel.bulkWrite(ops, { ordered: false });
     }
 
     this.logger.log(`Seeded ${docs.length} marketplace items`);

@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { TradeSpotService } from "./trade-spot.service";
 import { MINERAL_INITIAL_RATES } from "./trade-spot.service";
+import { SseService } from "./sse.service";
 import { User } from "../auth/telegram-user.decorator";
 
 @Controller("trade-spot")
 export class TradeSpotController {
-  constructor(private readonly tradeSpotService: TradeSpotService) { }
+  constructor(
+    private readonly tradeSpotService: TradeSpotService,
+    private readonly sseService: SseService,
+  ) { }
 
   /** All available trading pairs from MINERAL_INITIAL_RATES. */
   @Get("pairs")
@@ -65,8 +70,6 @@ export class TradeSpotController {
 
   /**
    * Max tradeable amount for the caller, accounting for anti-whale slippage.
-   * Returns the maximum BASE amount the user can BUY (or SELL) without
-   * the backend rejecting for insufficient balance.
    */
   @Get("max-tradeable")
   async maxTradeable(
@@ -85,10 +88,7 @@ export class TradeSpotController {
     return this.tradeSpotService.getOpenOrders(telegramId, pair);
   }
 
-  /**
-   * The caller's own trade history — newest first, 5 per page. The frontend
-   * "Load more" button keeps fetching the next page (5 more rows each).
-   */
+  /** The caller's own trade history. */
   @Get("user-trades")
   async userTrades(
     @User("telegramId") telegramId: string,
@@ -105,12 +105,7 @@ export class TradeSpotController {
     );
   }
 
-  /**
-   * Place an order — market (instant) or limit (instant if crossing, else rests).
-   * Server-authoritative: balances are guarded + moved in ONE atomic update,
-   * the platform pool is the counterparty, and 1.5% fee + spread slip accrue
-   * to the platform on every fill.
-   */
+  /** Place an order — market or limit. */
   @Post("order")
   async placeOrder(
     @User("telegramId") telegramId: string,
@@ -130,5 +125,28 @@ export class TradeSpotController {
       return { success: false, error: "Missing orderId" };
     }
     return this.tradeSpotService.cancelOrder(telegramId, String(body.orderId));
+  }
+
+  /**
+   * SSE stream for real-time price/trade events.
+   * Frontend opens EventSource to this endpoint — server pushes only
+   * when data actually changes (no polling overhead).
+   *
+   * Usage: GET /trade-spot/events?pair=ELIXCOIN/COPPER
+   */
+  @Get("events")
+  events(
+    @Query("pair") pair: string,
+    @Res() res: Response,
+  ) {
+    const pairName = pair || "ELIXCOIN/ELIXIR";
+    this.sseService.subscribe(pairName, res);
+
+    // Send initial ticker snapshot so the client has data immediately
+    this.tradeSpotService.getTicker(pairName).then((ticker) => {
+      try {
+        res.write(`event: ticker\ndata: ${JSON.stringify(ticker)}\n\n`);
+      } catch { /* client may have disconnected */ }
+    }).catch(() => {});
   }
 }

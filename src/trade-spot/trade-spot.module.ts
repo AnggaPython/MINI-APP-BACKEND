@@ -11,6 +11,7 @@ import { AssetRegistry, AssetRegistrySchema } from "./schemas/asset-registry.sch
 import { MarketplaceItem, MarketplaceItemSchema } from "./schemas/marketplace-item.schema";
 import { MarketplaceService } from "./marketplace.service";
 import { MarketplaceController } from "./marketplace.controller";
+import { SseService } from "./sse.service";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-collections.module";
 
@@ -27,7 +28,7 @@ import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-co
     BuffItemCollectionsModule,
   ],
   controllers: [TradeSpotController, MarketplaceController],
-  providers: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService],
-  exports: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService],
+  providers: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService],
+  exports: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService],
 })
 export class TradeSpotModule {}

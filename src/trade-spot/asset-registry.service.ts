@@ -22,10 +22,9 @@ const ASSET_SEEDS: Record<
   ELIXIR:   { virtualReserve: 100_000_000,   anchorUsdPrice: 0.001 },
   ELIXCOIN: { virtualReserve: 10_000_000,    anchorUsdPrice: 0.00000967 },
   IRON:     { virtualReserve: 10_000_000,    anchorUsdPrice: 0.00000030 },
-  COPPER:   { virtualReserve: 10_000_000,    anchorUsdPrice: 0.00000060 },
+  COPPER:   { virtualReserve: 10_000_000,    anchorUsdPrice: 0.00000035 },
   SILVER:   { virtualReserve: 10_000_000,    anchorUsdPrice: 0.00000068 },
   GOLD:     { virtualReserve: 10_000_000,    anchorUsdPrice: 0.0000068 },
-  DIAMOND:  { virtualReserve: 10_000_000,    anchorUsdPrice: 0.000068 },
 };
 
 @Injectable()
@@ -223,10 +222,10 @@ export class AssetRegistryService {
     const affectedPools = await this.poolModel
       .find({
         $or: [
-          { pair: { $regex: new RegExp(`^${base}/`) } },
-          { pair: { $regex: new RegExp(`/${base}$`) } },
-          { pair: { $regex: new RegExp(`^${quote}/`) } },
-          { pair: { $regex: new RegExp(`/${quote}$`) } },
+          { pair: { $regex: `^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/` } },
+          { pair: { $regex: `/${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } },
+          { pair: { $regex: `^${quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/` } },
+          { pair: { $regex: `/${quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } },
         ],
       })
       .lean()
@@ -295,7 +294,7 @@ export class AssetRegistryService {
   }
 
   // ── Stable assets (NEVER drift from anchor price) ─────────────────────
-  private static readonly STABLE_ASSETS = new Set(["USDC", "ELIXIR"]);
+  private static readonly STABLE_ASSETS = new Set(["USDC", "ELIXIR", "ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"]);
 
   // ── Update USD price directly (for drift cycles) ─────────────────────
   async setUsdPrice(asset: string, price: number): Promise<void> {

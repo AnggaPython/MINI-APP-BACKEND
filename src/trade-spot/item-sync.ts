@@ -81,7 +81,7 @@ export function isMaterialBase(base: string): boolean {
  * This is the inverse: anything that's NOT a material, NOT a coin.
  */
 export const COIN_BASES = new Set([
-  "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
+  "IRON", "COPPER", "SILVER", "GOLD",
   "ELIXCOIN", "ELIXIR", "USDC",
 ]);
 

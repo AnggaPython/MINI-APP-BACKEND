@@ -7,6 +7,7 @@ import { OpenOrder } from "./schemas/open-order.schema";
 import { User } from "../users/schemas/user.schema";
 import { AssetRegistryService } from "./asset-registry.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
+import { SseService } from "./sse.service";
 import { isItemBase, isMaterialBase, slugToMaterialName, COIN_BASES } from "./item-sync";
 
 // Re-export for use by other modules
@@ -25,27 +26,19 @@ export const SPREAD_PCT = 0.004;
  * material tools) have bot disabled — liquidity is managed manually via admin. */
 export const CORE_BOT_PAIRS = new Set([
   "ELIXCOIN/ELIXIR",
-  "ELIXCOIN/USDC",
-  "IRON/USDC", "COPPER/USDC", "SILVER/USDC", "GOLD/USDC", "DIAMOND/USDC",
   "ELIXCOIN/IRON", "ELIXCOIN/COPPER", "ELIXCOIN/SILVER",
-  "ELIXCOIN/GOLD", "ELIXCOIN/DIAMOND",
+  "ELIXCOIN/GOLD",
 ]);
 
 export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "ELIXCOIN/ELIXIR": 0.09674384,
-  "ELIXCOIN/USDC": 0.00000967,
-  "IRON/USDC": 0.00000030, // raised to 3e-7 for 8-decimal order book depth
-  "COPPER/USDC": 0.00000060, // raised to 6e-7 for 8-decimal order book depth
-  "SILVER/USDC": 0.00000068,
-  "GOLD/USDC": 0.0000068,
-  "DIAMOND/USDC": 0.000068,
+  // USDC pairs removed — all trading via ELIXCOIN pairs only
   // Cross-pair mineral pairs (shared pool — price synced via AssetRegistry)
   // mid = basePrice(USD) / quotePrice(USD)
   "ELIXCOIN/IRON": 32.23,    // 0.00000967 / 0.00000030 = 32.23 IRON per ELIXCOIN
-  "ELIXCOIN/COPPER": 16.12,  // 0.00000967 / 0.00000060
+  "ELIXCOIN/COPPER": 27.63,  // 0.00000967 / 0.00000035
   "ELIXCOIN/SILVER": 14.22,  // 0.00000967 / 0.00000068
   "ELIXCOIN/GOLD": 1.422,    // 0.00000967 / 0.0000068
-  "ELIXCOIN/DIAMOND": 0.1422, // 0.00000967 / 0.000068
 
   // ── Marketplace Items (196 items) ──
   "ROMAN-COIN/ELIXCOIN": 40,
@@ -306,6 +299,18 @@ export class TradeSpotService {
     { data: any; ts: number; limit: number }
   >();
 
+  // [TRADE IMPACT] Track last user trade per pair for asymmetric orderbook.
+  // After a large BUY, bid-side lags behind (no free buyback).
+  // After a large SELL, ask-side lags behind.
+  private lastUserTradeImpact = new Map<
+    string,
+    { side: string; time: number; impact: number }
+  >();
+  // Previous mid before last user trade — used for lagging opposite side.
+  private previousMid = new Map<string, number>();
+  // Last mid set by user trade — prevents getPool from overriding with global mid.
+  private lastTradeMid = new Map<string, { mid: number; time: number }>();
+
   private readonly logger = new Logger(TradeSpotService.name);
 
   constructor(
@@ -316,6 +321,7 @@ export class TradeSpotService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly assetRegistry: AssetRegistryService,
     private readonly buffCollectionsService: BuffItemCollectionsService,
+    private readonly sseService: SseService,
   ) { }
 
   // ── Rate limit helpers (in-memory sliding window) ─────────────────────
@@ -503,45 +509,50 @@ export class TradeSpotService {
         .exec();
     }
 
-    // [AUTO-HEAL]: Automatically sanitize and purge negative metrics caused by legacy Bot exhaustion
-    if (
-      (pool.volume24h && pool.volume24h < 0) ||
-      (pool.baseReserve !== undefined && pool.baseReserve < 0) ||
-      (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0)
-    ) {
+    // [AUTO-HEAL]: Instantly reset depleted reserves. Triggers at <= 0 OR critically low (< 10% initial).
+    const BASE_INIT = 10_000_000;
+    const QUOTE_INIT = 1_000_000;
+    const CRITICAL_PCT = 0.002; // reset when 99.8% depleted (< 0.2% remaining)
+    const baseLow = pool.baseReserve != null && pool.baseReserve <= BASE_INIT * CRITICAL_PCT;
+    const quoteLow = pool.quoteReserve != null && pool.quoteReserve <= QUOTE_INIT * CRITICAL_PCT;
+    const ecoinLow = pool.elixcoinReserve != null && pool.elixcoinReserve <= BASE_INIT * CRITICAL_PCT;
+    const ecoinNeg = pool.elixcoinReserve != null && pool.elixcoinReserve < 0;
+    const elixirLow = pool.elixirReserve != null && pool.elixirReserve <= QUOTE_INIT * CRITICAL_PCT;
+    const elixirNeg = pool.elixirReserve != null && pool.elixirReserve < 0;
+    const volNeg = (pool.volume24h && pool.volume24h < 0) || (pool.quoteVolume24h && pool.quoteVolume24h < 0);
+
+    if (baseLow || quoteLow || ecoinLow || ecoinNeg || elixirLow || elixirNeg || volNeg) {
       const setOps: any = {};
-      if (pool.volume24h < 0) {
-        setOps.volume24h = 0;
-        pool.volume24h = 0;
-      }
-      if (pool.quoteVolume24h < 0) {
-        setOps.quoteVolume24h = 0;
-        pool.quoteVolume24h = 0;
-      }
-      if (pool.baseReserve !== undefined && pool.baseReserve < 0) {
-        setOps.baseReserve = 10000000;
-        pool.baseReserve = 10000000;
-      }
-      if (pool.quoteReserve !== undefined && pool.quoteReserve < 0) {
-        setOps.quoteReserve = 1000000;
-        pool.quoteReserve = 1000000;
-      }
-      if (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0) {
-        setOps.elixcoinReserve = 10000000;
-        pool.elixcoinReserve = 10000000;
-      }
-      if (pool.elixirReserve !== undefined && pool.elixirReserve < 0) {
-        setOps.elixirReserve = 1000000;
-        pool.elixirReserve = 1000000;
-      }
+      if (pool.volume24h && pool.volume24h < 0) { setOps.volume24h = 0; pool.volume24h = 0; }
+      if (pool.quoteVolume24h && pool.quoteVolume24h < 0) { setOps.quoteVolume24h = 0; pool.quoteVolume24h = 0; }
+      if (baseLow) { setOps.baseReserve = BASE_INIT; pool.baseReserve = BASE_INIT; }
+      if (quoteLow) { setOps.quoteReserve = QUOTE_INIT; pool.quoteReserve = QUOTE_INIT; }
+      if (ecoinLow || ecoinNeg) { setOps.elixcoinReserve = BASE_INIT; pool.elixcoinReserve = BASE_INIT; }
+      if (elixirLow || elixirNeg) { setOps.elixirReserve = QUOTE_INIT; pool.elixirReserve = QUOTE_INIT; }
 
       if (Object.keys(setOps).length > 0) {
         await this.poolModel.updateOne({ pair }, { $set: setOps }).exec();
       }
     }
-    // [ADMIN PRICE CONTROL] If admin has set bid/ask range, use that
-    // instead of global asset registry. Admin price is ALWAYS authoritative.
-    if (pool.adminBidFloor > 0 && pool.adminAskCeiling > 0) {
+    // [STABLE PAIR SKIP] For pairs where ELIXCOIN is the base (coinbase)
+    // and it's now stable, always use global mid and ignore any stale admin
+    // ceiling/floor that may have been left from when ELIXCOIN was drifting.
+    const [poolBase, poolQuote] = pair.split("/");
+    const elixcoinInvolved =
+      poolBase === "ELIXCOIN" || poolQuote === "ELIXCOIN";
+
+    if (elixcoinInvolved && TradeSpotService.STABLE_ASSETS.has("ELIXCOIN")) {
+      // Always use global mid for ELIXCOIN mineral pairs
+      const globalMid = await this.assetRegistry.getMidFromGlobalReserves(pair);
+      if (globalMid > 0 && Math.abs(globalMid - pool.lastMid) > 1e-12) {
+        pool.lastMid = globalMid;
+        await this.poolModel
+          .updateOne({ pair }, { $set: { lastMid: globalMid } })
+          .exec();
+      }
+    } else if (pool.adminBidFloor > 0 && pool.adminAskCeiling > 0) {
+      // [ADMIN PRICE CONTROL] If admin has set bid/ask range, use that
+      // instead of global asset registry. Admin price is ALWAYS authoritative.
       const adminMid = round8((pool.adminBidFloor + pool.adminAskCeiling) / 2);
       pool.lastMid = adminMid;
       await this.poolModel
@@ -557,11 +568,39 @@ export class TradeSpotService {
         await this.poolModel
           .updateOne({ pair }, { $set: { lastMid: globalMid } })
           .exec();
-      }
+      }    }
+
+    // [24H RESET] Ensure daily stats reset for ALL pools, even those without
+    // the bot running. Without this, disabled-bot pools never reset open24h,
+    // volume24h, high24h, low24h — making change% permanently stale.
+    const now24h = Date.now();
+    if (
+      !pool.dayResetAt ||
+      now24h - pool.dayResetAt.getTime() > 24 * 3600_000
+    ) {
+      // Reset 24h stats using current mid as new open
+      const resetOps: any = {
+        dayResetAt: new Date(),
+        open24h: pool.lastMid,
+        high24h: pool.lastMid,
+        low24h: pool.lastMid,
+        volume24h: 0,
+        quoteVolume24h: 0,
+      };
+      await this.poolModel
+        .updateOne({ pair }, { $set: resetOps })
+        .exec();
+      pool.dayResetAt = resetOps.dayResetAt;
+      pool.open24h = resetOps.open24h;
+      pool.high24h = resetOps.high24h;
+      pool.low24h = resetOps.low24h;
+      pool.volume24h = 0;
+      pool.quoteVolume24h = 0;
     }
 
     return pool;
   }
+
 
   // ── Ticker: last price + 24h stats (pre-computed on pool, cached 3s) ──
   async getTicker(pair: string = DEFAULT_PAIR) {
@@ -617,7 +656,7 @@ export class TradeSpotService {
       return cache.data;
     }
     const pool = await this.getPool(pair);
-    const mid = pool.lastMid;
+    const mid = pool.lastMid; // All pairs are fixed-rate — always use global mid
     const half = pool.spreadPct / 2;
     const step = 0.0012; // 0.12% between consecutive levels
 
@@ -660,6 +699,41 @@ export class TradeSpotService {
 
       const bidPrice = round8(mid - halfSpreadRaw - levelStep * i);
       bids.push({ price: bidPrice, amount: round2(bidBase) });
+    }
+
+    // [TRADE IMPACT] Asymmetric orderbook — lagging opposite side after user trade.
+    // After a BUY sweep: bids lag behind (user can't instant sellback at new prices).
+    // After a SELL sweep: asks lag behind (user can't instant buyback at new prices).
+    // Lag gradually catches up over 60 seconds.
+    const impact = this.lastUserTradeImpact.get(pair);
+    const savedMid = this.previousMid.get(pair) ?? mid;
+    if (impact) {
+      const elapsed = Date.now() - impact.time;
+      const DECAY_MS = 60_000;
+      if (elapsed < DECAY_MS) {
+        const decay = 1 - elapsed / DECAY_MS; // 1.0 → 0.0
+        const intensity = Math.min(1, impact.impact / 0.015);
+        const lag = decay * intensity; // how much the opposite side lags (1.0 = full lag)
+
+        if (impact.side === "BUY") {
+          // Whale bought → asks swept → bid side uses LAGGING mid
+          // bidMid = mid - (mid - savedMid) * lag → starts at savedMid, catches up to mid
+          const bidLagMid = mid - (mid - savedMid) * lag;
+          for (let i = 0; i < bids.length; i++) {
+            bids[i].price = round8(bidLagMid - halfSpreadRaw - levelStep * i);
+          }
+        } else {
+          // Whale sold → bids swept → ask side uses LAGGING mid
+          // askMid = mid + (savedMid - mid) * lag → starts at savedMid, catches up to mid
+          const askLagMid = mid + (savedMid - mid) * lag;
+          for (let i = 0; i < asks.length; i++) {
+            asks[i].price = round8(askLagMid + halfSpreadRaw + levelStep * i);
+          }
+        }
+      } else {
+        this.lastUserTradeImpact.delete(pair);
+        this.previousMid.delete(pair);
+      }
     }
 
     // [NEW] Merge active user Limit Orders into the AMM visual depth
@@ -990,18 +1064,11 @@ export class TradeSpotService {
     };
   }
 
-  // ── Max tradeable amount (accounts for anti-whale slippage) ──────────
+  // ── Max tradeable amount (raw balance, no slippage cap) ─────────────
   /**
-   * Returns the maximum BASE amount the user can BUY or SELL without
-   * the backend rejecting for insufficient balance.
-   *
-   * For BUY: the user spends QUOTE (e.g. USDC). The backend applies
-   * anti-whale slippage which makes `spendQuote = amount × price × (1 + slippage)`
-   * larger than the naive `amount × price`. This method reverse-calculates
-   * the maximum `amount` that keeps `spendQuote <= userBalance`.
-   *
-   * For SELL: no slippage issue on the spend side (user spends BASE directly),
-   * so max = user's BASE balance.
+   * Returns the raw balance for BUY and SELL — no trade cap.
+   * Fee (1.5%) is deducted from what the user RECEIVES, not what they spend.
+   * Slippage applies to the execution price but doesn't cap the trade.
    */
   async getMaxTradeable(
     telegramId: string,
@@ -1031,55 +1098,37 @@ export class TradeSpotService {
         const displayName = slugToMaterialName(base);
         baseBalance = materials?.[displayName] ?? 0;
       } else if (!COIN_BASES.has(base.toUpperCase())) {
-        // Buff item — count inventory instances
         baseBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
       } else {
         baseBalance = base === "ELIXIR" ? user.elixirBalance || 0 : crypto?.[base] || 0;
       }
-      const itemBalance = isItemBase(base) ? Math.floor(baseBalance) : baseBalance;
+      // ELIXCOIN: integer only (prevent floating-point $gte mismatch)
+      // Items: integer only. Other coins: raw balance.
+      const safeMaxBase = base === "ELIXCOIN"
+        ? Math.floor(baseBalance)
+        : isItemBase(base)
+          ? Math.floor(baseBalance)
+          : baseBalance;
       return {
         success: true,
-        maxBase: isItemBase(base) ? itemBalance : round4(baseBalance),
-        maxQuote: round4(itemBalance * bid),
+        maxBase: safeMaxBase,
+        maxQuote: round4(safeMaxBase * bid),
         price: round8(bid),
         base,
         quote,
       };
     }
 
-    // BUY: reverse-solve for max BASE amount given QUOTE balance.
-    // spendQuote = amount × ask × (1 + shiftPct)
-    // shiftPct = min(0.05, (amount / baseReserve) × 0.5)
-    //
-    // For small amounts, shiftPct ≈ 0, so amount ≈ quoteBalance / ask.
-    // For large amounts, shiftPct caps at 5%, so amount ≈ quoteBalance / (ask × 1.05).
-    //
-    // CRITICAL: We use round8 to match executeFill's price rounding.
-    // For tiny-price pairs (IRON 0.00000030), unrounded prices cause the
-    // binary search to overshoot by ~1.4%, leading to "Insufficient balance".
-    const itemBase = isItemBase(base);
-    let low = 0;
-    let high = quoteBalance / (ask * 0.95); // generous upper bound
-    for (let i = 0; i < 20; i++) {
-      const mid2 = (low + high) / 2;
-      const impactRatio = mid2 / Math.max(1, pool.baseReserve ?? 10_000_000);
-      const slippage = Math.min(0.05, impactRatio * 0.5);
-      const effectivePrice = round8(ask * (1 + slippage)); // MATCH executeFill rounding
-      const cost = round4(mid2 * effectivePrice);
-      // Items: fee is in QUOTE (ELIXCOIN) on top of cost; Coins: fee is in BASE
-      const totalCost = itemBase ? round4(cost * (1 + FEE_PCT)) : cost;
-      if (totalCost <= quoteBalance) low = mid2;
-      else high = mid2;
-    }
-    // Items: convert to whole numbers (can't buy 2.5 items)
-    const maxBase = itemBase ? Math.floor(low) : round4(low);
-    // For items, maxQuote includes the ELIXCOIN fee
-    const rawQuote = round4(maxBase * ask);
-    const maxQuote = itemBase ? round4(rawQuote * (1 + FEE_PCT)) : rawQuote;
+    // BUY: max BASE you can buy with your QUOTE balance.
+    // Fee is deducted from BASE received, so spend = amount × ask (no fee on spend).
+    const maxBase = quoteBalance / ask;
+    // [FLOATING POINT FIX] Floor to 4 decimals so round-trip rounding never overshoots.
+    // Without floor: round8(raw) → /ask → ×ask → round4 → can round UP past actual balance.
+    const maxQuote = Math.floor(quoteBalance * 10000) / 10000;
 
     return {
       success: true,
-      maxBase,
+      maxBase: isItemBase(base) ? Math.floor(maxBase) : maxBase,
       maxQuote,
       price: round8(ask),
       base,
@@ -1207,6 +1256,27 @@ export class TradeSpotService {
     if (source === "USER" && !telegramId)
       return { success: false, error: "Missing account" };
 
+    // [TRADE LIMITS] Validate min/max per asset (backend safety net)
+    if (source === "USER") {
+      const [baseAsset] = pair.split("/");
+      const limitsKey = side === "BUY" ? pair.split("/")[1] : baseAsset;
+      const limits = TradeSpotService.TRADE_LIMITS[limitsKey];
+      if (limits) {
+        if (side === "BUY") {
+          const spendQuote = round4(amount * basePrice);
+          if (spendQuote < limits.min)
+            return { success: false, error: `Minimum trade is ${limits.min} ${limitsKey}` };
+          if (spendQuote > limits.max)
+            return { success: false, error: `Maximum trade is ${limits.max} ${limitsKey}` };
+        } else {
+          if (amount < limits.min)
+            return { success: false, error: `Minimum trade is ${limits.min} ${limitsKey}` };
+          if (amount > limits.max)
+            return { success: false, error: `Maximum trade is ${limits.max} ${limitsKey}` };
+        }
+      }
+    }
+
     const pool = await this.getPool(pair);
 
     // ── Anti-whale slippage penalty (synchronous bonding-curve impact) ─────
@@ -1216,7 +1286,7 @@ export class TradeSpotService {
     let shiftPct = 0;
     if (source === "USER") {
       const impactRatio = amount / Math.max(1, pool.baseReserve ?? 10_000_000);
-      shiftPct = Math.min(0.05, impactRatio * 0.5); // cap at 5% per fill
+      shiftPct = Math.min(0.015, impactRatio * 0.5); // cap at 1.5% per fill (was 5%)
       price = side === "BUY"
         ? round8(basePrice * (1 + shiftPct))   // buyer pays more
         : round8(basePrice * (1 - shiftPct));  // seller receives less
@@ -1280,11 +1350,12 @@ export class TradeSpotService {
         fee = round4(amount * FEE_PCT);
         receivedBase = round4(amount - fee);
         actualSpend = spendQuote;
-        feeCurrency = base;
-
+        feeCurrency = base;        // [FLOATING POINT TOLERANCE] Allow 0.0001 slack for rounding overshoot.
+        // Without this, round8→/ask→×ask→round4 can overshoot by ~0.00002.
+        const gteCheck = Math.max(0, spendQuote - 0.0001);
         updated = await this.userModel
           .findOneAndUpdate(
-            { telegramId, [quoteKey]: { $gte: spendQuote } },
+            { telegramId, [quoteKey]: { $gte: gteCheck } },
             { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } },
             { returnDocument: "after" },
           )
@@ -1293,8 +1364,26 @@ export class TradeSpotService {
           return { success: false, error: `Insufficient ${quote} balance` };
       }
 
+
+
+
+      // [TRADE IMPACT] Save previous mid before changing it.
+      if (source === "USER") {
+        this.previousMid.set(pair, pool.lastMid);
+      }
       const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
-      const newMid = round8(pool.lastMid * (1 + midNudge));
+      const newMid = round8(pool.lastMid * (1 + midNudge));      // [TRADE IMPACT] Track user trade for asymmetric orderbook.
+      // BUY sweeps asks → bid-side lags behind (prevent instant buyback).
+      if (source === "USER") {
+        this.lastUserTradeImpact.set(pair, {
+          side: "BUY",
+          time: Date.now(),
+          impact: shiftPct,
+        });
+        // [TRADE MID] Save mid after trade — prevents getPool from overriding.
+        this.lastTradeMid.set(pair, { mid: newMid, time: Date.now() });
+      }
+
 
       // For pool accounting: use actualSpend (total ELIXCOIN taken from user)
       await this.poolModel
@@ -1313,7 +1402,11 @@ export class TradeSpotService {
         .exec();
 
       // [CROSS-PAIR SYNC]
-      await this.assetRegistry.updateReservesAfterFill(base, quote, -amount, actualSpend);
+      // CRITICAL: Use receivedBase (not full amount) for the base reserve delta.
+      // The fee portion of the base stays with the platform (platformFeesAccumulated)
+      // and must NOT be subtracted from the virtual reserve — otherwise the asset's
+      // price drifts upward on every buy, causing ELIXCOIN pairs to show wrong prices.
+      await this.assetRegistry.updateReservesAfterFill(base, quote, -receivedBase, actualSpend);
       const updatedPairs = await this.assetRegistry.propagateToAffectedPools(base, quote);
       if (updatedPairs.length > 0) {
         this.logger.log(`[CrossPair] BUY ${pair}: propagated to ${updatedPairs.join(', ')}`);
@@ -1337,7 +1430,15 @@ export class TradeSpotService {
         .exec();
 
       this.tickerCache.delete(pair);
+      this.bookCache.delete(pair);
       this.tradesCache.delete(pair);
+
+      // [SSE] Push real-time trade event to subscribers
+      this.sseService.broadcast(pair, "trade", {
+        side, price, amount, total, fee, feeCurrency, source, pair,
+        time: Date.now(),
+      });
+      this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
 
       const crypto = updated?.cryptoBalances as Record<string, number> | undefined;
 
@@ -1347,6 +1448,7 @@ export class TradeSpotService {
         trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
         balances: {
           quoteBalance: round4(crypto?.[quote] ?? updated?.elixirBalance ?? 0),
+          elixir: round4(updated?.elixirBalance ?? 0),
           elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
         },
         message: itemBase
@@ -1360,7 +1462,7 @@ export class TradeSpotService {
       // Fee is charged in QUOTE (the currency they receive).
       const grossQuote = round4(amount * price);
       fee = round4(grossQuote * FEE_PCT);
-      const proceeds = round4(grossQuote - fee);
+      let proceeds = round4(grossQuote - fee);
       feeCurrency = quote;
 
       if (isItemBase(base) && source === "USER") {
@@ -1406,10 +1508,19 @@ export class TradeSpotService {
 
       } else {
         // ── Coin / crypto SELL (or BOT) ─────────────────
+        // ELIXCOIN: round to integer to prevent floating-point $gte mismatch
+        if (base === "ELIXCOIN") {
+          amount = Math.floor(amount);
+          const grossQuoteInt = round4(amount * price);
+          fee = round4(grossQuoteInt * FEE_PCT);
+          proceeds = round4(grossQuoteInt - fee);
+        }
         // cryptoBalances is correct for crypto tokens.
+        // [FLOATING POINT TOLERANCE] Allow 0.0001 slack.
+        const gteCheckSell = Math.max(0, amount - 0.0001);
         updated = await this.userModel
           .findOneAndUpdate(
-            { telegramId, [baseKey]: { $gte: amount } },
+            { telegramId, [baseKey]: { $gte: gteCheckSell } },
             { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } },
             { returnDocument: "after" },
           )
@@ -1418,9 +1529,25 @@ export class TradeSpotService {
           return { success: false, error: `Insufficient ${base} balance` };
       }
 
+      // [TRADE IMPACT] Save previous mid before changing it.
+      if (source === "USER") {
+        this.previousMid.set(pair, pool.lastMid);
+      }
       // Mid nudges DOWN by HALF the slippage only
       const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
       const newMid = round8(pool.lastMid * (1 - midNudge));
+
+      // [TRADE IMPACT] Track user trade for asymmetric orderbook.
+      // SELL sweeps bids → ask-side lags behind (prevent instant sellback).
+      if (source === "USER") {
+        this.lastUserTradeImpact.set(pair, {
+          side: "SELL",
+          time: Date.now(),
+          impact: shiftPct,
+        });
+        // [TRADE MID] Save mid after trade — prevents getPool from overriding.
+        this.lastTradeMid.set(pair, { mid: newMid, time: Date.now() });
+      }
 
       await this.poolModel
         .updateOne(
@@ -1462,7 +1589,15 @@ export class TradeSpotService {
         .exec();
 
       this.tickerCache.delete(pair);
+      this.bookCache.delete(pair);
       this.tradesCache.delete(pair);
+
+      // [SSE] Push real-time trade event to subscribers
+      this.sseService.broadcast(pair, "trade", {
+        side, price, amount, total, fee, feeCurrency, source, pair,
+        time: Date.now(),
+      });
+      this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
 
       const crypto2 = updated?.cryptoBalances as Record<string, number> | undefined;
 
@@ -1472,6 +1607,7 @@ export class TradeSpotService {
         trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
         balances: {
           quoteBalance: round4(crypto2?.[quote] ?? updated?.elixirBalance ?? 0),
+          elixir: round4(updated?.elixirBalance ?? 0),
           elixcoin: round4(crypto2?.["ELIXCOIN"] ?? 0),
         },
         message: `Sold ${amount} ${base} @ ${price} ${quote}. Proceeds: ${proceeds} ${quote}. Fee: ${fee} ${quote}.`,
@@ -1608,7 +1744,20 @@ export class TradeSpotService {
 
   // ── Market-maker internals (driven by MarketMakerService) ───────────────
   // Assets that NEVER drift — they are stablecoin anchors (USD-pegged).
-  private static readonly STABLE_ASSETS = new Set(["USDC", "ELIXIR"]);
+  // ELIXCOIN is the coinbase for all item/mineral pairs — must stay stable
+  // like USDC, otherwise cross-pair prices become meaningless.
+  private static readonly STABLE_ASSETS = new Set(["USDC", "ELIXIR", "ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"]);
+
+  // [TRADE LIMITS] Per-asset min/max trade amounts (backend safety net).
+  // Frontend enforces these via slider + validation; backend double-checks.
+  private static readonly TRADE_LIMITS: Record<string, { min: number; max: number }> = {
+    ELIXIR:   { min: 50,      max: 20_000 },
+    ELIXCOIN: { min: 100,     max: 150_000 },
+    GOLD:     { min: 100,     max: 100_000 },
+    COPPER:   { min: 1_000,   max: 1_000_000 },
+    IRON:     { min: 1_000,   max: 1_000_000 },
+    SILVER:   { min: 1_000,   max: 1_000_000 },
+  };
 
   /** Tracks which assets have already been drifted this tick cycle to
    *  prevent double-drift when multiple pairs share the same asset. */
@@ -1617,6 +1766,12 @@ export class TradeSpotService {
   async driftMid(pair = DEFAULT_PAIR) {
     const pool = await this.getPool(pair);
     const [base, quote] = pair.split("/");
+
+    // [STABLE SKIP] Don't drift stable assets themselves (USDC, ELIXIR, ELIXCOIN).
+    // They are anchors and their USD price never changes.
+    if (TradeSpotService.STABLE_ASSETS.has(base)) {
+      return; // Stable asset as base — skip drift (drift happens via mineral base)
+    }
 
     // [ADMIN PRICE CONTROL] If admin has set a range, drift the mid
     // within [bidFloor, askCeiling] only. Never touch global reserves.
@@ -1825,6 +1980,17 @@ export class TradeSpotService {
     this.tickerCache.delete(pair);
     this.bookCache.delete(pair);
     this.tradesCache.delete(pair);
+
+    // [SSE] Broadcast after bot cycle — push ticker to subscribers
+    if (trades.length > 0) {
+      this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
+      const lastTrade = trades[trades.length - 1];
+      this.sseService.broadcast(pair, "trade", {
+        side: lastTrade.side, price: lastTrade.price, amount: lastTrade.amount,
+        total: lastTrade.total, source: "BOT", pair,
+        time: Date.now(),
+      });
+    }
 
     return { count: trades.length, trades };
   }
