@@ -115,6 +115,19 @@ export class AssetRegistryService {
    * As reserve increases (asset becomes abundant), price drops.
    */
   async recalcUsdPrice(asset: string): Promise<number> {
+    // [STABLE SKIP] Stable assets NEVER recalculate — price is always anchor.
+    if (AssetRegistryService.STABLE_ASSETS.has(asset)) {
+      const seed = ASSET_SEEDS[asset];
+      if (seed) {
+        const a = await this.getAsset(asset);
+        if (a.usdPrice !== seed.anchorUsdPrice) {
+          a.usdPrice = seed.anchorUsdPrice;
+          this.cache.set(asset, a);
+          await this.assetModel.updateOne({ asset }, { $set: { usdPrice: seed.anchorUsdPrice } }).exec();
+        }
+        return seed.anchorUsdPrice;
+      }
+    }
     const a = await this.getAsset(asset);
     if (a.virtualReserve <= 0 || a.anchorUsdPrice <= 0) return a.usdPrice;
 
@@ -148,6 +161,17 @@ export class AssetRegistryService {
    */
   async getMidFromGlobalReserves(pair: string): Promise<number> {
     const [base, quote] = pair.split("/");
+
+    // [STABLE FIX] If BOTH assets are stable, use anchor prices directly.
+    // Never recalculate from virtual reserves — they drift with trades.
+    if (AssetRegistryService.STABLE_ASSETS.has(base) && AssetRegistryService.STABLE_ASSETS.has(quote)) {
+      const seedBase = ASSET_SEEDS[base];
+      const seedQuote = ASSET_SEEDS[quote];
+      if (seedBase && seedQuote && seedQuote.anchorUsdPrice > 0) {
+        return round8(seedBase.anchorUsdPrice / seedQuote.anchorUsdPrice);
+      }
+    }
+
     const baseAsset = await this.getAsset(base);
     const quoteAsset = await this.getAsset(quote);
 
