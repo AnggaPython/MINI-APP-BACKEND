@@ -10,6 +10,7 @@ import { AssetRegistryService } from "./asset-registry.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 import { SseService } from "./sse.service";
 import { isItemBase, isMaterialBase, slugToMaterialName, COIN_BASES } from "./item-sync";
+import { ItemTradeService } from "./item-trade.service";
 
 // Re-export for use by other modules
 export { isItemBase } from "./item-sync";
@@ -323,6 +324,7 @@ export class TradeSpotService {
     private readonly assetRegistry: AssetRegistryService,
     private readonly buffCollectionsService: BuffItemCollectionsService,
     private readonly sseService: SseService,
+    private readonly itemTradeService: ItemTradeService,
     @InjectModel("PendingTpSl") private readonly pendingTpSlModel: any,
   ) { }
 
@@ -1084,12 +1086,8 @@ export class TradeSpotService {
     //   - Buff items      → UserBuffCollection.inventory count
     //   - Crypto tokens   → user.cryptoBalances[BASE]
     let baseBalance = 0;
-    if (isMaterialBase(base)) {
-      const displayName = slugToMaterialName(base);
-      baseBalance = materials?.[displayName] ?? 0;
-    } else if (!COIN_BASES.has(base.toUpperCase())) {
-      // Buff collection item
-      baseBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
+    if (this.itemTradeService.isItem(base)) {
+      baseBalance = await this.itemTradeService.getItemBalance(telegramId, base);
     } else {
       baseBalance = base === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[base] || 0;
     }
@@ -1466,22 +1464,10 @@ export class TradeSpotService {
         if (!updated)
           return { success: false, error: `Insufficient ${quote} balance` };
 
-        // Grant item to its PROPER storage
+        // Grant item to its PROPER storage (via ItemTradeService)
         const qty = Math.floor(receivedBase);
         if (source === "USER" && qty > 0) {
-          try {
-            if (isMaterialBase(base)) {
-              // Material tool → user.materials
-              const displayName = slugToMaterialName(base);
-              await this.buffCollectionsService.grantMaterial(telegramId, displayName, qty);
-            } else {
-              // Buff item → UserBuffCollection.inventory
-              const itemId = base.toLowerCase();
-              for (let i = 0; i < qty; i++) {
-                await this.buffCollectionsService.grantBuffItem(telegramId, itemId);
-              }
-            }
-          } catch (err) { this.logger.warn(`[BuyGrant] ${base}: ${(err as any)?.message}`); }
+          await this.itemTradeService.grantItem(telegramId, base, qty);
         }
       } else {
         // Coin fee in BASE (deducted from received amount)
@@ -1610,22 +1596,10 @@ export class TradeSpotService {
       let proceeds = round4(grossQuote - fee);
       feeCurrency = quote;
 
-      if (isItemBase(base) && source === "USER") {
-        // ── Item SELL ───────────────────────────────────
-        // Items are NOT in cryptoBalances. Verify balance from correct storage
-        // then debit from it, and separately credit ELIXCOIN proceeds.
+      if (this.itemTradeService.isItem(base) && source === "USER") {
+        // ── Item SELL (via ItemTradeService) ──────────────
         const qty = Math.floor(amount);
-        let actualBalance = 0;
-        const materialBase = isMaterialBase(base);
-        try {
-          if (materialBase) {
-            const displayName = slugToMaterialName(base);
-            const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
-            actualBalance = (userDoc as any)?.materials?.[displayName] ?? 0;
-          } else {
-            actualBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
-          }
-        } catch { actualBalance = 0; }
+        const actualBalance = await this.itemTradeService.getItemBalance(telegramId, base);
 
         if (actualBalance < qty)
           return { success: false, error: `Insufficient ${base} balance` };
@@ -1641,15 +1615,8 @@ export class TradeSpotService {
         if (!updated)
           return { success: false, error: "Account not found" };
 
-        // Debit item from its proper storage
-        try {
-          if (materialBase) {
-            const displayName = slugToMaterialName(base);
-            await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
-          } else {
-            await this.buffCollectionsService.removeBuffItem(telegramId, base.toLowerCase(), qty);
-          }
-        } catch (err) { this.logger.warn(`[SellDebit] ${base}: ${(err as any)?.message}`); }
+        // Debit item from its proper storage (via ItemTradeService)
+        await this.itemTradeService.deductItem(telegramId, base, qty);
 
       } else {
         // ── Coin / crypto SELL (or BOT) ─────────────────

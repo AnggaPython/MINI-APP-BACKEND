@@ -35,6 +35,15 @@ export class User {
   @Prop({ default: 1 })
   level: number;
 
+  // ── Profile XP (separate from game XP) ─────────────────────────────────
+  // Awarded 1 XP per stone destroy / medium+rare case box.
+  // Used for account-level progression (not game rewards).
+  @Prop({ default: 0 })
+  profileXp: number;
+
+  @Prop({ default: 1 })
+  profileLevel: number;
+
   // ── Leveling material system ──────────────────────────────────────────
   // Stars held when level is locked (pending material craft)
   @Prop({ default: 0 })

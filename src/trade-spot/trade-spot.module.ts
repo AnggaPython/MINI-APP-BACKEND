@@ -13,6 +13,7 @@ import { PendingTpSl, PendingTpSlSchema } from "./schemas/pending-tp-sl.schema";
 import { MarketplaceService } from "./marketplace.service";
 import { MarketplaceController } from "./marketplace.controller";
 import { SseService } from "./sse.service";
+import { ItemTradeService } from "./item-trade.service";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-collections.module";
 
@@ -30,7 +31,7 @@ import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-co
     BuffItemCollectionsModule,
   ],
   controllers: [TradeSpotController, MarketplaceController],
-  providers: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService],
-  exports: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService],
+  providers: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService, ItemTradeService],
+  exports: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService, ItemTradeService],
 })
 export class TradeSpotModule {}

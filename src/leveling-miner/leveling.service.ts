@@ -407,10 +407,30 @@ export class LevelingService {
       updateFields.pendingStars = starCount; // Stars held
     }
 
+    // Profile XP: +1 only for Medium and Rare tiers (not Common/Zonk)
+    const awardProfileXp = tier === "Medium" || tier === "Rare";
+    if (awardProfileXp) {
+      const oldProfileXp = ((user as any)?.profileXp || 0) + 1;
+      let newProfileLevel = 1;
+      let profXpRemaining = oldProfileXp;
+      for (let l = 2; l <= MAX_LEVEL; l++) {
+        const needed = xpRequiredForLevel(l);
+        if (profXpRemaining >= needed) {
+          profXpRemaining -= needed;
+          newProfileLevel = l;
+        } else break;
+      }
+      if (newProfileLevel > ((user as any)?.profileLevel || 1)) {
+        updateFields.profileLevel = newProfileLevel;
+      }
+    }
+
     await this.userModel
       .findOneAndUpdate(
         { telegramId },
-        { $set: updateFields },
+        awardProfileXp
+          ? { $set: updateFields, $inc: { profileXp: 1 } }
+          : { $set: updateFields },
       )
       .exec();
 
@@ -425,7 +445,8 @@ export class LevelingService {
     return { starCount, xpAwarded, level: oldLevel, levelUp: finalLevel > oldLevel, newLevel: finalLevel, pickaxeGrants, pendingStars, lockedLevel };
   }
 
-  /** Award XP when a case box is destroyed. Same logic as stone. */
+  /** Award XP when a case box is destroyed. Same logic as stone.
+   *  Profile XP only awarded for Medium and Rare tiers. */
   async awardCaseXp(telegramId: string, tier: string): Promise<{
     starCount: number;
     xpAwarded: number;
@@ -436,6 +457,7 @@ export class LevelingService {
     pendingStars: number;
     lockedLevel: number | null;
   }> {
+    // awardStoneXp already checks tier for profile XP (Medium/Rare only)
     return this.awardStoneXp(telegramId, tier);
   }
 
