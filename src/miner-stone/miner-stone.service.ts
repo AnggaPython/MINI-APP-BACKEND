@@ -10,7 +10,8 @@ import {
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
-import { LevelingService, STAR_XP_PER_TIER, getLevelMultiplier } from "../leveling-miner/leveling.service";
+import { LevelingService, STAR_XP_PER_TIER, getLevelMultiplier, getHpMultiplier } from "../leveling-miner/leveling.service";
+import { FragmentService } from "../fragment/fragment.service";
 
 /**
  * Server-authoritative balance tables.
@@ -18,15 +19,19 @@ import { LevelingService, STAR_XP_PER_TIER, getLevelMultiplier } from "../leveli
  * Spawn probabilities (casino-style weighted RNG):
  *   Common ≈ 85% · Medium ≈ 12% · Rare ≈ 3%
  *
- * HP/MPa bands rolled at spawn:
- *   Common  30.00 – 80.00  MPa
- *   Medium  60.00 – 160.00 MPa
- *   Rare    90.00 – 360.00 MPa
+ * HP/MPa bands rolled at spawn (base, before HP multiplier):
+ *   Common  20.00 – 45.00  MPa   → Level 1: ~16 hits with Common pickaxe
+ *   Medium  40.00 – 100.00 MPa   → Level 1: ~35 hits with Common pickaxe
+ *   Rare    60.00 – 200.00 MPa   → Level 1: ~65 hits (intentionally hard)
+ *
+ * HP multiplier scales these bands: 1.00x at Lv1 → 10.95x at Lv100.
+ * Combined with pickaxe power progression (2→60), this creates a smooth
+ * difficulty curve: easy start → satisfying power spikes at pickaxe upgrades.
  *
  * Reward bands (scaled by the stone's rolled MPa quality, randomized per claim):
- *   Common → IRON 500–10,000 · COPPER 250–5,000
- *   Medium → SILVER 100–2,000 · GOLD 5–10
- *   Rare   → GOLD 10–50 · DIAMOND 5–10
+ *   Common → IRON 10–100 · COPPER 5–50
+ *   Medium → SILVER 5–40 · GOLD 1–3
+ *   Rare   → GOLD 2–10 · DIAMOND 1–3
  */
 interface TierConfig {
   hpMin: number;
@@ -37,8 +42,8 @@ interface TierConfig {
 
 const TIER_CONFIG: Record<StoneTier, TierConfig> = {
   Common: {
-    hpMin: 30,
-    hpMax: 80,
+    hpMin: 20,
+    hpMax: 45,
     weight: 85000,
     rewards: {
       IRON: [10, 100],
@@ -46,8 +51,8 @@ const TIER_CONFIG: Record<StoneTier, TierConfig> = {
     },
   },
   Medium: {
-    hpMin: 60,
-    hpMax: 160,
+    hpMin: 40,
+    hpMax: 100,
     weight: 97000,
     rewards: {
       SILVER: [5, 40],
@@ -55,8 +60,8 @@ const TIER_CONFIG: Record<StoneTier, TierConfig> = {
     },
   },
   Rare: {
-    hpMin: 90,
-    hpMax: 360,
+    hpMin: 60,
+    hpMax: 200,
     weight: 100000,
     rewards: {
       GOLD: [2, 10],
@@ -85,7 +90,8 @@ const HIT_INTERVAL_MS = 1500;
 // cooldown rejects spawn calls and freezes the frontend countdown.
 
 // Rate limit: max destroy calls per user per time window.
-const DESTROY_RATE_LIMIT = 5;
+// Scales with level: 5 at level 1 → 9 at level 100.
+const DESTROY_RATE_LIMIT_BASE = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
 
 // Casino-style ZONK: ~10% of spawned stones contain nothing at all.
@@ -163,6 +169,7 @@ export class MinerStoneService {
     private readonly usersService: UsersService,
     private readonly buffCollectionsService: BuffItemCollectionsService,
     private readonly levelingService: LevelingService,
+    private readonly fragmentService: FragmentService,
   ) { }
 
   /** Evict stale destroy timestamps older than the rate window. */
@@ -236,12 +243,12 @@ export class MinerStoneService {
       };
     }
 
-    // Fetch user level for HP scaling
-    let levelMultiplier = 1;
+    // Fetch user level for HP scaling (uses aggressive HP multiplier)
+    let hpMultiplier = 1;
     try {
       const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
       const userLevel = (userDoc as any)?.level || 1;
-      levelMultiplier = getLevelMultiplier(userLevel);
+      hpMultiplier = getHpMultiplier(userLevel);
     } catch { /* leveling unavailable — use base multiplier */ }
 
     // Weighted tier roll: most spawns are Common, Medium/Rare only sometimes
@@ -252,11 +259,11 @@ export class MinerStoneService {
     else if (tierRoll < TIER_CONFIG.Medium.weight / 100000) tier = "Medium";
     else tier = "Rare";
 
-    // MPa roll within the tier band, scaled by level multiplier
+    // MPa roll within the tier band, scaled by HP multiplier
     const cfg = TIER_CONFIG[tier];
     const hpRoll = this.roll01(clientSeed, "hp");
     const baseHp = cfg.hpMin + (cfg.hpMax - cfg.hpMin) * hpRoll;
-    const maxHp = this.round2(baseHp * levelMultiplier);
+    const maxHp = this.round2(baseHp * hpMultiplier);
 
     // ZONK roll — decided here at spawn, fixed for the stone's whole life
     const zonk = this.roll01(clientSeed, "zonk") < ZONK_CHANCE;
@@ -373,10 +380,12 @@ export class MinerStoneService {
       };
     }
 
-    // ── Rate limit: max DESTROY_RATE_LIMIT destroys per minute ────────────
+    // ── Rate limit: scaled by level (5 at Lv1 → 9 at Lv100) ─────────────
     this.evictRateLimit(telegramId, now);
     const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
-    if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+    const userLevelForRate = (user as any)?.level || 1;
+    const destroyRateLimit = DESTROY_RATE_LIMIT_BASE + Math.floor(userLevelForRate / 20);
+    if (recentDestroys.length >= destroyRateLimit) {
       return {
         success: false,
         error: "Too many requests. Please wait a moment.",
@@ -439,7 +448,13 @@ export class MinerStoneService {
       starResult = { starCount: Math.floor(Math.random() * 5) + 1, xpAwarded: 0, level: 1, levelUp: false, newLevel: 1, pickaxeGrants: [], pendingStars: 0, lockedLevel: null };
     }
 
-    // ZONK stone — no loot, nothing to claim (but stars still awarded above)
+    // ── Fragment drops (independent of ZONK — fragments always drop) ──
+    let fragmentDrops = { spinWheel: 0, mineSwipe: 0 };
+    try {
+      fragmentDrops = await this.fragmentService.rollFragmentDrops(telegramId, stone.tier);
+    } catch { /* fragment service unavailable — skip gracefully */ }
+
+    // ZONK stone — no loot, nothing to claim (but stars + fragments still awarded)
     if (stone.zonk) {
       await this.miningStoneModel
         .updateOne({ _id: stone._id }, { $set: { rewards: {} } })
@@ -462,19 +477,23 @@ export class MinerStoneService {
         pickaxeGrants: starResult.pickaxeGrants,
         pendingStars: starResult.pendingStars,
         lockedLevel: starResult.lockedLevel,
+        fragmentDrops,
       };
     }
 
     // Higher MPa stone ⇒ quality closer to 1 ⇒ larger rewards within the band
     const cfg = TIER_CONFIG[stone.tier];
 
-    // Level multiplier scales both quality range and reward amounts
+    // HP multiplier for quality calculation (stone.maxHp was scaled at spawn)
     const userLevel = starResult.level;
-    const levelMultiplier = getLevelMultiplier(userLevel);
+    const hpMult = getHpMultiplier(userLevel);
 
-    // Quality uses the level-scaled HP range (stone.maxHp was already scaled at spawn)
-    const scaledHpMin = cfg.hpMin * levelMultiplier;
-    const scaledHpMax = cfg.hpMax * levelMultiplier;
+    // Reward multiplier for resource scaling
+    const rewardMultiplier = getLevelMultiplier(userLevel);
+
+    // Quality uses the HP-scaled range
+    const scaledHpMin = cfg.hpMin * hpMult;
+    const scaledHpMax = cfg.hpMax * hpMult;
     const quality = Math.max(
       0,
       Math.min(1, (stone.maxHp - scaledHpMin) / (scaledHpMax - scaledHpMin)),
@@ -482,9 +501,9 @@ export class MinerStoneService {
 
     const rewards: Record<string, number> = {};
     for (const [resource, [min, max]] of Object.entries(cfg.rewards)) {
-      // Scale reward range by level multiplier
-      const scaledMin = Math.round(min * levelMultiplier);
-      const scaledMax = Math.round(max * levelMultiplier);
+      // Scale reward range by reward multiplier (NOT HP multiplier)
+      const scaledMin = Math.round(min * rewardMultiplier);
+      const scaledMax = Math.round(max * rewardMultiplier);
       const point = scaledMin + (scaledMax - scaledMin) * quality;
       const jitter = 0.75 + Math.random() * 0.5; // every claim differs
       rewards[resource] = Math.max(
@@ -517,7 +536,8 @@ export class MinerStoneService {
       pickaxeGrants: starResult.pickaxeGrants,
       pendingStars: starResult.pendingStars,
       lockedLevel: starResult.lockedLevel,
-      levelMultiplier,
+      levelMultiplier: rewardMultiplier,
+      fragmentDrops,
     };
   }
 

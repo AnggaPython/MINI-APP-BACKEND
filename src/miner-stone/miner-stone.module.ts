@@ -10,6 +10,7 @@ import { User, UserSchema } from "../users/schemas/user.schema";
 import { UsersModule } from "../users/users.module";
 import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-collections.module";
 import { LevelingModule } from "../leveling-miner/leveling.module";
+import { FragmentModule } from "../fragment/fragment.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { LevelingModule } from "../leveling-miner/leveling.module";
     UsersModule,
     BuffItemCollectionsModule,
     LevelingModule,
+    FragmentModule,
   ],
   controllers: [MinerStoneController],
   providers: [MinerStoneService],

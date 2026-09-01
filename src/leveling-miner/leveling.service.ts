@@ -33,6 +33,30 @@ export const getLevelMultiplier = (level: number): number => {
   return Math.round((baseMultiplier + milestoneBonus) * 100) / 100;
 };
 
+// ── HP Multiplier (separate, more aggressive than reward multiplier) ─────
+// Scales stone/case HP so high-level players with strong pickaxes still need
+// a meaningful number of hits. Rewards keep using getLevelMultiplier.
+//
+// Formula: base +5% per level + milestone +25% per 5 levels.
+//
+// Level 1:   1.00x    Level 50:  5.95x    Level 100: 10.95x
+// Level 10:  1.95x    Level 75:  8.45x
+// Level 25:  3.45x
+//
+// At level 100 with Mythic (60) + ATK buff (30) = 90 per hit:
+//   Common (55 avg × 11) = 605 HP → 7 hits (10.5s)
+//   Medium (110 × 11)    = 1210 HP → 14 hits (21s)
+//   Rare   (225 × 11)    = 2475 HP → 28 hits (42s)
+// ──────────────────────────────────────────────────────────────────────────
+export const getHpMultiplier = (level: number): number => {
+  const clamped = Math.max(1, Math.min(level, MAX_LEVEL));
+  // Base: +5% per level (level 1 = 1.00, level 2 = 1.05, etc.)
+  const base = 1 + (clamped - 1) * 0.05;
+  // Milestone bonus: +25% per 5 levels
+  const milestone = Math.floor(clamped / 5) * 0.25;
+  return Math.round((base + milestone) * 100) / 100;
+};
+
 export const xpRequiredForLevel = (level: number): number => {
   if (level <= 1) return 0;
   return 500 + level * 10;

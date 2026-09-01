@@ -135,6 +135,26 @@ export class User {
 
   @Prop({ type: Date, default: null })
   tokenExpiresAt: Date | null;
+
+  // ── Fragment system (miner-stone mini-games) ─────────────────────────
+  // Fragments drop randomly when destroying stones. Collect 100 to play:
+  //   spin-wheel  → lucky wheel spin (stateless, instant reward)
+  //   mine-swipe  → minesweeper-style multi-step game
+  @Prop({ default: 0 })
+  spinWheelFragments: number;
+
+  @Prop({ default: 0 })
+  mineSwipeFragments: number;
+
+  // ── Holding balances (escrow) ─────────────────────────────────────────
+  // Mini-game winnings go here first. User must explicitly "claim" to
+  // transfer into cryptoBalances (tradeable resources). This creates a
+  // satisfying cash-out moment and prevents instant abuse.
+  //
+  // spinWheels  → GOLD rewards from Spin Wheel
+  // mineSwipe   → ELIXCOIN rewards from Mine Swipe
+  @Prop({ type: Object, default: { spinWheels: 0, mineSwipe: 0 } })
+  goldBalance: { spinWheels: number; mineSwipe: number };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

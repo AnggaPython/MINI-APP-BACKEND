@@ -11,7 +11,7 @@ import {
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
-import { LevelingService, getLevelMultiplier } from "../leveling-miner/leveling.service";
+import { LevelingService, getLevelMultiplier, getHpMultiplier } from "../leveling-miner/leveling.service";
 
 // ─────────────────────────────────────────────────────────────
 // MULTI-LAYER RNG — server-authoritative case-box loot table.
@@ -89,11 +89,19 @@ export const MATERIAL_AMOUNTS: Record<CaseTier, [number, number]> = {
   RARE: [1, 1],
 };
 
-/** maxHp bands per spawned case tier — the lock takes this many hits. */
+/**
+ * maxHp bands per spawned case tier (base, before HP multiplier).
+ * Case boxes are harder than stones but not impossibly so for beginners.
+ *
+ * Level 1 with Common pickaxe (2 power):
+ *   COMMON: ~45 hits (76s) · MEDIUM: ~58 hits (98s) · RARE: ~82 hits (140s)
+ *
+ * HP multiplier scales these bands: 1.00x at Lv1 → 10.95x at Lv100.
+ */
 export const CASE_HP_BANDS: Record<CaseTier, [number, number]> = {
-  COMMON: [180, 200],
-  MEDIUM: [200, 250],
-  RARE: [250, 400],
+  COMMON: [80, 100],
+  MEDIUM: [100, 130],
+  RARE: [130, 200],
 };
 
 /**
@@ -211,7 +219,8 @@ const HIT_INTERVAL_MS = 1700; // matches frontend HIT_DELAY_MS
 const CASE_COOLDOWN_MS = 78_000;
 
 // Rate limit: max destroy calls per user per time window.
-const DESTROY_RATE_LIMIT = 5;
+// Scales with level: 5 at level 1 → 9 at level 100.
+const DESTROY_RATE_LIMIT_BASE = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
 
 @Injectable()
@@ -333,12 +342,12 @@ export class CaseBoxService {
       };
     }
 
-    // Fetch user level for HP scaling
-    let levelMultiplier = 1;
+    // Fetch user level for HP scaling (uses aggressive HP multiplier)
+    let hpMultiplier = 1;
     try {
       const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
       const userLevel = (userDoc as any)?.level || 1;
-      levelMultiplier = getLevelMultiplier(userLevel);
+      hpMultiplier = getHpMultiplier(userLevel);
     } catch { /* leveling unavailable — use base multiplier */ }
 
     // Spawned case rarity — cosmetic (which case SVG) + HP band.
@@ -346,11 +355,11 @@ export class CaseBoxService {
     const tierRoll = this.roll01(clientSeed, "case-tier");
     const tier = this.weightedPick(tierRoll, CASE_TIER_WEIGHTS) as CaseTier;
 
-    // maxHp within the tier band, scaled by level multiplier.
+    // maxHp within the tier band, scaled by HP multiplier.
     const hpRoll = this.roll01(clientSeed, "case-hp");
     const [hpMin, hpMax] = CASE_HP_BANDS[tier];
     const baseHp = hpMin + (hpMax - hpMin) * hpRoll;
-    const maxHp = Math.round(baseHp * levelMultiplier);
+    const maxHp = Math.round(baseHp * hpMultiplier);
 
     // Unique case ID comes from the database (_id).
     const box = await new this.caseBoxModel({
@@ -410,10 +419,12 @@ export class CaseBoxService {
       };
     }
 
-    // ── Rate limit: max DESTROY_RATE_LIMIT destroys per minute ────────────
+    // ── Rate limit: scaled by level (5 at Lv1 → 9 at Lv100) ─────────────
     this.evictRateLimit(telegramId, now);
     const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
-    if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+    const userLevelForRate = (user as any)?.level || 1;
+    const destroyRateLimit = DESTROY_RATE_LIMIT_BASE + Math.floor(userLevelForRate / 20);
+    if (recentDestroys.length >= destroyRateLimit) {
       return {
         success: false,
         error: "Too many requests. Please wait a moment.",
@@ -582,12 +593,12 @@ export class CaseBoxService {
       starResult = { starCount: Math.floor(Math.random() * 5) + 1, xpAwarded: 0, level: 1, levelUp: false, newLevel: 1, pickaxeGrants: [], pendingStars: 0, lockedLevel: null };
     }
 
-    // Level multiplier for display
-    let levelMultiplier = 1;
+    // Reward multiplier for display (separate from HP multiplier)
+    let rewardMultiplier = 1;
     try {
       const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
       const userLevel = (userDoc as any)?.level || 1;
-      levelMultiplier = getLevelMultiplier(userLevel);
+      rewardMultiplier = getLevelMultiplier(userLevel);
     } catch { /* leveling unavailable */ }
 
     return {
@@ -608,7 +619,7 @@ export class CaseBoxService {
       pickaxeGrants: starResult.pickaxeGrants,
       pendingStars: starResult.pendingStars,
       lockedLevel: starResult.lockedLevel,
-      levelMultiplier,
+      levelMultiplier: rewardMultiplier,
     };
   }
 
