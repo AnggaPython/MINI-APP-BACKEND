@@ -8,10 +8,7 @@ import { Trade, TradeSchema } from "./schemas/trade.schema";
 import { LiquidityPool, LiquidityPoolSchema } from "./schemas/pool.schema";
 import { OpenOrder, OpenOrderSchema } from "./schemas/open-order.schema";
 import { AssetRegistry, AssetRegistrySchema } from "./schemas/asset-registry.schema";
-import { MarketplaceItem, MarketplaceItemSchema } from "./schemas/marketplace-item.schema";
 import { PendingTpSl, PendingTpSlSchema } from "./schemas/pending-tp-sl.schema";
-import { MarketplaceService } from "./marketplace.service";
-import { MarketplaceController } from "./marketplace.controller";
 import { SseService } from "./sse.service";
 import { ItemTradeService } from "./item-trade.service";
 import { User, UserSchema } from "../users/schemas/user.schema";
@@ -24,14 +21,13 @@ import { BuffItemCollectionsModule } from "../buff-item-collections/buff-item-co
       { name: LiquidityPool.name, schema: LiquidityPoolSchema },
       { name: OpenOrder.name, schema: OpenOrderSchema },
       { name: AssetRegistry.name, schema: AssetRegistrySchema },
-      { name: MarketplaceItem.name, schema: MarketplaceItemSchema },
       { name: PendingTpSl.name, schema: PendingTpSlSchema },
       { name: User.name, schema: UserSchema },
     ]),
     BuffItemCollectionsModule,
   ],
-  controllers: [TradeSpotController, MarketplaceController],
-  providers: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService, ItemTradeService],
-  exports: [TradeSpotService, MarketMakerService, AssetRegistryService, MarketplaceService, SseService, ItemTradeService],
+  controllers: [TradeSpotController],
+  providers: [TradeSpotService, MarketMakerService, AssetRegistryService, SseService, ItemTradeService],
+  exports: [TradeSpotService, MarketMakerService, AssetRegistryService, SseService, ItemTradeService],
 })
 export class TradeSpotModule {}

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { TradeSpotService } from "./trade-spot.service";
-import { MINERAL_INITIAL_RATES } from "./trade-spot.service";
+import { MINERAL_INITIAL_RATES } from "./trade-pairs";
 import { SseService } from "./sse.service";
 import { User } from "../auth/telegram-user.decorator";
 

@@ -4,7 +4,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import { TradeSpotService, CORE_BOT_PAIRS } from "./trade-spot.service";
+import { TradeSpotService } from "./trade-spot.service";
+import { CORE_BOT_PAIRS } from "./trade-pairs";
 import { AssetRegistryService } from "./asset-registry.service";
 
 /**
