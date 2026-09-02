@@ -49,28 +49,29 @@ const crypto = __importStar(require("crypto"));
 const users_service_1 = require("../users/users.service");
 exports.IS_PUBLIC_KEY = "isPublic";
 let devBootBannerShown = false;
+const telegramGuardLogger = new common_1.Logger("TelegramAuthGuard");
 function showDevBannerOnce() {
     if (devBootBannerShown)
         return;
     devBootBannerShown = true;
     const fallbackId = process.env.DEV_FALLBACK_TELEGRAM_ID || "123456789";
     const prod = process.env.NODE_ENV === "production";
-    console.log("");
-    console.log("╔══════════════════════════════════════════════════════════════╗");
-    console.log("║ [TelegramAuthGuard] Boot Summary                             ║");
-    console.log("╠══════════════════════════════════════════════════════════════╣");
-    console.log(`║  NODE_ENV              : ${process.env.NODE_ENV || "development".padEnd(33)}║`);
+    telegramGuardLogger.log("");
+    telegramGuardLogger.log("╔══════════════════════════════════════════════════════════════╗");
+    telegramGuardLogger.log("║ [TelegramAuthGuard] Boot Summary                             ║");
+    telegramGuardLogger.log("╠══════════════════════════════════════════════════════════════╣");
+    telegramGuardLogger.log(`║  NODE_ENV              : ${process.env.NODE_ENV || "development".padEnd(33)}║`);
     if (!prod) {
-        console.log(`║  Dev fallback user ID  : ${fallbackId.padEnd(33)}║`);
-        console.log(`║  Dev login endpoint    : POST /users/public/login           ║`);
-        console.log(`║  ⚠️  WARNING: username/password + silent fallback are      ║`);
-        console.log(`║     ONLY ACTIVE in NODE_ENV != production.                  ║`);
+        telegramGuardLogger.log(`║  Dev fallback user ID  : ${fallbackId.padEnd(33)}║`);
+        telegramGuardLogger.log(`║  Dev login endpoint    : POST /users/public/login           ║`);
+        telegramGuardLogger.log(`║  ⚠️  WARNING: username/password + silent fallback are      ║`);
+        telegramGuardLogger.log(`║     ONLY ACTIVE in NODE_ENV != production.                  ║`);
     }
     else {
-        console.log(`║  PRODUCTION MODE: Strict HMAC only. No fallbacks.           ║`);
+        telegramGuardLogger.log(`║  PRODUCTION MODE: Strict HMAC only. No fallbacks.           ║`);
     }
-    console.log("╚══════════════════════════════════════════════════════════════╝");
-    console.log("");
+    telegramGuardLogger.log("╚══════════════════════════════════════════════════════════════╝");
+    telegramGuardLogger.log("");
 }
 let TelegramAuthGuard = class TelegramAuthGuard {
     reflector;

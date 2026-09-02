@@ -52,4 +52,7 @@ export class OpenOrder {
 }
 
 export const OpenOrderSchema = SchemaFactory.createForClass(OpenOrder);
+OpenOrderSchema.index({ pair: 1, status: 1, price: 1 });
+OpenOrderSchema.index({ telegramId: 1, status: 1 });
+
 OpenOrderSchema.index({ status: 1, price: 1 });

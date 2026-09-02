@@ -22,6 +22,22 @@ export declare class CaseBoxController {
         success: boolean;
         error: string;
     }>;
+    checkStatus(telegramId: string, caseId: string): Promise<{
+        success: boolean;
+        exists: boolean;
+        status: null;
+        tier?: undefined;
+        maxHp?: undefined;
+    } | {
+        success: boolean;
+        exists: boolean;
+        status: string;
+        tier: import("./schemas/case-box.schema").CaseTier;
+        maxHp: number;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
     destroyCase(telegramId: string, caseId: string): Promise<{
         success: boolean;
         caseId: string;
@@ -29,7 +45,7 @@ export declare class CaseBoxController {
         outcome: import("./schemas/case-box.schema").CaseOutcome;
         rarity: import("./schemas/case-box.schema").CaseTier | null;
         loot: Record<string, number> | null;
-        buffGranted: any;
+        buffGranted: unknown;
         economyMultiplier: number | undefined;
         droprateBonus: number | undefined;
         starCount: number;

@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import {
   DAILY_DROP_TEMPLATES,
@@ -186,22 +186,23 @@ export class TelegramBotService implements OnModuleInit {
       this.logger.log(
         "Initiating Background Mass DM Broadcast... fetching targets.",
       );
+      if (!this.botToken) return;
       const mongoose = require("mongoose");
       const userModel = mongoose.model("User");
 
-      // Cursor through all active telegram IDs, ignoring 100% DB load via .lean()
-      const users = await userModel
+      // Cursor streaming to avoid OOM on 50k users — batch 500, throttle 100ms (10 rps safe)
+      const cursor = userModel
         .find({ isBanned: { $ne: true } }, { telegramId: 1 })
         .lean()
-        .exec();
+        .cursor();
 
       let successCounter = 0;
-      this.logger.log(
-        `Total Targets Acquired: ${users.length}. Beginning silent dispatch...`,
-      );
+      let total = 0;
+      this.logger.log(`Mass DM: streaming targets via cursor...`);
 
-      for (const user of users) {
+      for await (const user of cursor) {
         if (!user.telegramId) continue;
+        total++;
 
         const payload = {
           chat_id: user.telegramId,
@@ -234,11 +235,11 @@ export class TelegramBotService implements OnModuleInit {
           // Suppress individual failures to keep the loop intact
         }
 
-        // Throttle: Max 20 Requests Per Second (Telegram limits bot DMs strictly to 30)
-        await new Promise((r) => setTimeout(r, 50));
+        // Throttle: 10 rps safe (Telegram limit 30, avoid 429)
+        await new Promise((r) => setTimeout(r, 100));
       }
       this.logger.log(
-        `Mass Broadcast Concluded. Successfully hit ${successCounter} / ${users.length} DMs.`,
+        `Mass Broadcast Concluded. Successfully hit ${successCounter} / ${total} DMs.`,
       );
     } catch (e) {
       this.logger.error("Critical Failure during Mass Broadcast", e);

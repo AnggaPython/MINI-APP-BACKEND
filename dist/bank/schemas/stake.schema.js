@@ -73,4 +73,7 @@ exports.Stake = Stake = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Stake);
 exports.StakeSchema = mongoose_1.SchemaFactory.createForClass(Stake);
+exports.StakeSchema.index({ status: 1, isXpClaimed: 1, lastClaimDate: 1 });
+exports.StakeSchema.index({ status: 1, telegramId: 1 });
+exports.StakeSchema.index({ telegramId: 1, status: 1 });
 //# sourceMappingURL=stake.schema.js.map

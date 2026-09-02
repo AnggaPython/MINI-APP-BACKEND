@@ -1,6 +1,7 @@
 import { Model } from "mongoose";
 import { UserDocument } from "../users/schemas/user.schema";
 export declare const getLevelMultiplier: (level: number) => number;
+export declare const getHpMultiplier: (level: number) => number;
 export declare const xpRequiredForLevel: (level: number) => number;
 export interface MilestoneRequirement {
     level: number;
@@ -45,8 +46,8 @@ export declare class LevelingService {
         materialCounts?: undefined;
     } | {
         success: boolean;
-        level: any;
-        exp: any;
+        level: number;
+        exp: number;
         xpForNextLevel: number;
         xpInLevel: number;
         progress: number;
@@ -55,8 +56,8 @@ export declare class LevelingService {
         currentBenefit: LevelBenefit;
         multiplier: number;
         nextMultiplier: number;
-        pendingStars: any;
-        lockedLevel: any;
+        pendingStars: number;
+        lockedLevel: number | null;
         milestoneRequirement: MilestoneRequirement | null;
         materialCheck: {
             enough: boolean;

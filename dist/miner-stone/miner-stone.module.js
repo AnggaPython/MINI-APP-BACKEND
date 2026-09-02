@@ -16,6 +16,7 @@ const user_schema_1 = require("../users/schemas/user.schema");
 const users_module_1 = require("../users/users.module");
 const buff_item_collections_module_1 = require("../buff-item-collections/buff-item-collections.module");
 const leveling_module_1 = require("../leveling-miner/leveling.module");
+const fragment_module_1 = require("../fragment/fragment.module");
 let MinerStoneModule = class MinerStoneModule {
 };
 exports.MinerStoneModule = MinerStoneModule;
@@ -29,6 +30,7 @@ exports.MinerStoneModule = MinerStoneModule = __decorate([
             users_module_1.UsersModule,
             buff_item_collections_module_1.BuffItemCollectionsModule,
             leveling_module_1.LevelingModule,
+            fragment_module_1.FragmentModule,
         ],
         controllers: [miner_stone_controller_1.MinerStoneController],
         providers: [miner_stone_service_1.MinerStoneService],

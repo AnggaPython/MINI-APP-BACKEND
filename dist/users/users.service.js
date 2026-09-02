@@ -165,7 +165,7 @@ let UsersService = UsersService_1 = class UsersService {
             const result = await this.userModel
                 .updateMany({ claimedCodeDrops: { $in: expiredCodes } }, { $pull: { claimedCodeDrops: { $in: expiredCodes } } })
                 .exec();
-            console.log(`[Cron Garbage Collector] Wiped expired drop codes (>= 7 days old) from database arrays. Users cleared: ${result.modifiedCount}`);
+            this.logger.log(`[Cron Garbage Collector] Wiped expired drop codes (>= 7 days old) from database arrays. Users cleared: ${result.modifiedCount}`);
         }
         catch (e) {
             console.error("[Cron Garbage Collector] Failed to cleanup old drop codes", e);
@@ -309,7 +309,7 @@ let UsersService = UsersService_1 = class UsersService {
             secondsToClaim = 0;
         const baseReward = user.isMiningBoosted ? 5 : 2.5;
         let baseEarned = (baseReward / 7200) * secondsToClaim;
-        const vipRank = getUserVipRank(user.exp || 0);
+        const vipRank = getUserVipRank(user.vipExp ?? user.exp ?? 0);
         let totalBonusMultiplier = vipRank.miningBoost;
         if (user.miningVoucherExpiry && new Date() < user.miningVoucherExpiry) {
             totalBonusMultiplier += 0.5;
@@ -323,6 +323,7 @@ let UsersService = UsersService_1 = class UsersService {
                 elixirBalance: reward,
                 lifetimeElixir: reward,
                 exp: 1,
+                gameExp: 1,
                 adTickets: -1,
             },
             $set: {
@@ -449,7 +450,7 @@ let UsersService = UsersService_1 = class UsersService {
     async creditRewardAndLogTask(telegramId, reward, campaignId) {
         const result = await this.userModel
             .findOneAndUpdate({ telegramId, completedTasks: { $ne: campaignId } }, {
-            $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1 },
+            $inc: { elixirBalance: reward, lifetimeElixir: reward, exp: 1, gameExp: 1 },
             $push: { completedTasks: campaignId },
         })
             .exec();
@@ -536,7 +537,7 @@ let UsersService = UsersService_1 = class UsersService {
         const rank = exports.VIP_RANKS.find((r) => r.name === rankName.toUpperCase());
         if (!rank)
             return { error: "Invalid rank" };
-        if ((user.exp || 0) < rank.xp)
+        if ((user.vipExp ?? user.exp ?? 0) < rank.xp)
             return { error: "Not enough XP for this rank" };
         if (user.claimedVipRanks && user.claimedVipRanks.includes(rank.name))
             return { error: "Rank already claimed" };
@@ -591,6 +592,7 @@ let UsersService = UsersService_1 = class UsersService {
                 elixirBalance: reward,
                 lifetimeElixir: reward,
                 exp: 1,
+                gameExp: 1,
                 adTickets: -1,
             },
         }, { returnDocument: "after" })
@@ -640,6 +642,7 @@ let UsersService = UsersService_1 = class UsersService {
                 elixirBalance: 2.5,
                 lifetimeElixir: 2.5,
                 exp: 1,
+                gameExp: 1,
                 adTickets: -1,
             },
         }, { returnDocument: "after" })
@@ -713,6 +716,8 @@ let UsersService = UsersService_1 = class UsersService {
             lastFaucetRoll: user?.lastFaucetRoll || null,
             totalReferrals,
             exp: user?.exp || 0,
+            vipExp: user.vipExp ?? user?.exp ?? 0,
+            gameExp: user.gameExp ?? user?.exp ?? 0,
             isBanned: Boolean(user?.isBanned),
         };
     }
@@ -983,7 +988,7 @@ let UsersService = UsersService_1 = class UsersService {
             }).save();
             if (betAmount >= 5000) {
                 await this.userModel
-                    .updateOne({ telegramId }, { $inc: { exp: 3 } })
+                    .updateOne({ telegramId }, { $inc: { exp: 3, gameExp: 3 } })
                     .exec();
             }
             return {
@@ -1000,16 +1005,12 @@ let UsersService = UsersService_1 = class UsersService {
             };
         }
         catch (err) {
-            this.logger.error(`[CircularCasino] Fatal resolveHiLoBet failed, fallback: ${err}`);
-            const reward = isWin ? betAmount * multiplier : 0;
-            const profit = isWin ? reward - betAmount : -betAmount;
-            let finalBalance = user.elixirBalance;
-            if (isWin) {
-                const winUser = await this.userModel
-                    .findOneAndUpdate({ telegramId }, { $inc: { elixirBalance: reward, lifetimeElixir: reward } }, { returnDocument: "after" })
-                    .exec();
-                finalBalance = winUser ? winUser.elixirBalance : user.elixirBalance;
-            }
+            this.logger.error(`[CircularCasino] Fatal resolveHiLoBet failed, refunding bet: ${err}`);
+            const refund = betAmount;
+            await this.userModel
+                .updateOne({ telegramId }, { $inc: { elixirBalance: refund } })
+                .exec();
+            const finalBalance = user.elixirBalance;
             await new this.hiloBetModel({
                 telegramId,
                 betAmount,
@@ -1018,8 +1019,8 @@ let UsersService = UsersService_1 = class UsersService {
                 thresholdHI,
                 thresholdLO,
                 rolledNumber,
-                isWin,
-                profit,
+                isWin: false,
+                profit: 0,
                 newBalance: finalBalance,
                 serverSeed,
                 clientSeed,
@@ -1030,9 +1031,10 @@ let UsersService = UsersService_1 = class UsersService {
                 rolledNumber,
                 thresholdHI,
                 thresholdLO,
-                isWin,
-                profit,
+                isWin: false,
+                profit: 0,
                 newBalance: finalBalance,
+                error: "Casino engine error — bet refunded.",
             };
         }
     }
@@ -1072,12 +1074,19 @@ let UsersService = UsersService_1 = class UsersService {
     }
     async getDashboardStatsAdmin() {
         const totalUsers = await this.userModel.countDocuments().exec();
-        const users = await this.userModel
-            .find({}, { elixirBalance: 1, totalAdRevenueGeneratedUSD: 1 })
-            .lean()
+        const agg = await this.userModel
+            .aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalElixir: { $sum: "$elixirBalance" },
+                    totalAdRevenueUSD: { $sum: "$totalAdRevenueGeneratedUSD" },
+                },
+            },
+        ])
             .exec();
-        const totalElixir = users.reduce((sum, u) => sum + (u.elixirBalance || 0), 0);
-        const totalAdRevenueUSD = users.reduce((sum, u) => sum + (u.totalAdRevenueGeneratedUSD || 0), 0);
+        const totalElixir = agg[0]?.totalElixir || 0;
+        const totalAdRevenueUSD = agg[0]?.totalAdRevenueUSD || 0;
         const recentUsers = await this.userModel
             .find()
             .sort({ elixirBalance: -1 })
@@ -1129,7 +1138,7 @@ let UsersService = UsersService_1 = class UsersService {
     }
     async addExp(telegramId, amount) {
         await this.userModel
-            .updateOne({ telegramId }, { $inc: { exp: amount } })
+            .updateOne({ telegramId }, { $inc: { exp: amount, gameExp: amount } })
             .exec();
     }
 };

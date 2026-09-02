@@ -62,6 +62,10 @@ export declare class MinerStoneController {
         pickaxeGrants: string[];
         pendingStars: number;
         lockedLevel: number | null;
+        fragmentDrops: {
+            spinWheel: number;
+            mineSwipe: number;
+        };
         error?: undefined;
         levelMultiplier?: undefined;
     } | {
@@ -83,6 +87,10 @@ export declare class MinerStoneController {
         pendingStars: number;
         lockedLevel: number | null;
         levelMultiplier: number;
+        fragmentDrops: {
+            spinWheel: number;
+            mineSwipe: number;
+        };
         error?: undefined;
     } | {
         success: boolean;

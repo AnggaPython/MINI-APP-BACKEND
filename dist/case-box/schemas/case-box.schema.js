@@ -77,6 +77,8 @@ exports.CaseBox = CaseBox = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], CaseBox);
 exports.CaseBoxSchema = mongoose_1.SchemaFactory.createForClass(CaseBox);
+exports.CaseBoxSchema.index({ telegramId: 1, status: 1, openedAt: -1 });
+exports.CaseBoxSchema.index({ telegramId: 1, status: 1, claimedAt: -1 });
 exports.CaseBoxSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 exports.CaseBoxSchema.index({ telegramId: 1, status: 1, createdAt: -1 });
 //# sourceMappingURL=case-box.schema.js.map

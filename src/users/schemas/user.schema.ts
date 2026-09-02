@@ -30,7 +30,13 @@ export class User {
   isWithdrawing: boolean;
 
   @Prop({ default: 0 })
-  exp: number;
+  exp: number; // LEGACY: dual-use for VIP + game — use vipExp/gameExp going forward
+
+  @Prop({ default: 0 })
+  vipExp: number; // VIP Rank XP (VIP_RANKS)
+
+  @Prop({ default: 0 })
+  gameExp: number; // Game Level XP (level 1-100)
 
   @Prop({ default: 1 })
   level: number;
@@ -158,6 +164,9 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+UserSchema.index({ sessionToken: 1 }, { sparse: true });
+UserSchema.index({ isBanned: 1, telegramId: 1 });
+
 
 // Database CPU Load Optimizations for high-frequency queries
 UserSchema.index({ miningStartDate: 1, isMiningNotified: 1 }); // Cron Mining Engine (Zero CPU)

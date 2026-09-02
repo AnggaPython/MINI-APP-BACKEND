@@ -1,20 +1,78 @@
+import type { Response } from "express";
 import { TradeSpotService } from "./trade-spot.service";
+import { SseService } from "./sse.service";
 export declare class TradeSpotController {
     private readonly tradeSpotService;
-    constructor(tradeSpotService: TradeSpotService);
+    private readonly sseService;
+    constructor(tradeSpotService: TradeSpotService, sseService: SseService);
     pairs(): Promise<{
         success: boolean;
         pairs: string[];
     }>;
-    ticker(pair?: string): Promise<any>;
+    ticker(pair?: string): Promise<Record<string, unknown> | {
+        success: boolean;
+        pair: string;
+        base: string;
+        quote: string;
+        last: number;
+        changePct: number;
+        high: number;
+        low: number;
+        volume: number;
+        quoteVolume: number;
+        feePct: number;
+        spreadPct: number;
+    }>;
     tickers(body: {
         pairs?: string[];
     }): Promise<{
         success: boolean;
-        tickers: any[];
+        tickers: (Record<string, unknown> | {
+            success: boolean;
+            pair: string;
+            base: string;
+            quote: string;
+            last: number;
+            changePct: number;
+            high: number;
+            low: number;
+            volume: number;
+            quoteVolume: number;
+            feePct: number;
+            spreadPct: number;
+        })[];
     }>;
-    orderbook(telegramId: string, depth?: string, pair?: string): Promise<any>;
-    trades(limit?: string, pair?: string): Promise<any>;
+    orderbook(telegramId: string, depth?: string, pair?: string): Promise<Record<string, unknown> | {
+        success: boolean;
+        pair: string;
+        mid: number;
+        prevMid: number;
+        spread: number;
+        asks: {
+            price: number;
+            amount: number;
+            isMine?: boolean;
+        }[];
+        bids: {
+            price: number;
+            amount: number;
+            isMine?: boolean;
+        }[];
+        bidShare: number;
+    }>;
+    trades(limit?: string, pair?: string): Promise<Record<string, unknown> | {
+        success: boolean;
+        trades: {
+            id: string;
+            side: "BUY" | "SELL";
+            price: number;
+            amount: number;
+            total: number;
+            fee: number;
+            source: "USER" | "BOT";
+            time: Date;
+        }[];
+    }>;
     stats(pair?: string): Promise<{
         success: boolean;
         lastBotRunAt: Date;
@@ -31,7 +89,7 @@ export declare class TradeSpotController {
         feePct: number;
         spreadPct: number;
     }>;
-    info(pair?: string): Promise<{
+    info(pair?: string): Promise<Record<string, unknown> | {
         success: boolean;
         pair: string;
         base: string;
@@ -62,7 +120,12 @@ export declare class TradeSpotController {
             feePct: number;
             spreadPct: number;
         };
-        hourly: any[];
+        hourly: {
+            hour: number;
+            label: string;
+            volume: number;
+            count: number;
+        }[];
     }>;
     holdings(telegramId: string, pair?: string): Promise<{
         success: boolean;
@@ -90,14 +153,31 @@ export declare class TradeSpotController {
     }>;
     openOrders(telegramId: string, pair?: string): Promise<{
         success: boolean;
-        orders: any;
+        orders: {
+            id: string;
+            side: "BUY" | "SELL";
+            price: number;
+            amount: number;
+            status: "OPEN" | "FILLED" | "CANCELLED";
+            createdAt: Date;
+        }[];
     } | {
         success: boolean;
         error: string;
     }>;
     userTrades(telegramId: string, page?: string, limit?: string, pair?: string): Promise<{
         success: boolean;
-        trades: any;
+        trades: {
+            id: string;
+            side: "BUY" | "SELL";
+            price: number;
+            amount: number;
+            total: number;
+            fee: number;
+            feeCurrency: string;
+            source: "USER" | "BOT";
+            time: Date;
+        }[];
         page: number;
         limit: number;
         hasMore: boolean;
@@ -122,10 +202,11 @@ export declare class TradeSpotController {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
         };
         balances: {
             quoteBalance: number;
+            elixir: number;
             elixcoin: number;
         };
         message: string;
@@ -141,10 +222,11 @@ export declare class TradeSpotController {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
         };
         balances: {
             quoteBalance: number;
+            elixir: number;
             elixcoin: number;
         };
         message: string;
@@ -158,6 +240,9 @@ export declare class TradeSpotController {
             price: number;
             amount: number;
             status: string;
+            iceberg: boolean;
+            icebergTotal: number | undefined;
+            icebergChunkSize: number | undefined;
         };
         message: string;
         error?: undefined;
@@ -181,4 +266,5 @@ export declare class TradeSpotController {
         success: boolean;
         error: string;
     }>;
+    events(pair: string, res: Response): void;
 }

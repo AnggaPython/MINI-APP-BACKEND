@@ -4,6 +4,7 @@ import { UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
 import { LevelingService } from "../leveling-miner/leveling.service";
+import { FragmentService } from "../fragment/fragment.service";
 export declare const ELIX_RATES: Record<string, number>;
 export declare const PICKAXE_TIERS: readonly ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
 export type PickaxeTier = (typeof PICKAXE_TIERS)[number];
@@ -13,10 +14,11 @@ export declare class MinerStoneService {
     private readonly usersService;
     private readonly buffCollectionsService;
     private readonly levelingService;
+    private readonly fragmentService;
     private readonly logger;
     private readonly lastSpawnAt;
     private readonly destroyTimestamps;
-    constructor(miningStoneModel: Model<MiningStoneDocument>, userModel: Model<UserDocument>, usersService: UsersService, buffCollectionsService: BuffItemCollectionsService, levelingService: LevelingService);
+    constructor(miningStoneModel: Model<MiningStoneDocument>, userModel: Model<UserDocument>, usersService: UsersService, buffCollectionsService: BuffItemCollectionsService, levelingService: LevelingService, fragmentService: FragmentService);
     private evictRateLimit;
     private roll01;
     private round2;
@@ -66,6 +68,7 @@ export declare class MinerStoneService {
         pickaxeGrants?: undefined;
         pendingStars?: undefined;
         lockedLevel?: undefined;
+        fragmentDrops?: undefined;
         levelMultiplier?: undefined;
     } | {
         success: boolean;
@@ -85,6 +88,10 @@ export declare class MinerStoneService {
         pickaxeGrants: string[];
         pendingStars: number;
         lockedLevel: number | null;
+        fragmentDrops: {
+            spinWheel: number;
+            mineSwipe: number;
+        };
         error?: undefined;
         levelMultiplier?: undefined;
     } | {
@@ -106,6 +113,10 @@ export declare class MinerStoneService {
         pendingStars: number;
         lockedLevel: number | null;
         levelMultiplier: number;
+        fragmentDrops: {
+            spinWheel: number;
+            mineSwipe: number;
+        };
         error?: undefined;
     }>;
     claimRewards(telegramId: string, stoneId: string, action: string): Promise<{

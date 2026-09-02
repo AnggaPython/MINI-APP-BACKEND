@@ -13,6 +13,8 @@ export declare class BankService {
     private readonly logger;
     constructor(stakeModel: Model<StakeDocument>, bankLogModel: Model<BankLogDocument>, usersService: UsersService, achievementsService: AchievementsService, adminService: AdminService);
     private readonly PLATFORM_TAX;
+    private tvlCache;
+    private readonly TVL_CACHE_MS;
     handleAutoClaim(): Promise<void>;
     calculateYield(stake: StakeDocument): number;
     getStats(telegramId: string): Promise<{
@@ -35,8 +37,8 @@ export declare class BankService {
             id: string;
         })[];
         totalUnclaimedEarning: number;
-        totalLiquidityPool: any;
-        networkStaked: any;
+        totalLiquidityPool: number;
+        networkStaked: number;
         personalStaked: number;
     }>;
     createStake(telegramId: string, amount: number, durationDays: number, rate: number, autoClaim?: boolean): Promise<{

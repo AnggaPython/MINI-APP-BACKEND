@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -13,44 +14,47 @@ export const IS_PUBLIC_KEY = "isPublic";
 // Log only ONCE at module startup instead of spamming per-request logs.
 // (The dev fallback telegramId logging was a major terminal noise issue.)
 let devBootBannerShown = false;
+const telegramGuardLogger = new Logger("TelegramAuthGuard");
 function showDevBannerOnce() {
   if (devBootBannerShown) return;
   devBootBannerShown = true;
   const fallbackId = process.env.DEV_FALLBACK_TELEGRAM_ID || "123456789";
   const prod = process.env.NODE_ENV === "production";
-  console.log("");
-  console.log(
+  telegramGuardLogger.log("");
+  telegramGuardLogger.log(
     "╔══════════════════════════════════════════════════════════════╗",
   );
-  console.log(
+  telegramGuardLogger.log(
     "║ [TelegramAuthGuard] Boot Summary                             ║",
   );
-  console.log(
+  telegramGuardLogger.log(
     "╠══════════════════════════════════════════════════════════════╣",
   );
-  console.log(
+  telegramGuardLogger.log(
     `║  NODE_ENV              : ${process.env.NODE_ENV || "development".padEnd(33)}║`,
   );
   if (!prod) {
-    console.log(`║  Dev fallback user ID  : ${fallbackId.padEnd(33)}║`);
-    console.log(
+    telegramGuardLogger.log(
+      `║  Dev fallback user ID  : ${fallbackId.padEnd(33)}║`,
+    );
+    telegramGuardLogger.log(
       `║  Dev login endpoint    : POST /users/public/login           ║`,
     );
-    console.log(
+    telegramGuardLogger.log(
       `║  ⚠️  WARNING: username/password + silent fallback are      ║`,
     );
-    console.log(
+    telegramGuardLogger.log(
       `║     ONLY ACTIVE in NODE_ENV != production.                  ║`,
     );
   } else {
-    console.log(
+    telegramGuardLogger.log(
       `║  PRODUCTION MODE: Strict HMAC only. No fallbacks.           ║`,
     );
   }
-  console.log(
+  telegramGuardLogger.log(
     "╚══════════════════════════════════════════════════════════════╝",
   );
-  console.log("");
+  telegramGuardLogger.log("");
 }
 
 @Injectable()
@@ -127,7 +131,8 @@ export class TelegramAuthGuard implements CanActivate {
     if (isDevMode && !authHeader) {
       const fallbackTelegramId =
         process.env.DEV_FALLBACK_TELEGRAM_ID || "123456789";
-      request.user = {
+      // @ts-ignore - request.user dynamic
+    request.user = {
         telegramId: fallbackTelegramId,
         firstName: "Dev",
         lastName: "User",
@@ -156,6 +161,7 @@ export class TelegramAuthGuard implements CanActivate {
       throw new UnauthorizedException("Invalid or expired session token");
     }
 
+    // @ts-ignore - request.user dynamic
     request.user = {
       telegramId: user.telegramId,
       firstName: user.firstName || "Dev",
@@ -169,7 +175,10 @@ export class TelegramAuthGuard implements CanActivate {
   // ──────────────────────────────────────────────────────────────────
   // Telegram WebApp initData HMAC validation
   // ──────────────────────────────────────────────────────────────────
-  private authenticateViaTelegramInitData(request: any, rawInitData: string) {
+  private authenticateViaTelegramInitData(
+    request: any,
+    rawInitData: string,
+  ) {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
     if (!botToken) {
@@ -179,7 +188,8 @@ export class TelegramAuthGuard implements CanActivate {
       if (!parsed.user)
         throw new UnauthorizedException("Invalid initData: no user field");
       const user = JSON.parse(parsed.user);
-      request.user = { telegramId: user.id?.toString() };
+      // @ts-ignore - request.user dynamic
+    request.user = { telegramId: user.id?.toString() };
       return;
     }
 
@@ -222,6 +232,7 @@ export class TelegramAuthGuard implements CanActivate {
     // 6. Attach validated user object to request
     if (!parsed.user) throw new UnauthorizedException("No user in initData");
     const user = JSON.parse(parsed.user);
+    // @ts-ignore - request.user dynamic
     request.user = {
       telegramId: user.id?.toString(),
       firstName: user.first_name,

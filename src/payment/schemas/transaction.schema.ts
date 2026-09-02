@@ -28,4 +28,6 @@ export class Transaction {
 }
 
 export const TransactionSchema = SchemaFactory.createForClass(Transaction);
+TransactionSchema.index({ telegramId: 1, type: 1, createdAt: -1 });
+
 TransactionSchema.index({ createdAt: 1 }, { expireAfterSeconds: 604800 }); // 7 Days TTL

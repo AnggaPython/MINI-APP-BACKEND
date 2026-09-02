@@ -32,7 +32,7 @@ export declare class UsersService {
     constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService, adminService: AdminService, circularCasino: CircularCasinoService);
     cleanupOldCodeDrops(): Promise<void>;
     notifyFullMining(): Promise<void>;
-    syncTelegramUser(userData: any, referredBy?: string): Promise<User>;
+    syncTelegramUser(userData: Record<string, unknown>, referredBy?: string): Promise<User>;
     startMining(telegramId: string): Promise<{
         user: User | null;
         error?: string;
@@ -202,7 +202,7 @@ export declare class UsersService {
     getBalance(telegramId: string): Promise<{
         elixirBalance: number;
         cryptoBalances: Record<string, number>;
-        materials: any;
+        materials: Record<string, number>;
         ownedPickaxes: string[];
         cwalletUid: string | null;
         solanaAddress: string | null;
@@ -211,6 +211,8 @@ export declare class UsersService {
         lastFaucetRoll: Date | null;
         totalReferrals: number;
         exp: number;
+        vipExp: number;
+        gameExp: number;
         isBanned: boolean;
     }>;
     bindCwalletUid(telegramId: string, uid: string): Promise<{
@@ -301,7 +303,7 @@ export declare class UsersService {
         newBalance: number;
         vestingLocked: number;
         vestingTurnoverRequired: number;
-        circularMeta: any;
+        circularMeta: Record<string, unknown>;
         error?: undefined;
     } | {
         success: boolean;
@@ -311,7 +313,7 @@ export declare class UsersService {
         isWin: boolean;
         profit: number;
         newBalance: number;
-        error?: undefined;
+        error: string;
         vestingLocked?: undefined;
         vestingTurnoverRequired?: undefined;
         circularMeta?: undefined;
@@ -326,8 +328,8 @@ export declare class UsersService {
     setUserBanStatus(telegramId: string, isBanned: boolean): Promise<User | null>;
     getDashboardStatsAdmin(): Promise<{
         totalUsers: number;
-        totalElixir: number;
-        totalAdRevenueUSD: number;
+        totalElixir: any;
+        totalAdRevenueUSD: any;
         recentUsers: (User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
             _id: import("mongoose").Types.ObjectId;
         }> & {

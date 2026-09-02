@@ -4,7 +4,7 @@ export declare class PickaxeUpgradeController {
     constructor(upgradeService: PickaxeUpgradeService);
     getUpgradeStatus(telegramId: string): Promise<{
         success: boolean;
-        upgrades: Record<string, any>;
+        upgrades: Record<string, Record<string, unknown>>;
         materialCounts: {
             common: number;
             medium: number;

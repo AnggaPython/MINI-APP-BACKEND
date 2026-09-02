@@ -72,6 +72,9 @@ export class CaseBox {
 }
 
 export const CaseBoxSchema = SchemaFactory.createForClass(CaseBox);
+CaseBoxSchema.index({ telegramId: 1, status: 1, openedAt: -1 });
+CaseBoxSchema.index({ telegramId: 1, status: 1, claimedAt: -1 });
+
 
 CaseBoxSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 CaseBoxSchema.index({ telegramId: 1, status: 1, createdAt: -1 });

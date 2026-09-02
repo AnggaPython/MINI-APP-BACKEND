@@ -28,14 +28,16 @@ let LiquidityPool = class LiquidityPool {
     lastBotRunAt;
     lifetimeVolume;
     botEnabled;
-    botIntervalMinutes;
     botTradesPerCycle;
+    botIntervalMinutes;
     high24h;
     low24h;
     volume24h;
     quoteVolume24h;
     open24h;
     dayResetAt;
+    cosmeticChangePct;
+    cosmeticPctUpdatedAt;
     adminAskCeiling;
     adminBidFloor;
     adminSellWalls;
@@ -107,13 +109,13 @@ __decorate([
     __metadata("design:type", Boolean)
 ], LiquidityPool.prototype, "botEnabled", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ default: 15, min: 1, max: 60 }),
-    __metadata("design:type", Number)
-], LiquidityPool.prototype, "botIntervalMinutes", void 0);
-__decorate([
-    (0, mongoose_1.Prop)({ default: 10, min: 2, max: 100 }),
+    (0, mongoose_1.Prop)({ default: 7, min: 1, max: 100 }),
     __metadata("design:type", Number)
 ], LiquidityPool.prototype, "botTradesPerCycle", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 5, min: 1, max: 60 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "botIntervalMinutes", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
@@ -138,6 +140,14 @@ __decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", Date)
 ], LiquidityPool.prototype, "dayResetAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], LiquidityPool.prototype, "cosmeticChangePct", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: null }),
+    __metadata("design:type", Date)
+], LiquidityPool.prototype, "cosmeticPctUpdatedAt", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)

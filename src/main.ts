@@ -1,8 +1,11 @@
+import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'warn' : 'debug');
+  const levels = logLevel === 'verbose' ? ['log', 'error', 'warn', 'debug', 'verbose'] as const : logLevel === 'debug' ? ['log', 'error', 'warn', 'debug'] as const : logLevel === 'warn' ? ['error', 'warn'] as const : ['log', 'error', 'warn'] as const;
+  const app = await NestFactory.create(AppModule, { rawBody: true, logger: [...levels] as unknown as ("log" | "error" | "warn" | "debug" | "verbose")[] });
 
   // CORS whitelist — LOCALHOST DEV ONLY.
   // Sebelum production launch, tambahkan domain Vercel / Railway asli di sini.
@@ -16,7 +19,7 @@ async function bootstrap() {
   ];
 
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Allow curl / Postman / REST clients (no Origin header) for local debugging
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
@@ -47,13 +50,13 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  console.log(
+  new Logger("Bootstrap").log(
     `✅ Backend listening on port ${port} — CORS whitelist LOCALHOST ONLY`,
   );
-  console.log(
+  new Logger("Bootstrap").log(
     `   Allowed origins (${allowedOrigins.length}): ${allowedOrigins.join(", ")}`,
   );
-  console.log(
+  new Logger("Bootstrap").log(
     `   ℹ️  Sebelum production launch: tambahkan domain Vercel/Railway di src/main.ts allowedOrigins`,
   );
 }

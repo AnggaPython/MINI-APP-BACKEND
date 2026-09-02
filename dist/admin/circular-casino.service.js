@@ -20,27 +20,11 @@ const mongoose_2 = require("mongoose");
 const circular_treasury_schema_1 = require("./schemas/circular-treasury.schema");
 const user_net_equity_schema_1 = require("./schemas/user-net-equity.schema");
 const monthly_book_cycle_schema_1 = require("./schemas/monthly-book-cycle.schema");
-const WHALE_PATTERN_TEMPLATES = [
-    [1, 0, 0],
-    [1, 0, 0, 0],
-    [1, 1, 0, 0],
-    [1, 0, 0, 0, 1, 0],
-    [1, 0, 1, 0, 0],
-    [1, 0, 0, 1, 0, 0],
-    [0, 1, 0, 0],
-    [1, 0, 0, 1, 0],
-    [0, 0, 1, 0, 0, 1, 0],
-    [1, 0, 0, 0, 0, 1, 0, 0, 1],
-    [1, 0, 0, 1, 0, 0, 0],
-    [0, 1, 0, 0, 1, 0],
-    [1, 0, 1, 0, 0, 0, 1, 0, 0],
-    [1, 0, 0, 0, 1, 0, 0],
-];
 let CircularCasinoService = CircularCasinoService_1 = class CircularCasinoService {
     treasuryModel;
     equityModel;
     bookCycleModel;
-    logger = new common_1.Logger(CircularCasinoService_1.name);
+    _logger = new common_1.Logger(CircularCasinoService_1.name);
     constructor(treasuryModel, equityModel, bookCycleModel) {
         this.treasuryModel = treasuryModel;
         this.equityModel = equityModel;
@@ -97,43 +81,6 @@ let CircularCasinoService = CircularCasinoService_1 = class CircularCasinoServic
                 await eq.save();
         }
         return eq;
-    }
-    generateWhalePattern(numBets, targetNetLoss) {
-        const results = [];
-        const safeLoss = Math.min(0.35, Math.max(0.05, targetNetLoss));
-        const winRatio = (1 - safeLoss) / 2.2;
-        while (results.length < numBets + 15) {
-            const tpl = WHALE_PATTERN_TEMPLATES[Math.floor(Math.random() * WHALE_PATTERN_TEMPLATES.length)];
-            results.push(...tpl);
-        }
-        const wins = results.filter((x) => x === 1).length;
-        const currentRatio = wins / results.length;
-        if (currentRatio > winRatio + 0.05) {
-            for (let i = results.length - 1; i >= 0 &&
-                results.filter((x) => x === 1).length / results.length > winRatio; i--) {
-                if (results[i] === 1)
-                    results[i] = 0;
-            }
-        }
-        else if (currentRatio < winRatio - 0.05) {
-            for (let i = 0; i < results.length &&
-                results.filter((x) => x === 1).length / results.length < winRatio; i++) {
-                if (results[i] === 0 && Math.random() < 0.4)
-                    results[i] = 1;
-            }
-        }
-        return results.slice(0, Math.max(20, numBets));
-    }
-    ensureWhalePatternForEquity(eq, refillMode, p) {
-        if (!eq.whalePatternQueue ||
-            eq.whalePatternQueue.length === 0 ||
-            (eq.whalePatternIndex ?? 0) >= eq.whalePatternQueue.length - 1) {
-            const targetLoss = refillMode
-                ? p.paramWhalePatternRefillTargetLoss
-                : p.paramWhalePatternNormalTargetLoss;
-            eq.whalePatternQueue = this.generateWhalePattern(40, targetLoss);
-            eq.whalePatternIndex = 0;
-        }
     }
     async resolveHiLoBet(telegramId, firstName, username, betAmount, rawIsWinFromEngine, multiplier) {
         const t = await this.ensureBootstrapped();
@@ -261,10 +208,10 @@ let CircularCasinoService = CircularCasinoService_1 = class CircularCasinoServic
             userNetEquityDeltaTotal: isWin ? userNetPayout + vestingLocked : 0,
         };
     }
-    computeWithdrawFeePercent(eq) {
+    computeWithdrawFeePercent(_eq) {
         return { feePct: 0.08, reason: "standard" };
     }
-    computeDailyWithdrawCapUsd(eq) {
+    computeDailyWithdrawCapUsd(_eq) {
         return Infinity;
     }
     computeNetEquityUsd(eq) {

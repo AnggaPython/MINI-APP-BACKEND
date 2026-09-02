@@ -35,10 +35,11 @@ let AdminController = class AdminController {
         this.marketMakerService = marketMakerService;
     }
     async login(body, req) {
+        const reqHeaders = req;
         if (!body.username || !body.password) {
             return { error: "Missing username or password" };
         }
-        const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+        const ip = reqHeaders.headers["x-forwarded-for"] || reqHeaders.socket.remoteAddress || "unknown";
         return await this.adminService.authenticate(body.username, body.password, ip);
     }
     async getFeed() {

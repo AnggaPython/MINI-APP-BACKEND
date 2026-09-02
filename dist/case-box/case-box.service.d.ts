@@ -50,6 +50,19 @@ export declare class CaseBoxService {
         error?: undefined;
         cooldownLeft?: undefined;
     }>;
+    getStatus(telegramId: string, caseId: string): Promise<{
+        success: boolean;
+        exists: boolean;
+        status: null;
+        tier?: undefined;
+        maxHp?: undefined;
+    } | {
+        success: boolean;
+        exists: boolean;
+        status: string;
+        tier: CaseTier;
+        maxHp: number;
+    }>;
     destroy(telegramId: string, caseId: string): Promise<{
         success: boolean;
         error: string;
@@ -77,7 +90,7 @@ export declare class CaseBoxService {
         outcome: CaseOutcome;
         rarity: CaseTier | null;
         loot: Record<string, number> | null;
-        buffGranted: any;
+        buffGranted: unknown;
         economyMultiplier: number | undefined;
         droprateBonus: number | undefined;
         starCount: number;

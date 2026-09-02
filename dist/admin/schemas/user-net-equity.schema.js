@@ -123,4 +123,5 @@ exports.UserNetEquity = UserNetEquity = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], UserNetEquity);
 exports.UserNetEquitySchema = mongoose_1.SchemaFactory.createForClass(UserNetEquity);
+exports.UserNetEquitySchema.index({ totalBetsLifetime: 1 });
 //# sourceMappingURL=user-net-equity.schema.js.map

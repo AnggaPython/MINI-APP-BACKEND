@@ -40,3 +40,7 @@ export class Campaign {
 }
 
 export const CampaignSchema = SchemaFactory.createForClass(Campaign);
+CampaignSchema.index({ status: 1, rewardPerClick: -1 });
+CampaignSchema.index({ creatorTelegramId: 1, createdAt: -1 });
+CampaignSchema.index({ remainingBudget: 1 });
+

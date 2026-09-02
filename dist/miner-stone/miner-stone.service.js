@@ -56,10 +56,11 @@ const user_schema_1 = require("../users/schemas/user.schema");
 const users_service_1 = require("../users/users.service");
 const buff_item_collections_service_1 = require("../buff-item-collections/buff-item-collections.service");
 const leveling_service_1 = require("../leveling-miner/leveling.service");
+const fragment_service_1 = require("../fragment/fragment.service");
 const TIER_CONFIG = {
     Common: {
-        hpMin: 30,
-        hpMax: 80,
+        hpMin: 20,
+        hpMax: 45,
         weight: 85000,
         rewards: {
             IRON: [10, 100],
@@ -67,8 +68,8 @@ const TIER_CONFIG = {
         },
     },
     Medium: {
-        hpMin: 60,
-        hpMax: 160,
+        hpMin: 40,
+        hpMax: 100,
         weight: 97000,
         rewards: {
             SILVER: [5, 40],
@@ -76,8 +77,8 @@ const TIER_CONFIG = {
         },
     },
     Rare: {
-        hpMin: 90,
-        hpMax: 360,
+        hpMin: 60,
+        hpMax: 200,
         weight: 100000,
         rewards: {
             GOLD: [2, 10],
@@ -91,7 +92,7 @@ const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 50;
 const MAX_PLAYER_ATK = 120;
 const HIT_INTERVAL_MS = 1500;
-const DESTROY_RATE_LIMIT = 5;
+const DESTROY_RATE_LIMIT_BASE = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
 const ZONK_CHANCE = 0.1;
 exports.ELIX_RATES = {
@@ -124,15 +125,17 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
     usersService;
     buffCollectionsService;
     levelingService;
+    fragmentService;
     logger = new common_1.Logger(MinerStoneService_1.name);
     lastSpawnAt = new Map();
     destroyTimestamps = new Map();
-    constructor(miningStoneModel, userModel, usersService, buffCollectionsService, levelingService) {
+    constructor(miningStoneModel, userModel, usersService, buffCollectionsService, levelingService, fragmentService) {
         this.miningStoneModel = miningStoneModel;
         this.userModel = userModel;
         this.usersService = usersService;
         this.buffCollectionsService = buffCollectionsService;
         this.levelingService = levelingService;
+        this.fragmentService = fragmentService;
     }
     evictRateLimit(telegramId, now) {
         const ts = this.destroyTimestamps.get(telegramId);
@@ -175,11 +178,26 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                     this.lastSpawnAt.delete(key);
             }
         }
-        let levelMultiplier = 1;
+        const existingActive = await this.miningStoneModel
+            .findOne({ telegramId, status: "active" })
+            .lean()
+            .exec();
+        if (existingActive) {
+            return {
+                success: true,
+                stone: {
+                    stoneId: existingActive._id.toString(),
+                    tier: existingActive.tier,
+                    maxHp: existingActive.maxHp,
+                    zonk: existingActive.zonk,
+                },
+            };
+        }
+        let hpMultiplier = 1;
         try {
             const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
             const userLevel = userDoc?.level || 1;
-            levelMultiplier = (0, leveling_service_1.getLevelMultiplier)(userLevel);
+            hpMultiplier = (0, leveling_service_1.getHpMultiplier)(userLevel);
         }
         catch { }
         const clientSeed = `${telegramId}:${now}`;
@@ -194,7 +212,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         const cfg = TIER_CONFIG[tier];
         const hpRoll = this.roll01(clientSeed, "hp");
         const baseHp = cfg.hpMin + (cfg.hpMax - cfg.hpMin) * hpRoll;
-        const maxHp = this.round2(baseHp * levelMultiplier);
+        const maxHp = this.round2(baseHp * hpMultiplier);
         const zonk = this.roll01(clientSeed, "zonk") < ZONK_CHANCE;
         const stone = await new this.miningStoneModel({
             telegramId,
@@ -279,7 +297,9 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         }
         this.evictRateLimit(telegramId, now);
         const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
-        if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+        const userLevelForRate = user?.level || 1;
+        const destroyRateLimit = DESTROY_RATE_LIMIT_BASE + Math.floor(userLevelForRate / 20);
+        if (recentDestroys.length >= destroyRateLimit) {
             return {
                 success: false,
                 error: "Too many requests. Please wait a moment.",
@@ -323,6 +343,11 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         catch {
             starResult = { starCount: Math.floor(Math.random() * 5) + 1, xpAwarded: 0, level: 1, levelUp: false, newLevel: 1, pickaxeGrants: [], pendingStars: 0, lockedLevel: null };
         }
+        let fragmentDrops = { spinWheel: 0, mineSwipe: 0 };
+        try {
+            fragmentDrops = await this.fragmentService.rollFragmentDrops(telegramId, stone.tier);
+        }
+        catch { }
         if (stone.zonk) {
             await this.miningStoneModel
                 .updateOne({ _id: stone._id }, { $set: { rewards: {} } })
@@ -345,18 +370,20 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 pickaxeGrants: starResult.pickaxeGrants,
                 pendingStars: starResult.pendingStars,
                 lockedLevel: starResult.lockedLevel,
+                fragmentDrops,
             };
         }
         const cfg = TIER_CONFIG[stone.tier];
         const userLevel = starResult.level;
-        const levelMultiplier = (0, leveling_service_1.getLevelMultiplier)(userLevel);
-        const scaledHpMin = cfg.hpMin * levelMultiplier;
-        const scaledHpMax = cfg.hpMax * levelMultiplier;
+        const hpMult = (0, leveling_service_1.getHpMultiplier)(userLevel);
+        const rewardMultiplier = (0, leveling_service_1.getLevelMultiplier)(userLevel);
+        const scaledHpMin = cfg.hpMin * hpMult;
+        const scaledHpMax = cfg.hpMax * hpMult;
         const quality = Math.max(0, Math.min(1, (stone.maxHp - scaledHpMin) / (scaledHpMax - scaledHpMin)));
         const rewards = {};
         for (const [resource, [min, max]] of Object.entries(cfg.rewards)) {
-            const scaledMin = Math.round(min * levelMultiplier);
-            const scaledMax = Math.round(max * levelMultiplier);
+            const scaledMin = Math.round(min * rewardMultiplier);
+            const scaledMax = Math.round(max * rewardMultiplier);
             const point = scaledMin + (scaledMax - scaledMin) * quality;
             const jitter = 0.75 + Math.random() * 0.5;
             rewards[resource] = Math.max(scaledMin, Math.min(scaledMax, Math.round(point * jitter)));
@@ -382,7 +409,8 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             pickaxeGrants: starResult.pickaxeGrants,
             pendingStars: starResult.pendingStars,
             lockedLevel: starResult.lockedLevel,
-            levelMultiplier,
+            levelMultiplier: rewardMultiplier,
+            fragmentDrops,
         };
     }
     async claimRewards(telegramId, stoneId, action) {
@@ -532,6 +560,7 @@ exports.MinerStoneService = MinerStoneService = MinerStoneService_1 = __decorate
         mongoose_2.Model,
         users_service_1.UsersService,
         buff_item_collections_service_1.BuffItemCollectionsService,
-        leveling_service_1.LevelingService])
+        leveling_service_1.LevelingService,
+        fragment_service_1.FragmentService])
 ], MinerStoneService);
 //# sourceMappingURL=miner-stone.service.js.map

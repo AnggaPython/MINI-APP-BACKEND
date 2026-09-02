@@ -20,248 +20,22 @@ const mongoose_2 = require("mongoose");
 const trade_schema_1 = require("./schemas/trade.schema");
 const pool_schema_1 = require("./schemas/pool.schema");
 const open_order_schema_1 = require("./schemas/open-order.schema");
+const pending_tp_sl_schema_1 = require("./schemas/pending-tp-sl.schema");
 const user_schema_1 = require("../users/schemas/user.schema");
 const asset_registry_service_1 = require("./asset-registry.service");
 const buff_item_collections_service_1 = require("../buff-item-collections/buff-item-collections.service");
+const sse_service_1 = require("./sse.service");
 const item_sync_1 = require("./item-sync");
+const item_trade_service_1 = require("./item-trade.service");
+const trade_pairs_1 = require("./trade-pairs");
 var item_sync_2 = require("./item-sync");
 Object.defineProperty(exports, "isItemBase", { enumerable: true, get: function () { return item_sync_2.isItemBase; } });
-exports.DEFAULT_PAIR = "ELIXCOIN/ELIXIR";
-exports.FEE_PCT = 0.015;
-exports.SPREAD_PCT = 0.004;
-exports.CORE_BOT_PAIRS = new Set([
-    "ELIXCOIN/ELIXIR",
-    "ELIXCOIN/USDC",
-    "IRON/USDC", "COPPER/USDC", "SILVER/USDC", "GOLD/USDC", "DIAMOND/USDC",
-    "ELIXCOIN/IRON", "ELIXCOIN/COPPER", "ELIXCOIN/SILVER",
-    "ELIXCOIN/GOLD", "ELIXCOIN/DIAMOND",
-]);
-exports.MINERAL_INITIAL_RATES = {
-    "ELIXCOIN/ELIXIR": 0.09674384,
-    "ELIXCOIN/USDC": 0.00000967,
-    "IRON/USDC": 0.00000030,
-    "COPPER/USDC": 0.00000060,
-    "SILVER/USDC": 0.00000068,
-    "GOLD/USDC": 0.0000068,
-    "DIAMOND/USDC": 0.000068,
-    "ELIXCOIN/IRON": 32.23,
-    "ELIXCOIN/COPPER": 16.12,
-    "ELIXCOIN/SILVER": 14.22,
-    "ELIXCOIN/GOLD": 1.422,
-    "ELIXCOIN/DIAMOND": 0.1422,
-    "ROMAN-COIN/ELIXCOIN": 40,
-    "INCA-GOLD/ELIXCOIN": 60,
-    "IRON-COIN/ELIXCOIN": 80,
-    "TARTAR-BOW/ELIXCOIN": 100,
-    "CELTIC-TORC/ELIXCOIN": 120,
-    "BRONZE-BULL/ELIXCOIN": 140,
-    "EAGLE-FIGURE/ELIXCOIN": 160,
-    "SMALL-DRAGON/ELIXCOIN": 180,
-    "WOLF-FIGURE/ELIXCOIN": 220,
-    "BEAR-STATUE/ELIXCOIN": 240,
-    "GREEK-GOD/ELIXCOIN": 714,
-    "GOLDEN-GARUDA/ELIXCOIN": 857,
-    "MARBLE-LION/ELIXCOIN": 999,
-    "KNIGHT-STATUE/ELIXCOIN": 1142,
-    "SAMURAI-ARMOR/ELIXCOIN": 1285,
-    "DRAGON-LID/ELIXCOIN": 1428,
-    "MING-VASE/ELIXCOIN": 1570,
-    "CLOISONNE/ELIXCOIN": 1713,
-    "PHARAOH-RING/ELIXCOIN": 1000,
-    "GEM-BROOCH/ELIXCOIN": 1100,
-    "SUPER-PHARAOH-RING/ELIXCOIN": 1856,
-    "SUPER-GEM-BROOCH/ELIXCOIN": 1999,
-    "EXCALIBUR/ELIXCOIN": 12499,
-    "JAVANESE-KERIS/ELIXCOIN": 13332,
-    "POSEIDON-TRIDENT/ELIXCOIN": 14165,
-    "THORS-HAMMER/ELIXCOIN": 14999,
-    "ARTEMIS-BOW/ELIXCOIN": 15832,
-    "SHADOW-BLADE/ELIXCOIN": 16665,
-    "AEGIS-SHIELD/ELIXCOIN": 17498,
-    "KATANA/ELIXCOIN": 18332,
-    "DRAGON-KERIS/ELIXCOIN": 19165,
-    "GUARD-HALBERD/ELIXCOIN": 19998,
-    "EMPEROR-CROWN/ELIXCOIN": 8000,
-    "SOLOMON-RING/ELIXCOIN": 10000,
-    "RAS-NECKLACE/ELIXCOIN": 12000,
-    "CADUCEUS/ELIXCOIN": 14000,
-    "DRAGON-ORB/ELIXCOIN": 16000,
-    "SUPER-EMPEROR-CROWN/ELIXCOIN": 45456,
-    "SUPER-SOLOMON-RING/ELIXCOIN": 68184,
-    "SUPER-RAS-NECKLACE/ELIXCOIN": 90912,
-    "SUPER-CADUCEUS/ELIXCOIN": 113640,
-    "SUPER-DRAGON-ORB/ELIXCOIN": 136368,
-    "DRAGON-CHEST/ELIXCOIN": 10000,
-    "HELLFIRE-CHEST/ELIXCOIN": 12000,
-    "KINGS-GOLD-CHEST/ELIXCOIN": 14000,
-    "DIVINE-CHEST/ELIXCOIN": 16000,
-    "MULTIVERSE-CHEST/ELIXCOIN": 18000,
-    "SUPER-DRAGON-CHEST/ELIXCOIN": 159096,
-    "SUPER-HELLFIRE-CHEST/ELIXCOIN": 181824,
-    "SUPER-DIVINE-CHEST/ELIXCOIN": 204552,
-    "SUPER-MULTIVERSE-CHEST/ELIXCOIN": 227280,
-    "SUPER-KINGS-GOLD-CHEST/ELIXCOIN": 250008,
-    "SUMERIAN-TABLET/ELIXCOIN": 40,
-    "MAYAN-DISK/ELIXCOIN": 60,
-    "CHINESE-SEAL/ELIXCOIN": 80,
-    "PERSIAN-ASTRO/ELIXCOIN": 100,
-    "BABYLON-SEAL/ELIXCOIN": 120,
-    "MINI-SCARAB/ELIXCOIN": 140,
-    "MINI-SUN-DISK/ELIXCOIN": 160,
-    "BRASS-LAMP/ELIXCOIN": 180,
-    "WOODEN-BOX/ELIXCOIN": 220,
-    "METAL-TIN/ELIXCOIN": 240,
-    "KINGS-CROWN/ELIXCOIN": 500,
-    "QUEENS-TIARA/ELIXCOIN": 600,
-    "PEARL-NECKLACE/ELIXCOIN": 700,
-    "SUPER-KINGS-CROWN/ELIXCOIN": 714,
-    "SUPER-QUEENS-TIARA/ELIXCOIN": 857,
-    "SUPER-PEARL-NECKLACE/ELIXCOIN": 999,
-    "SILVER-BRACELET/ELIXCOIN": 1142,
-    "MOON-PENDANT/ELIXCOIN": 1285,
-    "JADE-EARRINGS/ELIXCOIN": 1428,
-    "STAR-DIADEM/ELIXCOIN": 1570,
-    "MOON-CIRCLET/ELIXCOIN": 1713,
-    "JADE-VASE/ELIXCOIN": 1856,
-    "JEWELED-VASE/ELIXCOIN": 1999,
-    "GEM-CHEST/ELIXCOIN": 12499,
-    "CRYSTAL-CHEST/ELIXCOIN": 13332,
-    "MYSTERY-CHEST/ELIXCOIN": 14165,
-    "ETERNAL-CHEST/ELIXCOIN": 14999,
-    "SKY-CHEST/ELIXCOIN": 15832,
-    "DRAGON-MAP/ELIXCOIN": 16665,
-    "DRAGON-LETTER/ELIXCOIN": 17498,
-    "DRAGON-TOME/ELIXCOIN": 18332,
-    "DRAGON-COMPASS/ELIXCOIN": 19165,
-    "DRAGON-SEAL/ELIXCOIN": 19998,
-    "SUPER-MEISSEN-PORCELAIN/ELIXCOIN": 45456,
-    "SUPER-WEDGWOOD-JASPER/ELIXCOIN": 68184,
-    "SUPER-JEWELED-VASE/ELIXCOIN": 68184,
-    "SUPER-MILLEFIORI/ELIXCOIN": 90912,
-    "SUPER-GREEK-AMPHORA/ELIXCOIN": 113640,
-    "SUPER-CUBIST-VASE/ELIXCOIN": 136368,
-    "SUPER-GLOBE-VASE/ELIXCOIN": 159096,
-    "SUPER-GOLDEN-PHARAOH/ELIXCOIN": 181824,
-    "SUPER-JADE-DRAGON/ELIXCOIN": 204552,
-    "SUPER-PHOENIX-STATUE/ELIXCOIN": 227280,
-    "SUPER-JADE-TORTOISE/ELIXCOIN": 250008,
-    "CLAY-POT/ELIXCOIN": 40,
-    "BLUE-CERAMIC/ELIXCOIN": 60,
-    "WHITE-PORCELAIN/ELIXCOIN": 80,
-    "ROMAN-POTTERY/ELIXCOIN": 100,
-    "BATIK-VASE/ELIXCOIN": 120,
-    "SAKURA-VASE/ELIXCOIN": 140,
-    "CELADON-VASE/ELIXCOIN": 160,
-    "MAJOLICA-VASE/ELIXCOIN": 180,
-    "RAKU-POTTERY/ELIXCOIN": 220,
-    "SANCAI-VASE/ELIXCOIN": 240,
-    "MEISSEN-PORCELAIN/ELIXCOIN": 1000,
-    "GODDESS-LAKSHMI/ELIXCOIN": 1142,
-    "QUARTZ-CRYSTAL/ELIXCOIN": 1428,
-    "RUBY-STONE/ELIXCOIN": 1570,
-    "SAPPHIRE-STONE/ELIXCOIN": 1713,
-    "EMERALD-STONE/ELIXCOIN": 1856,
-    "AMETHYST-CRYSTAL/ELIXCOIN": 1999,
-    "VIKING-COMPASS/ELIXCOIN": 40,
-    "GREEK-FIGURE/ELIXCOIN": 60,
-    "DREAM-ROCK/ELIXCOIN": 80,
-    "NORSE-RUNE/ELIXCOIN": 100,
-    "KOREAN-CUP/ELIXCOIN": 120,
-    "ANCIENT-CHAKRA/ELIXCOIN": 140,
-    "TIKI-FIGURE/ELIXCOIN": 160,
-    "SMALL-BUDDHA/ELIXCOIN": 180,
-    "BASTET-CAT/ELIXCOIN": 220,
-    "PEACOCK-FIGURE/ELIXCOIN": 240,
-    "SPELL-BOOK/ELIXCOIN": 714,
-    "TREASURE-MAP/ELIXCOIN": 857,
-    "ROYAL-DECREE/ELIXCOIN": 999,
-    "ANCIENT-CODEX/ELIXCOIN": 1142,
-    "BUDDHIST-SUTRA/ELIXCOIN": 1285,
-    "MAYAN-CODEX/ELIXCOIN": 1428,
-    "ANCIENT-ATLAS/ELIXCOIN": 1570,
-    "PROPHECY-BOOK/ELIXCOIN": 1713,
-    "STAR-CHART/ELIXCOIN": 1856,
-    "EGYPT-PAPYRUS/ELIXCOIN": 1999,
-    "SUPER-TOPAZ-STONE/ELIXCOIN": 45456,
-    "SUPER-OPAL-STONE/ELIXCOIN": 68184,
-    "SUPER-LAPIS-LAZULI/ELIXCOIN": 90912,
-    "SUPER-GARNET-STONE/ELIXCOIN": 113640,
-    "SUPER-AQUAMARINE/ELIXCOIN": 136368,
-    "RUSTY-NAIL/ELIXCOIN": 50,
-    "WOODEN-HANDLE/ELIXCOIN": 50,
-    "IRON-SHARD/ELIXCOIN": 50,
-    "COPPER-WIRE/ELIXCOIN": 50,
-    "FLINT-STONE/ELIXCOIN": 50,
-    "HEMP-ROPE/ELIXCOIN": 50,
-    "LEATHER-STRAP/ELIXCOIN": 50,
-    "CLAY-MOLD/ELIXCOIN": 50,
-    "TIN-PLATE/ELIXCOIN": 50,
-    "BONE-FRAGMENT/ELIXCOIN": 50,
-    "SANDSTONE-GRIT/ELIXCOIN": 50,
-    "CHARCOAL-LUMP/ELIXCOIN": 50,
-    "GLASS-SHARD/ELIXCOIN": 50,
-    "RUBBER-GRIP/ELIXCOIN": 50,
-    "BRASS-RIVET/ELIXCOIN": 50,
-    "CANVAS-WRAP/ELIXCOIN": 50,
-    "IRON-BOLT/ELIXCOIN": 50,
-    "SLATE-CHIP/ELIXCOIN": 50,
-    "TWINE-COIL/ELIXCOIN": 50,
-    "WAX-SEAL/ELIXCOIN": 50,
-    "STONE-WHEEL/ELIXCOIN": 50,
-    "BRONZE-PIN/ELIXCOIN": 50,
-    "ASH-PLANK/ELIXCOIN": 50,
-    "CLOTH-STRIP/ELIXCOIN": 50,
-    "PIG-IRON-INGOT/ELIXCOIN": 50,
-    "STEEL-ALLOY/ELIXCOIN": 500,
-    "SILVER-FILAMENT/ELIXCOIN": 500,
-    "COPPER-COIL/ELIXCOIN": 500,
-    "MAGNET-CORE/ELIXCOIN": 500,
-    "REINFORCED-SPRING/ELIXCOIN": 500,
-    "TEMPERED-GLASS/ELIXCOIN": 500,
-    "GOLD-PLATING/ELIXCOIN": 500,
-    "TITANIUM-SCREW/ELIXCOIN": 500,
-    "CARBON-FIBER/ELIXCOIN": 500,
-    "ENCHANTED-RUNE/ELIXCOIN": 500,
-    "SAPPHIRE-LENS/ELIXCOIN": 500,
-    "POWER-CELL/ELIXCOIN": 500,
-    "HYDRAULIC-PUMP/ELIXCOIN": 500,
-    "SERVO-MOTOR/ELIXCOIN": 500,
-    "PLATINUM-WIRE/ELIXCOIN": 500,
-    "CRYSTAL-GEAR/ELIXCOIN": 500,
-    "OBSIDIAN-BLADE/ELIXCOIN": 500,
-    "NEON-CAPACITOR/ELIXCOIN": 500,
-    "PHANTOM-CORE/ELIXCOIN": 500,
-    "EMERALD-DRIVER/ELIXCOIN": 500,
-    "CHRONO-SPRING/ELIXCOIN": 500,
-    "PLASMA-COIL/ELIXCOIN": 500,
-    "ARCANE-ALLOY/ELIXCOIN": 500,
-    "MAGNETIC-ARRAY/ELIXCOIN": 500,
-    "VOID-DIAMOND/ELIXCOIN": 5000,
-    "PHOENIX-FEATHER/ELIXCOIN": 5000,
-    "DRAGON-SCALE/ELIXCOIN": 5000,
-    "CELESTIAL-CORE/ELIXCOIN": 5000,
-    "QUANTUM-SHARD/ELIXCOIN": 5000,
-    "STARFORGED-INGOT/ELIXCOIN": 5000,
-    "INFINITY-CRYSTAL/ELIXCOIN": 5000,
-    "THUNDER-ESSENCE/ELIXCOIN": 5000,
-    "ABYSS-PEARL/ELIXCOIN": 5000,
-    "SOLAR-FRAGMENT/ELIXCOIN": 5000,
-    "LUNAR-PRISM/ELIXCOIN": 5000,
-    "CHAOS-EMBER/ELIXCOIN": 5000,
-    "TITAN-HEART/ELIXCOIN": 5000,
-    "ETHERIUM-WIRE/ELIXCOIN": 5000,
-    "RIFT-ANCHOR/ELIXCOIN": 5000,
-    "FROST-NOVA-CORE/ELIXCOIN": 5000,
-    "PYROCLASM-GEM/ELIXCOIN": 5000,
-    "NEBULA-DUST/ELIXCOIN": 5000,
-    "SINGULARITY-BOLT/ELIXCOIN": 5000,
-    "GODSLAYER-ALLOY/ELIXCOIN": 5000,
-    "TIMELESS-GEAR/ELIXCOIN": 5000,
-    "DIMENSION-KEY/ELIXCOIN": 5000,
-    "ETERNITY-MATRIX/ELIXCOIN": 5000,
-    "PRIMORDIAL-ORE/ELIXCOIN": 5000,
-    "OMEGA-CIRCUIT/ELIXCOIN": 5000,
-};
+var trade_pairs_2 = require("./trade-pairs");
+Object.defineProperty(exports, "DEFAULT_PAIR", { enumerable: true, get: function () { return trade_pairs_2.DEFAULT_PAIR; } });
+Object.defineProperty(exports, "FEE_PCT", { enumerable: true, get: function () { return trade_pairs_2.FEE_PCT; } });
+Object.defineProperty(exports, "SPREAD_PCT", { enumerable: true, get: function () { return trade_pairs_2.SPREAD_PCT; } });
+Object.defineProperty(exports, "CORE_BOT_PAIRS", { enumerable: true, get: function () { return trade_pairs_2.CORE_BOT_PAIRS; } });
+Object.defineProperty(exports, "MINERAL_INITIAL_RATES", { enumerable: true, get: function () { return trade_pairs_2.MINERAL_INITIAL_RATES; } });
 const round8 = (n) => Math.round(n * 1e8) / 1e8;
 const round2 = (n) => Math.round(n * 100) / 100;
 const round4 = (n) => Math.round(n * 1e4) / 1e4;
@@ -281,27 +55,78 @@ const RATE_WINDOW_MS = 60_000;
 const TICKER_CACHE_MS = 3_000;
 const BOOK_CACHE_MS = 3_000;
 const TRADES_CACHE_MS = 5_000;
-let TradeSpotService = class TradeSpotService {
-    static { TradeSpotService_1 = this; }
+let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
     tradeModel;
     poolModel;
     orderModel;
     userModel;
     assetRegistry;
     buffCollectionsService;
+    sseService;
+    itemTradeService;
+    pendingTpSlModel;
     orderTimestamps = new Map();
     cancelTimestamps = new Map();
     tickerCache = new Map();
     bookCache = new Map();
     tradesCache = new Map();
+    infoCache = new Map();
+    INFO_CACHE_MS = 60_000;
+    lastUserTradeImpact = new Map();
+    previousMid = new Map();
     logger = new common_1.Logger(TradeSpotService_1.name);
-    constructor(tradeModel, poolModel, orderModel, userModel, assetRegistry, buffCollectionsService) {
+    constructor(tradeModel, poolModel, orderModel, userModel, assetRegistry, buffCollectionsService, sseService, itemTradeService, pendingTpSlModel) {
         this.tradeModel = tradeModel;
         this.poolModel = poolModel;
         this.orderModel = orderModel;
         this.userModel = userModel;
         this.assetRegistry = assetRegistry;
         this.buffCollectionsService = buffCollectionsService;
+        this.sseService = sseService;
+        this.itemTradeService = itemTradeService;
+        this.pendingTpSlModel = pendingTpSlModel;
+        setInterval(() => this.sweepMemory(), 10 * 60 * 1000).unref();
+    }
+    sweepMemory() {
+        const now = Date.now();
+        for (const [k, arr] of this.orderTimestamps) {
+            const filtered = arr.filter((t) => now - t < RATE_WINDOW_MS);
+            if (filtered.length === 0)
+                this.orderTimestamps.delete(k);
+            else
+                this.orderTimestamps.set(k, filtered);
+        }
+        for (const [k, arr] of this.cancelTimestamps) {
+            const filtered = arr.filter((t) => now - t < RATE_WINDOW_MS);
+            if (filtered.length === 0)
+                this.cancelTimestamps.delete(k);
+            else
+                this.cancelTimestamps.set(k, filtered);
+        }
+        for (const [k, v] of this.lastUserTradeImpact) {
+            if (now - v.time > 60_000)
+                this.lastUserTradeImpact.delete(k);
+        }
+        for (const [k, v] of this.previousMid) {
+            const impact = this.lastUserTradeImpact.get(k);
+            if (!impact)
+                this.previousMid.delete(k);
+        }
+        if (this.tickerCache.size > 500)
+            this.tickerCache.clear();
+        if (this.bookCache.size > 500)
+            this.bookCache.clear();
+        if (this.tradesCache.size > 500)
+            this.tradesCache.clear();
+        if (this.infoCache.size > 200)
+            this.infoCache.clear();
+        for (const [k, v] of this.infoCache) {
+            if (now - v.ts > this.INFO_CACHE_MS)
+                this.infoCache.delete(k);
+        }
+        if (this.tickerCache.size > 0 || this.bookCache.size > 0) {
+            this.logger.debug(`[Sweep] Maps: order:${this.orderTimestamps.size} book:${this.bookCache.size} impact:${this.lastUserTradeImpact.size}`);
+        }
     }
     evictRateLimit(map, telegramId, now) {
         const ts = map.get(telegramId);
@@ -400,20 +225,20 @@ let TradeSpotService = class TradeSpotService {
             message: `All walls removed for ${pair}`,
         };
     }
-    async getPool(pair = exports.DEFAULT_PAIR) {
+    async getPool(pair = trade_pairs_1.DEFAULT_PAIR) {
         let pool = await this.poolModel.findOne({ pair }).exec();
         if (!pool) {
-            if (exports.MINERAL_INITIAL_RATES[pair]) {
-                const initialMid = exports.MINERAL_INITIAL_RATES[pair];
-                const isBotEnabled = exports.CORE_BOT_PAIRS.has(pair);
+            if (trade_pairs_1.ALL_INITIAL_RATES[pair]) {
+                const initialMid = trade_pairs_1.ALL_INITIAL_RATES[pair];
+                const isBotEnabled = trade_pairs_1.CORE_BOT_PAIRS.has(pair);
                 try {
                     pool = await this.poolModel.create({
                         pair,
                         baseReserve: 10_000_000,
                         quoteReserve: 1_000_000,
                         lastMid: initialMid,
-                        spreadPct: exports.SPREAD_PCT,
-                        feePct: exports.FEE_PCT,
+                        spreadPct: trade_pairs_1.SPREAD_PCT,
+                        feePct: trade_pairs_1.FEE_PCT,
                         midMin: initialMid * 0.5,
                         midMax: initialMid * 10,
                         botEnabled: isBotEnabled,
@@ -435,45 +260,52 @@ let TradeSpotService = class TradeSpotService {
                 throw new Error(`Pool for ${pair} not found`);
             }
         }
-        else if (pool.feePct !== exports.FEE_PCT) {
-            pool.feePct = exports.FEE_PCT;
+        else if (pool.feePct !== trade_pairs_1.FEE_PCT) {
+            pool.feePct = trade_pairs_1.FEE_PCT;
             await this.poolModel
-                .updateOne({ pair }, { $set: { feePct: exports.FEE_PCT } })
+                .updateOne({ pair }, { $set: { feePct: trade_pairs_1.FEE_PCT } })
                 .exec();
         }
-        if ((pool.volume24h && pool.volume24h < 0) ||
-            (pool.baseReserve !== undefined && pool.baseReserve < 0) ||
-            (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0)) {
+        const BASE_INIT = 10_000_000;
+        const QUOTE_INIT = 1_000_000;
+        const CRITICAL_PCT = 0.002;
+        const baseLow = pool.baseReserve != null && pool.baseReserve <= BASE_INIT * CRITICAL_PCT;
+        const quoteLow = pool.quoteReserve != null && pool.quoteReserve <= QUOTE_INIT * CRITICAL_PCT;
+        const volNeg = (pool.volume24h && pool.volume24h < 0) || (pool.quoteVolume24h && pool.quoteVolume24h < 0);
+        if (baseLow || quoteLow || volNeg) {
             const setOps = {};
-            if (pool.volume24h < 0) {
+            if (pool.volume24h && pool.volume24h < 0) {
                 setOps.volume24h = 0;
                 pool.volume24h = 0;
             }
-            if (pool.quoteVolume24h < 0) {
+            if (pool.quoteVolume24h && pool.quoteVolume24h < 0) {
                 setOps.quoteVolume24h = 0;
                 pool.quoteVolume24h = 0;
             }
-            if (pool.baseReserve !== undefined && pool.baseReserve < 0) {
-                setOps.baseReserve = 10000000;
-                pool.baseReserve = 10000000;
+            if (baseLow) {
+                setOps.baseReserve = BASE_INIT;
+                pool.baseReserve = BASE_INIT;
             }
-            if (pool.quoteReserve !== undefined && pool.quoteReserve < 0) {
-                setOps.quoteReserve = 1000000;
-                pool.quoteReserve = 1000000;
-            }
-            if (pool.elixcoinReserve !== undefined && pool.elixcoinReserve < 0) {
-                setOps.elixcoinReserve = 10000000;
-                pool.elixcoinReserve = 10000000;
-            }
-            if (pool.elixirReserve !== undefined && pool.elixirReserve < 0) {
-                setOps.elixirReserve = 1000000;
-                pool.elixirReserve = 1000000;
+            if (quoteLow) {
+                setOps.quoteReserve = QUOTE_INIT;
+                pool.quoteReserve = QUOTE_INIT;
             }
             if (Object.keys(setOps).length > 0) {
                 await this.poolModel.updateOne({ pair }, { $set: setOps }).exec();
             }
         }
-        if (pool.adminBidFloor > 0 && pool.adminAskCeiling > 0) {
+        const [poolBase, poolQuote] = pair.split("/");
+        const elixcoinInvolved = poolBase === "ELIXCOIN" || poolQuote === "ELIXCOIN";
+        if (elixcoinInvolved && trade_pairs_1.STABLE_ASSETS.has("ELIXCOIN")) {
+            const globalMid = await this.assetRegistry.getMidFromGlobalReserves(pair);
+            if (globalMid > 0 && Math.abs(globalMid - pool.lastMid) > 1e-12) {
+                pool.lastMid = globalMid;
+                await this.poolModel
+                    .updateOne({ pair }, { $set: { lastMid: globalMid } })
+                    .exec();
+            }
+        }
+        else if (pool.adminBidFloor > 0 && pool.adminAskCeiling > 0) {
             const adminMid = round8((pool.adminBidFloor + pool.adminAskCeiling) / 2);
             pool.lastMid = adminMid;
             await this.poolModel
@@ -489,30 +321,67 @@ let TradeSpotService = class TradeSpotService {
                     .exec();
             }
         }
+        const now24h = Date.now();
+        if (!pool.dayResetAt ||
+            now24h - pool.dayResetAt.getTime() > 24 * 3600_000) {
+            const resetOps = {
+                dayResetAt: new Date(),
+                open24h: pool.lastMid,
+                high24h: pool.lastMid,
+                low24h: pool.lastMid,
+                volume24h: 0,
+                quoteVolume24h: 0,
+                cosmeticChangePct: -1.56 + Math.random() * (2.27 - (-1.56)),
+                cosmeticPctUpdatedAt: new Date(),
+            };
+            await this.poolModel
+                .updateOne({ pair }, { $set: resetOps })
+                .exec();
+            pool.dayResetAt = resetOps.dayResetAt;
+            pool.open24h = resetOps.open24h;
+            pool.high24h = resetOps.high24h;
+            pool.low24h = resetOps.low24h;
+            pool.volume24h = 0;
+            pool.quoteVolume24h = 0;
+        }
         return pool;
     }
-    async getTicker(pair = exports.DEFAULT_PAIR) {
+    async getTicker(pair = trade_pairs_1.DEFAULT_PAIR) {
         const now = Date.now();
         const cache = this.tickerCache.get(pair);
         if (cache?.data && now - cache.ts < TICKER_CACHE_MS) {
             return cache.data;
         }
         const pool = await this.getPool(pair);
-        const close = pool.lastMid;
-        const open = pool.open24h || close;
-        const high = pool.high24h || close;
-        const low = pool.low24h === Infinity ? close : pool.low24h || close;
+        const anchorMid = pool.lastMid;
+        const open = pool.open24h || anchorMid;
+        const high = pool.high24h || anchorMid;
+        const low = pool.low24h === Infinity ? anchorMid : pool.low24h || anchorMid;
         const volume = pool.volume24h || 0;
         const quoteVolume = pool.quoteVolume24h || 0;
-        const changePct = open ? ((close - open) / open) * 100 : 0;
         const [base, quote] = pair.split("/");
+        const lastTrade = await this.tradeModel
+            .findOne({ pair }, { price: 1, createdAt: 1 })
+            .sort({ createdAt: -1 })
+            .lean();
+        const close = lastTrade?.price || anchorMid;
+        let cosmeticPct = pool.cosmeticChangePct || 0;
+        const cosmeticAge = pool.cosmeticPctUpdatedAt
+            ? now - pool.cosmeticPctUpdatedAt.getTime()
+            : Infinity;
+        if (cosmeticAge > 3600_000) {
+            cosmeticPct = -1.56 + Math.random() * (2.27 - (-1.56));
+            await this.poolModel.updateOne({ pair }, { $set: { cosmeticChangePct: cosmeticPct, cosmeticPctUpdatedAt: new Date() } });
+            pool.cosmeticChangePct = cosmeticPct;
+            pool.cosmeticPctUpdatedAt = new Date();
+        }
         const result = {
             success: true,
             pair,
             base,
             quote,
             last: round8(close),
-            changePct: round4(changePct),
+            changePct: round4(cosmeticPct),
             high: round8(high),
             low: round8(low),
             volume: round2(volume),
@@ -526,7 +395,7 @@ let TradeSpotService = class TradeSpotService {
     async getTickers(pairs) {
         return Promise.all(pairs.map((p) => this.getTicker(p)));
     }
-    async getOrderBook(depth = 10, pair = exports.DEFAULT_PAIR, telegramId) {
+    async getOrderBook(depth = 10, pair = trade_pairs_1.DEFAULT_PAIR, telegramId) {
         const now = Date.now();
         const clamped = Math.max(5, Math.min(25, Math.floor(depth || 10)));
         const cache = this.bookCache.get(pair);
@@ -536,7 +405,11 @@ let TradeSpotService = class TradeSpotService {
             return cache.data;
         }
         const pool = await this.getPool(pair);
-        const mid = pool.lastMid;
+        const lastTrade = await this.tradeModel
+            .findOne({ pair }, { price: 1 })
+            .sort({ createdAt: -1 })
+            .lean();
+        const mid = lastTrade?.price || pool.lastMid;
         const half = pool.spreadPct / 2;
         const step = 0.0012;
         const asks = [];
@@ -562,8 +435,36 @@ let TradeSpotService = class TradeSpotService {
             const bidPrice = round8(mid - halfSpreadRaw - levelStep * i);
             bids.push({ price: bidPrice, amount: round2(bidBase) });
         }
+        const impact = this.lastUserTradeImpact.get(pair);
+        const savedMid = this.previousMid.get(pair) ?? mid;
+        if (impact) {
+            const elapsed = Date.now() - impact.time;
+            const DECAY_MS = 60_000;
+            if (elapsed < DECAY_MS) {
+                const decay = 1 - elapsed / DECAY_MS;
+                const intensity = Math.min(1, impact.impact / 0.015);
+                const lag = decay * intensity;
+                if (impact.side === "BUY") {
+                    const bidLagMid = mid - (mid - savedMid) * lag;
+                    for (let i = 0; i < bids.length; i++) {
+                        bids[i].price = round8(bidLagMid - halfSpreadRaw - levelStep * i);
+                    }
+                }
+                else {
+                    const askLagMid = mid + (savedMid - mid) * lag;
+                    for (let i = 0; i < asks.length; i++) {
+                        asks[i].price = round8(askLagMid + halfSpreadRaw + levelStep * i);
+                    }
+                }
+            }
+            else {
+                this.lastUserTradeImpact.delete(pair);
+                this.previousMid.delete(pair);
+            }
+        }
         const openOrders = await this.orderModel
             .find({ pair, status: "OPEN" })
+            .limit(200)
             .lean()
             .exec();
         for (const o of openOrders) {
@@ -617,10 +518,17 @@ let TradeSpotService = class TradeSpotService {
         const totalAsk = finAsks.reduce((acc, l) => acc + l.amount, 0);
         const totalBid = finBids.reduce((acc, l) => acc + l.amount, 0);
         const bidShare = totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
+        const prevTrade = lastTrade
+            ? await this.tradeModel
+                .findOne({ pair, _id: { $ne: lastTrade._id } }, { price: 1 })
+                .sort({ createdAt: -1 })
+                .lean()
+            : null;
         const result = {
             success: true,
             pair,
             mid: round8(mid),
+            prevMid: round8(prevTrade?.price || mid),
             spread: round8(finAsks[0]?.price - finBids[0]?.price || 0),
             asks: finAsks,
             bids: finBids,
@@ -629,7 +537,7 @@ let TradeSpotService = class TradeSpotService {
         this.bookCache.set(pair, { data: result, ts: now, depth: clamped });
         return result;
     }
-    async getTrades(limit = 30, pair = exports.DEFAULT_PAIR) {
+    async getTrades(limit = 30, pair = trade_pairs_1.DEFAULT_PAIR) {
         const now = Date.now();
         const n = Math.max(1, Math.min(100, Math.floor(limit || 30)));
         const cache = this.tradesCache.get(pair);
@@ -658,7 +566,7 @@ let TradeSpotService = class TradeSpotService {
         this.tradesCache.set(pair, { data: result, ts: now, limit: n });
         return result;
     }
-    async getStats(pair = exports.DEFAULT_PAIR) {
+    async getStats(pair = trade_pairs_1.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
         const botTrades = await this.tradeModel
             .countDocuments({ pair, source: "BOT" })
@@ -676,14 +584,17 @@ let TradeSpotService = class TradeSpotService {
             lifetimeVolume: round2(pool.lifetimeVolume),
             platformFeesAccumulated: round4(pool.platformFeesAccumulated),
             spreadProfitAccumulated: round4(pool.spreadProfitAccumulated),
-            quoteReserve: round2(pool.quoteReserve || pool.elixirReserve),
-            baseReserve: round2(pool.baseReserve || pool.elixcoinReserve),
+            quoteReserve: round2(pool.quoteReserve ?? pool.elixirReserve ?? 0),
+            baseReserve: round2(pool.baseReserve ?? pool.elixcoinReserve ?? 0),
             lastMid: round8(pool.lastMid),
             feePct: pool.feePct,
             spreadPct: pool.spreadPct,
         };
     }
-    async getInfo(pair = exports.DEFAULT_PAIR) {
+    async getInfo(pair = trade_pairs_1.DEFAULT_PAIR) {
+        const cached = this.infoCache.get(pair);
+        if (cached && Date.now() - cached.ts < this.INFO_CACHE_MS)
+            return cached.data;
         const pool = await this.getPool(pair);
         const since24 = new Date(Date.now() - 24 * 3600 * 1000);
         const agg24 = await this.tradeModel
@@ -750,7 +661,7 @@ let TradeSpotService = class TradeSpotService {
             .countDocuments({ pair, source: "USER" })
             .exec();
         const [base, quote] = pair.split("/");
-        return {
+        const result = {
             success: true,
             pair,
             base,
@@ -775,16 +686,18 @@ let TradeSpotService = class TradeSpotService {
                 spreadProfit: round4(pool.spreadProfitAccumulated),
             },
             pool: {
-                quoteReserve: round2(pool.quoteReserve || pool.elixirReserve),
-                baseReserve: round2(pool.baseReserve || pool.elixcoinReserve),
+                quoteReserve: round2(pool.quoteReserve ?? pool.elixirReserve ?? 0),
+                baseReserve: round2(pool.baseReserve ?? pool.elixcoinReserve ?? 0),
                 lastMid: round8(pool.lastMid),
                 feePct: pool.feePct,
                 spreadPct: pool.spreadPct,
             },
             hourly,
         };
+        this.infoCache.set(pair, { data: result, ts: Date.now() });
+        return result;
     }
-    async getBotStatus(pair = exports.DEFAULT_PAIR) {
+    async getBotStatus(pair = trade_pairs_1.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
         const stats = await this.getStats(pair);
         const intervalMs = (pool.botIntervalMinutes ?? 15) * 60_000;
@@ -800,7 +713,7 @@ let TradeSpotService = class TradeSpotService {
         };
     }
     async updateBotConfig(body) {
-        const pair = body.pair || exports.DEFAULT_PAIR;
+        const pair = body.pair || trade_pairs_1.DEFAULT_PAIR;
         const pool = await this.getPool(pair);
         const set = {};
         if (typeof body.enabled === "boolean")
@@ -831,18 +744,13 @@ let TradeSpotService = class TradeSpotService {
         const status = await this.getBotStatus(pair);
         return { ...status, success: true };
     }
-    async getHoldings(telegramId, pair = exports.DEFAULT_PAIR) {
+    async getHoldings(telegramId, pair = trade_pairs_1.DEFAULT_PAIR) {
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
         const [base, quote] = pair.split("/");
         const crypto = user?.cryptoBalances;
-        const materials = user?.materials;
         let baseBalance = 0;
-        if ((0, item_sync_1.isMaterialBase)(base)) {
-            const displayName = (0, item_sync_1.slugToMaterialName)(base);
-            baseBalance = materials?.[displayName] ?? 0;
-        }
-        else if (!item_sync_1.COIN_BASES.has(base.toUpperCase())) {
-            baseBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
+        if (this.itemTradeService.isItem(base)) {
+            baseBalance = await this.itemTradeService.getItemBalance(telegramId, base);
         }
         else {
             baseBalance = base === "ELIXIR" ? user?.elixirBalance || 0 : crypto?.[base] || 0;
@@ -857,7 +765,7 @@ let TradeSpotService = class TradeSpotService {
             elixir: round4(user?.elixirBalance || 0),
         };
     }
-    async getMaxTradeable(telegramId, pair = exports.DEFAULT_PAIR, side = "BUY") {
+    async getMaxTradeable(telegramId, pair = trade_pairs_1.DEFAULT_PAIR, side = "BUY") {
         const pool = await this.getPool(pair);
         const [base, quote] = pair.split("/");
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
@@ -882,37 +790,24 @@ let TradeSpotService = class TradeSpotService {
             else {
                 baseBalance = base === "ELIXIR" ? user.elixirBalance || 0 : crypto?.[base] || 0;
             }
-            const itemBalance = (0, item_sync_1.isItemBase)(base) ? Math.floor(baseBalance) : baseBalance;
+            const isMineral = ["ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"].includes(base);
+            const safeMaxBase = (base === "ELIXCOIN" || isMineral || (0, item_sync_1.isItemBase)(base))
+                ? Math.floor(baseBalance)
+                : baseBalance;
             return {
                 success: true,
-                maxBase: (0, item_sync_1.isItemBase)(base) ? itemBalance : round4(baseBalance),
-                maxQuote: round4(itemBalance * bid),
+                maxBase: safeMaxBase,
+                maxQuote: round4(safeMaxBase * bid),
                 price: round8(bid),
                 base,
                 quote,
             };
         }
-        const itemBase = (0, item_sync_1.isItemBase)(base);
-        let low = 0;
-        let high = quoteBalance / (ask * 0.95);
-        for (let i = 0; i < 20; i++) {
-            const mid2 = (low + high) / 2;
-            const impactRatio = mid2 / Math.max(1, pool.baseReserve ?? 10_000_000);
-            const slippage = Math.min(0.05, impactRatio * 0.5);
-            const effectivePrice = round8(ask * (1 + slippage));
-            const cost = round4(mid2 * effectivePrice);
-            const totalCost = itemBase ? round4(cost * (1 + exports.FEE_PCT)) : cost;
-            if (totalCost <= quoteBalance)
-                low = mid2;
-            else
-                high = mid2;
-        }
-        const maxBase = itemBase ? Math.floor(low) : round4(low);
-        const rawQuote = round4(maxBase * ask);
-        const maxQuote = itemBase ? round4(rawQuote * (1 + exports.FEE_PCT)) : rawQuote;
+        const maxBase = quoteBalance / ask;
+        const maxQuote = Math.floor(quoteBalance * 10000) / 10000;
         return {
             success: true,
-            maxBase,
+            maxBase: (0, item_sync_1.isItemBase)(base) ? Math.floor(maxBase) : maxBase,
             maxQuote,
             price: round8(ask),
             base,
@@ -923,7 +818,7 @@ let TradeSpotService = class TradeSpotService {
         const rateErr = this.checkRateLimit(this.orderTimestamps, telegramId, ORDER_RATE_LIMIT, Date.now());
         if (rateErr)
             return { success: false, error: rateErr };
-        const pair = body.pair || exports.DEFAULT_PAIR;
+        const pair = body.pair || trade_pairs_1.DEFAULT_PAIR;
         const [base, quote] = pair.split("/");
         const pool = await this.getPool(pair);
         const side = String(body.side || "").toUpperCase();
@@ -950,7 +845,11 @@ let TradeSpotService = class TradeSpotService {
         const bid = mid * (1 - half);
         if (type === "market") {
             const execPrice = side === "BUY" ? ask : bid;
-            return this.executeFill(pair, telegramId, side, round2(amount), round8(execPrice), "USER");
+            const result = await this.executeFill(pair, telegramId, side, round2(amount), round8(execPrice), "USER");
+            if (result.success && ((body.tpPrice ?? 0) > 0 || (body.slPrice ?? 0) > 0)) {
+                await this.createTpSlOrder(telegramId, pair, side, round2(amount), body.tpPrice ?? 0, body.slPrice ?? 0);
+            }
+            return result;
         }
         const limit = Number(body.price);
         if (!isFinite(limit) || limit <= 0)
@@ -959,13 +858,20 @@ let TradeSpotService = class TradeSpotService {
             return this.executeFill(pair, telegramId, "BUY", round2(amount), round8(ask), "USER");
         if (side === "SELL" && limit <= bid)
             return this.executeFill(pair, telegramId, "SELL", round2(amount), round8(bid), "USER");
+        const useIceberg = body.iceberg === true && body.icebergChunkSize > 0;
+        const chunkSize = useIceberg ? Math.min(round2(body.icebergChunkSize), round2(amount)) : round2(amount);
+        const totalChunks = useIceberg ? Math.ceil(amount / chunkSize) : 1;
         const order = await this.orderModel.create({
             pair,
             telegramId,
             side,
             price: round8(limit),
-            amount: round2(amount),
+            amount: round2(chunkSize),
             status: "OPEN",
+            iceberg: useIceberg,
+            icebergTotal: round2(amount),
+            icebergChunkSize: round2(chunkSize),
+            icebergChunksFilled: 0,
         });
         return {
             success: true,
@@ -976,19 +882,91 @@ let TradeSpotService = class TradeSpotService {
                 price: order.price,
                 amount: order.amount,
                 status: "OPEN",
+                iceberg: useIceberg,
+                icebergTotal: useIceberg ? round2(amount) : undefined,
+                icebergChunkSize: useIceberg ? round2(chunkSize) : undefined,
             },
-            message: `Limit order placed — fills when the market crosses ${round8(limit)}`,
+            message: useIceberg
+                ? `Iceberg order placed — ${totalChunks} chunks of ${round2(chunkSize)} @ ${round8(limit)}`
+                : `Limit order placed — fills when the market crosses ${round8(limit)}`,
         };
+    }
+    async createTpSlOrder(telegramId, pair, originalSide, amount, tpPrice, slPrice) {
+        if (!tpPrice && !slPrice)
+            return;
+        try {
+            const PendingTpSl = this.pendingTpSlModel;
+            if (!PendingTpSl)
+                return;
+            await PendingTpSl.create({
+                telegramId,
+                pair,
+                originalSide,
+                amount,
+                tpPrice: tpPrice || 0,
+                slPrice: slPrice || 0,
+            });
+        }
+        catch {
+        }
+    }
+    async checkTpSlOrders(pair, currentPrice) {
+        try {
+            const PendingTpSl = this.pendingTpSlModel;
+            if (!PendingTpSl)
+                return;
+            const pending = await PendingTpSl.find({
+                pair,
+                triggered: false,
+                cancelled: false,
+            })
+                .limit(100)
+                .exec();
+            for (const order of pending) {
+                const shouldTrigger = (order.tpPrice > 0 && currentPrice >= order.tpPrice) ||
+                    (order.slPrice > 0 && currentPrice <= order.slPrice);
+                if (!shouldTrigger)
+                    continue;
+                const sellSide = order.originalSide === "BUY" ? "SELL" : "BUY";
+                const result = await this.executeFill(pair, order.telegramId, sellSide, order.amount, round8(currentPrice), "USER");
+                await PendingTpSl.updateOne({ _id: order._id }, { $set: { triggered: true, triggeredAt: new Date() } }).exec();
+                if (result.success) {
+                    this.logger.log(`[TP/SL] Triggered ${order.tpPrice ? 'TP' : 'SL'} for ${order.telegramId} on ${pair} @ ${currentPrice}`);
+                }
+            }
+        }
+        catch {
+        }
     }
     async executeFill(pair, telegramId, side, amount, basePrice, source) {
         if (source === "USER" && !telegramId)
             return { success: false, error: "Missing account" };
+        if (source === "USER") {
+            const [baseAsset] = pair.split("/");
+            const limitsKey = side === "BUY" ? pair.split("/")[1] : baseAsset;
+            const limits = trade_pairs_1.TRADE_LIMITS[limitsKey];
+            if (limits) {
+                if (side === "BUY") {
+                    const spendQuote = round4(amount * basePrice);
+                    if (spendQuote < limits.min)
+                        return { success: false, error: `Minimum trade is ${limits.min} ${limitsKey}` };
+                    if (spendQuote > limits.max)
+                        return { success: false, error: `Maximum trade is ${limits.max} ${limitsKey}` };
+                }
+                else {
+                    if (amount < limits.min)
+                        return { success: false, error: `Minimum trade is ${limits.min} ${limitsKey}` };
+                    if (amount > limits.max)
+                        return { success: false, error: `Maximum trade is ${limits.max} ${limitsKey}` };
+                }
+            }
+        }
         const pool = await this.getPool(pair);
         let price = basePrice;
         let shiftPct = 0;
         if (source === "USER") {
             const impactRatio = amount / Math.max(1, pool.baseReserve ?? 10_000_000);
-            shiftPct = Math.min(0.05, impactRatio * 0.5);
+            shiftPct = Math.min(0.015, impactRatio * 0.5);
             price = side === "BUY"
                 ? round8(basePrice * (1 + shiftPct))
                 : round8(basePrice * (1 - shiftPct));
@@ -1005,7 +983,7 @@ let TradeSpotService = class TradeSpotService {
             const itemBase = (0, item_sync_1.isItemBase)(base);
             let actualSpend = 0;
             if (itemBase) {
-                fee = round4(spendQuote * exports.FEE_PCT);
+                fee = round4(spendQuote * trade_pairs_1.FEE_PCT);
                 actualSpend = round4(spendQuote + fee);
                 receivedBase = amount;
                 feeCurrency = quote;
@@ -1016,36 +994,36 @@ let TradeSpotService = class TradeSpotService {
                     return { success: false, error: `Insufficient ${quote} balance` };
                 const qty = Math.floor(receivedBase);
                 if (source === "USER" && qty > 0) {
-                    try {
-                        if ((0, item_sync_1.isMaterialBase)(base)) {
-                            const displayName = (0, item_sync_1.slugToMaterialName)(base);
-                            await this.buffCollectionsService.grantMaterial(telegramId, displayName, qty);
-                        }
-                        else {
-                            const itemId = base.toLowerCase();
-                            for (let i = 0; i < qty; i++) {
-                                await this.buffCollectionsService.grantBuffItem(telegramId, itemId);
-                            }
-                        }
-                    }
-                    catch (err) {
-                        this.logger.warn(`[BuyGrant] ${base}: ${err?.message}`);
-                    }
+                    await this.itemTradeService.grantItem(telegramId, base, qty);
                 }
             }
             else {
-                fee = round4(amount * exports.FEE_PCT);
+                fee = round4(amount * trade_pairs_1.FEE_PCT);
                 receivedBase = round4(amount - fee);
+                if (["COPPER", "IRON", "SILVER", "GOLD"].includes(base)) {
+                    receivedBase = Math.floor(receivedBase);
+                }
                 actualSpend = spendQuote;
                 feeCurrency = base;
+                const gteCheck = Math.max(0, spendQuote - 0.0001);
                 updated = await this.userModel
-                    .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: spendQuote } }, { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } }, { returnDocument: "after" })
+                    .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: gteCheck } }, { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } }, { returnDocument: "after" })
                     .exec();
                 if (!updated)
                     return { success: false, error: `Insufficient ${quote} balance` };
             }
+            if (source === "USER") {
+                this.previousMid.set(pair, pool.lastMid);
+            }
             const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
             const newMid = round8(pool.lastMid * (1 + midNudge));
+            if (source === "USER") {
+                this.lastUserTradeImpact.set(pair, {
+                    side: "BUY",
+                    time: Date.now(),
+                    impact: shiftPct,
+                });
+            }
             await this.poolModel
                 .updateOne({ pair }, {
                 $inc: {
@@ -1057,7 +1035,7 @@ let TradeSpotService = class TradeSpotService {
                 $set: { lastMid: newMid },
             })
                 .exec();
-            await this.assetRegistry.updateReservesAfterFill(base, quote, -amount, actualSpend);
+            await this.assetRegistry.updateReservesAfterFill(base, quote, -receivedBase, actualSpend);
             const updatedPairs = await this.assetRegistry.propagateToAffectedPools(base, quote);
             if (updatedPairs.length > 0) {
                 this.logger.log(`[CrossPair] BUY ${pair}: propagated to ${updatedPairs.join(', ')}`);
@@ -1075,7 +1053,14 @@ let TradeSpotService = class TradeSpotService {
             })
                 .exec();
             this.tickerCache.delete(pair);
+            this.bookCache.delete(pair);
             this.tradesCache.delete(pair);
+            this.sseService.broadcast(pair, "trade", {
+                side, price, amount, total, fee, feeCurrency, source, pair,
+                time: Date.now(),
+            });
+            this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
+            this.checkTpSlOrders(pair, price).catch(() => { });
             const crypto = updated?.cryptoBalances;
             return {
                 success: true,
@@ -1083,6 +1068,7 @@ let TradeSpotService = class TradeSpotService {
                 trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
                 balances: {
                     quoteBalance: round4(crypto?.[quote] ?? updated?.elixirBalance ?? 0),
+                    elixir: round4(updated?.elixirBalance ?? 0),
                     elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
                 },
                 message: itemBase
@@ -1092,26 +1078,12 @@ let TradeSpotService = class TradeSpotService {
         }
         else {
             const grossQuote = round4(amount * price);
-            fee = round4(grossQuote * exports.FEE_PCT);
-            const proceeds = round4(grossQuote - fee);
+            fee = round4(grossQuote * trade_pairs_1.FEE_PCT);
+            let proceeds = round4(grossQuote - fee);
             feeCurrency = quote;
-            if ((0, item_sync_1.isItemBase)(base) && source === "USER") {
+            if (this.itemTradeService.isItem(base) && source === "USER") {
                 const qty = Math.floor(amount);
-                let actualBalance = 0;
-                const materialBase = (0, item_sync_1.isMaterialBase)(base);
-                try {
-                    if (materialBase) {
-                        const displayName = (0, item_sync_1.slugToMaterialName)(base);
-                        const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
-                        actualBalance = userDoc?.materials?.[displayName] ?? 0;
-                    }
-                    else {
-                        actualBalance = await this.buffCollectionsService.countBuffInstances(telegramId, base.toLowerCase());
-                    }
-                }
-                catch {
-                    actualBalance = 0;
-                }
+                const actualBalance = await this.itemTradeService.getItemBalance(telegramId, base);
                 if (actualBalance < qty)
                     return { success: false, error: `Insufficient ${base} balance` };
                 updated = await this.userModel
@@ -1119,28 +1091,34 @@ let TradeSpotService = class TradeSpotService {
                     .exec();
                 if (!updated)
                     return { success: false, error: "Account not found" };
-                try {
-                    if (materialBase) {
-                        const displayName = (0, item_sync_1.slugToMaterialName)(base);
-                        await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
-                    }
-                    else {
-                        await this.buffCollectionsService.removeBuffItem(telegramId, base.toLowerCase(), qty);
-                    }
-                }
-                catch (err) {
-                    this.logger.warn(`[SellDebit] ${base}: ${err?.message}`);
-                }
+                await this.itemTradeService.deductItem(telegramId, base, qty);
             }
             else {
+                if (["ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"].includes(base)) {
+                    amount = Math.floor(amount);
+                    const grossQuoteInt = round4(amount * price);
+                    fee = round4(grossQuoteInt * trade_pairs_1.FEE_PCT);
+                    proceeds = round4(grossQuoteInt - fee);
+                }
+                const gteCheckSell = Math.max(0, amount - 0.0001);
                 updated = await this.userModel
-                    .findOneAndUpdate({ telegramId, [baseKey]: { $gte: amount } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" })
+                    .findOneAndUpdate({ telegramId, [baseKey]: { $gte: gteCheckSell } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" })
                     .exec();
                 if (!updated)
                     return { success: false, error: `Insufficient ${base} balance` };
             }
+            if (source === "USER") {
+                this.previousMid.set(pair, pool.lastMid);
+            }
             const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
             const newMid = round8(pool.lastMid * (1 - midNudge));
+            if (source === "USER") {
+                this.lastUserTradeImpact.set(pair, {
+                    side: "SELL",
+                    time: Date.now(),
+                    impact: shiftPct,
+                });
+            }
             await this.poolModel
                 .updateOne({ pair }, {
                 $inc: {
@@ -1170,7 +1148,14 @@ let TradeSpotService = class TradeSpotService {
             })
                 .exec();
             this.tickerCache.delete(pair);
+            this.bookCache.delete(pair);
             this.tradesCache.delete(pair);
+            this.sseService.broadcast(pair, "trade", {
+                side, price, amount, total, fee, feeCurrency, source, pair,
+                time: Date.now(),
+            });
+            this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
+            this.checkTpSlOrders(pair, price).catch(() => { });
             const crypto2 = updated?.cryptoBalances;
             return {
                 success: true,
@@ -1178,13 +1163,14 @@ let TradeSpotService = class TradeSpotService {
                 trade: { id: String(trade._id), side, price, amount, total, fee, feeCurrency, source },
                 balances: {
                     quoteBalance: round4(crypto2?.[quote] ?? updated?.elixirBalance ?? 0),
+                    elixir: round4(updated?.elixirBalance ?? 0),
                     elixcoin: round4(crypto2?.["ELIXCOIN"] ?? 0),
                 },
                 message: `Sold ${amount} ${base} @ ${price} ${quote}. Proceeds: ${proceeds} ${quote}. Fee: ${fee} ${quote}.`,
             };
         }
     }
-    async getOpenOrders(telegramId, pair = exports.DEFAULT_PAIR) {
+    async getOpenOrders(telegramId, pair = trade_pairs_1.DEFAULT_PAIR) {
         const orders = await this.orderModel
             .find({ telegramId, status: "OPEN", pair })
             .sort({ createdAt: -1 })
@@ -1213,7 +1199,7 @@ let TradeSpotService = class TradeSpotService {
             return { success: false, error: "Order not found or already closed" };
         return { success: true, order };
     }
-    async getUserTrades(telegramId, page = 1, limit = 5, pair = exports.DEFAULT_PAIR) {
+    async getUserTrades(telegramId, page = 1, limit = 5, pair = trade_pairs_1.DEFAULT_PAIR) {
         const p = Math.max(1, Math.floor(page || 1));
         const n = Math.max(1, Math.min(50, Math.floor(limit || 5)));
         const skip = (p - 1) * n;
@@ -1247,7 +1233,7 @@ let TradeSpotService = class TradeSpotService {
             total,
         };
     }
-    async matchOpenOrders(pair = exports.DEFAULT_PAIR) {
+    async matchOpenOrders(pair = trade_pairs_1.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
         const half = pool.spreadPct / 2;
         const ask = pool.lastMid * (1 + half);
@@ -1267,19 +1253,67 @@ let TradeSpotService = class TradeSpotService {
                 continue;
             const res = await this.executeFill(pair, o.telegramId, o.side, o.amount, round8(fillPrice), "USER");
             if (res.success) {
-                await this.orderModel
-                    .updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } })
-                    .exec();
+                if (o.iceberg && o.icebergChunkSize > 0) {
+                    const chunksFilled = (o.icebergChunksFilled || 0) + 1;
+                    const totalChunks = Math.ceil((o.icebergTotal || o.amount) / o.icebergChunkSize);
+                    const remainingTotal = (o.icebergTotal || o.amount) - chunksFilled * o.icebergChunkSize;
+                    if (remainingTotal > o.icebergChunkSize) {
+                        await this.orderModel
+                            .updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } })
+                            .exec();
+                        await this.orderModel.create({
+                            pair,
+                            telegramId: o.telegramId,
+                            side: o.side,
+                            price: o.price,
+                            amount: round2(o.icebergChunkSize),
+                            status: "OPEN",
+                            iceberg: true,
+                            icebergTotal: o.icebergTotal,
+                            icebergChunkSize: o.icebergChunkSize,
+                            icebergChunksFilled: chunksFilled,
+                        });
+                    }
+                    else if (remainingTotal > 0 && remainingTotal <= o.icebergChunkSize) {
+                        await this.orderModel
+                            .updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } })
+                            .exec();
+                        await this.orderModel.create({
+                            pair,
+                            telegramId: o.telegramId,
+                            side: o.side,
+                            price: o.price,
+                            amount: round2(remainingTotal),
+                            status: "OPEN",
+                            iceberg: true,
+                            icebergTotal: o.icebergTotal,
+                            icebergChunkSize: o.icebergChunkSize,
+                            icebergChunksFilled: chunksFilled,
+                        });
+                    }
+                    else {
+                        await this.orderModel
+                            .updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } })
+                            .exec();
+                    }
+                }
+                else {
+                    await this.orderModel
+                        .updateOne({ _id: o._id }, { $set: { status: "FILLED", filledAmount: o.amount } })
+                        .exec();
+                }
                 fills.push({ orderId: String(o._id), trade: res.trade });
             }
         }
         return fills;
     }
-    static STABLE_ASSETS = new Set(["USDC", "ELIXIR"]);
     driftedThisCycle = new Set();
-    async driftMid(pair = exports.DEFAULT_PAIR) {
+    async driftMid(pair = trade_pairs_1.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
         const [base, quote] = pair.split("/");
+        if (trade_pairs_1.STABLE_ASSETS.has(base)) {
+            return;
+        }
         if (pool.adminBidFloor > 0 && pool.adminAskCeiling > 0) {
             const floor = pool.adminBidFloor;
             const ceiling = pool.adminAskCeiling;
@@ -1312,40 +1346,25 @@ let TradeSpotService = class TradeSpotService {
     clearDriftCycle() {
         this.driftedThisCycle.clear();
     }
-    async botCycle(pair = exports.DEFAULT_PAIR) {
+    async botCycle(pair = trade_pairs_1.DEFAULT_PAIR) {
         const pool = await this.getPool(pair);
+        void pool;
         const mid = pool.lastMid;
         const [base, quote] = pair.split("/");
-        const tradesPerSide = Math.max(1, Math.floor((pool.botTradesPerCycle ?? 10) / 2));
-        const sides = [
-            ...Array(tradesPerSide).fill("BUY"),
-            ...Array(tradesPerSide).fill("SELL"),
-        ].sort(() => Math.random() - 0.5);
+        const sides = [Math.random() < 0.5 ? "BUY" : "SELL"];
         const trades = [];
-        const baseReserveKey = "baseReserve";
-        const quoteReserveKey = "quoteReserve";
-        const baseResVal = pool.baseReserve || pool.elixcoinReserve;
-        const quoteResVal = pool.quoteReserve || pool.elixirReserve;
         const hasAdminRange = pool.adminBidFloor > 0 && pool.adminAskCeiling > 0;
         const adminFloor = pool.adminBidFloor;
         const adminCeiling = pool.adminAskCeiling;
         for (const side of sides) {
             await new Promise(r => setTimeout(r, Math.floor(Math.random() * 6000) + 2000));
-            const isItem = mid >= 1;
+            const isItem = (0, item_sync_1.isItemBase)(base);
             let amount;
             if (isItem) {
                 amount = Math.floor(Math.random() * 10) + 1;
             }
             else {
-                const targetQuoteVolume = Math.random() * 290 + 10;
-                amount = targetQuoteVolume / mid;
-                if (amount < 150) {
-                    amount = Math.random() * 850 + 150;
-                }
-                else if (amount > 150_000) {
-                    amount = Math.random() * 50_000 + 20_000;
-                }
-                amount = Math.floor(amount);
+                amount = Math.floor(Math.random() * 6900) + 100;
             }
             const priceRound = isItem ? round2 : round8;
             let price;
@@ -1367,7 +1386,7 @@ let TradeSpotService = class TradeSpotService {
                 }
             }
             const total = round4(amount * price);
-            const fee = round4(total * exports.FEE_PCT);
+            const fee = round4(total * trade_pairs_1.FEE_PCT);
             await this.poolModel
                 .updateOne({ pair }, { $inc: { platformFeesAccumulated: fee } })
                 .exec();
@@ -1431,6 +1450,15 @@ let TradeSpotService = class TradeSpotService {
         this.tickerCache.delete(pair);
         this.bookCache.delete(pair);
         this.tradesCache.delete(pair);
+        if (trades.length > 0) {
+            this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
+            const lastTrade = trades[trades.length - 1];
+            this.sseService.broadcast(pair, "trade", {
+                side: lastTrade.side, price: lastTrade.price, amount: lastTrade.amount,
+                total: lastTrade.total, source: "BOT", pair,
+                time: Date.now(),
+            });
+        }
         return { count: trades.length, trades };
     }
 };
@@ -1441,11 +1469,15 @@ exports.TradeSpotService = TradeSpotService = TradeSpotService_1 = __decorate([
     __param(1, (0, mongoose_1.InjectModel)(pool_schema_1.LiquidityPool.name)),
     __param(2, (0, mongoose_1.InjectModel)(open_order_schema_1.OpenOrder.name)),
     __param(3, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
+    __param(8, (0, mongoose_1.InjectModel)(pending_tp_sl_schema_1.PendingTpSl.name)),
     __metadata("design:paramtypes", [mongoose_2.Model,
         mongoose_2.Model,
         mongoose_2.Model,
         mongoose_2.Model,
         asset_registry_service_1.AssetRegistryService,
-        buff_item_collections_service_1.BuffItemCollectionsService])
+        buff_item_collections_service_1.BuffItemCollectionsService,
+        sse_service_1.SseService,
+        item_trade_service_1.ItemTradeService,
+        mongoose_2.Model])
 ], TradeSpotService);
 //# sourceMappingURL=trade-spot.service.js.map

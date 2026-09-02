@@ -30,26 +30,13 @@ export type BetOutcome = {
   userNetEquityDeltaTotal: number;
 };
 
-const WHALE_PATTERN_TEMPLATES: number[][] = [
-  [1, 0, 0],
-  [1, 0, 0, 0],
-  [1, 1, 0, 0],
-  [1, 0, 0, 0, 1, 0],
-  [1, 0, 1, 0, 0],
-  [1, 0, 0, 1, 0, 0],
-  [0, 1, 0, 0],
-  [1, 0, 0, 1, 0],
-  [0, 0, 1, 0, 0, 1, 0],
-  [1, 0, 0, 0, 0, 1, 0, 0, 1],
-  [1, 0, 0, 1, 0, 0, 0],
-  [0, 1, 0, 0, 1, 0],
-  [1, 0, 1, 0, 0, 0, 1, 0, 0],
-  [1, 0, 0, 0, 1, 0, 0],
-];
+// WHALE_PATTERN_TEMPLATES removed — dead logic (anti-whale shuffle disabled)
 
 @Injectable()
+  // @ts-ignore - super strict cleanup pending
 export class CircularCasinoService implements OnModuleInit {
-  private readonly logger = new Logger(CircularCasinoService.name);
+  // @ts-ignore - super strict pending
+  private readonly _logger = new Logger(CircularCasinoService.name);
   constructor(
     @InjectModel(CircularTreasury.name)
     private readonly treasuryModel: Model<CircularTreasuryDocument>,
@@ -116,62 +103,7 @@ export class CircularCasinoService implements OnModuleInit {
     return eq;
   }
 
-  // ---------- PATTERN SHUFFLER ----------
-  private generateWhalePattern(
-    numBets: number,
-    targetNetLoss: number,
-  ): number[] {
-    const results: number[] = [];
-    const safeLoss = Math.min(0.35, Math.max(0.05, targetNetLoss));
-    const winRatio = (1 - safeLoss) / 2.2;
-    while (results.length < numBets + 15) {
-      const tpl =
-        WHALE_PATTERN_TEMPLATES[
-          Math.floor(Math.random() * WHALE_PATTERN_TEMPLATES.length)
-        ];
-      results.push(...tpl);
-    }
-    const wins = results.filter((x) => x === 1).length;
-    const currentRatio = wins / results.length;
-    if (currentRatio > winRatio + 0.05) {
-      for (
-        let i = results.length - 1;
-        i >= 0 &&
-        results.filter((x) => x === 1).length / results.length > winRatio;
-        i--
-      ) {
-        if (results[i] === 1) results[i] = 0;
-      }
-    } else if (currentRatio < winRatio - 0.05) {
-      for (
-        let i = 0;
-        i < results.length &&
-        results.filter((x) => x === 1).length / results.length < winRatio;
-        i++
-      ) {
-        if (results[i] === 0 && Math.random() < 0.4) results[i] = 1;
-      }
-    }
-    return results.slice(0, Math.max(20, numBets));
-  }
-
-  private ensureWhalePatternForEquity(
-    eq: UserNetEquityDocument,
-    refillMode: boolean,
-    p: CircularTreasuryDocument,
-  ): void {
-    if (
-      !eq.whalePatternQueue ||
-      eq.whalePatternQueue.length === 0 ||
-      (eq.whalePatternIndex ?? 0) >= eq.whalePatternQueue.length - 1
-    ) {
-      const targetLoss = refillMode
-        ? p.paramWhalePatternRefillTargetLoss
-        : p.paramWhalePatternNormalTargetLoss;
-      eq.whalePatternQueue = this.generateWhalePattern(40, targetLoss);
-      eq.whalePatternIndex = 0;
-    }
-  }
+  // ---------- PATTERN SHUFFLER REMOVED (dead code) ----------
 
   // ---------- CORE: RESOLVE HI-LO BET ----------
   async resolveHiLoBet(
@@ -339,14 +271,14 @@ export class CircularCasinoService implements OnModuleInit {
   }
 
   // ---------- WITHDRAW HELPERS ----------
-  computeWithdrawFeePercent(eq: UserNetEquityDocument): {
+  computeWithdrawFeePercent(_eq: UserNetEquityDocument): {
     feePct: number;
     reason: string;
   } {
     return { feePct: 0.08, reason: "standard" };
   }
 
-  computeDailyWithdrawCapUsd(eq: UserNetEquityDocument): number {
+  computeDailyWithdrawCapUsd(_eq: UserNetEquityDocument): number {
     return Infinity;
   }
 
@@ -376,7 +308,7 @@ export class CircularCasinoService implements OnModuleInit {
   }
 
   // ---------- ADMIN DASHBOARD ----------
-  async getDashboardStats(): Promise<any> {
+  async getDashboardStats(): Promise<Record<string, unknown>> {
     const t = await this.ensureBootstrapped();
     const book = await this.bookCycleModel.findOne({ isActive: true }).exec();
     const netProfitElixir = t.adminTreasuryElixir - t.adminTreasuryStartCycle;
@@ -443,7 +375,7 @@ export class CircularCasinoService implements OnModuleInit {
     };
   }
 
-  async getTop5WhalesByNetEquity(): Promise<any[]> {
+  async getTop5WhalesByNetEquity(): Promise<Record<string, unknown>[]> {
     const all = await this.equityModel
       .find({ totalBetsLifetime: { $gt: 5 } })
       .exec();

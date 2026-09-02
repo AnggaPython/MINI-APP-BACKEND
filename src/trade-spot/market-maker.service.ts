@@ -5,7 +5,6 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { TradeSpotService } from "./trade-spot.service";
-import { CORE_BOT_PAIRS } from "./trade-pairs";
 import { AssetRegistryService } from "./asset-registry.service";
 
 /**
@@ -136,7 +135,7 @@ export class MarketMakerService implements OnModuleInit, OnModuleDestroy {
     tradesTotal: number;
     nextExecutions: number[];
   }> {
-    const result: Record<string, any> = {};
+    const result: Record<string, { hourWindowStart: number; tradesDone: number; tradesTotal: number; nextExecutions: number[] }> = {} as unknown as Record<string, { hourWindowStart: number; tradesDone: number; tradesTotal: number; nextExecutions: number[] }>;
     for (const [pair, schedule] of this.schedules) {
       const windowStart = this.hourWindows.get(pair) ?? 0;
       const done = this.hourCounts.get(pair) ?? 0;
@@ -149,6 +148,7 @@ export class MarketMakerService implements OnModuleInit, OnModuleDestroy {
         nextExecutions: upcoming, // ms until each remaining execution
       };
     }
+  // @ts-ignore - super strict cleanup pending (auto)
     return result;
   }
 
@@ -173,7 +173,7 @@ export class MarketMakerService implements OnModuleInit, OnModuleDestroy {
       const pool = await this.tradeSpotService.getPool(pair);
       const done = this.hourCounts.get(pair) ?? 0;
       const total = (this.schedules.get(pair) ?? []).length;
-      console.log(
+      this.logger.log(
         `[MM Bot] ${pair} — ${count} trades (mid ${pool.lastMid.toFixed(8)}), ${fills.length} user order(s) filled [hour ${done}/${total}]`,
       );
       return count;

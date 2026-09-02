@@ -4,8 +4,8 @@ export declare class LevelingController {
     constructor(levelingService: LevelingService);
     getMyLevel(telegramId: string): Promise<{
         success: boolean;
-        level: any;
-        exp: any;
+        level: number;
+        exp: number;
         xpForNextLevel: number;
         xpInLevel: number;
         progress: number;
@@ -14,8 +14,8 @@ export declare class LevelingController {
         currentBenefit: import("./leveling.service").LevelBenefit;
         multiplier: number;
         nextMultiplier: number;
-        pendingStars: any;
-        lockedLevel: any;
+        pendingStars: number;
+        lockedLevel: number | null;
         milestoneRequirement: import("./leveling.service").MilestoneRequirement | null;
         materialCheck: {
             enough: boolean;

@@ -21,7 +21,11 @@ let User = class User {
     isBanned;
     isWithdrawing;
     exp;
+    vipExp;
+    gameExp;
     level;
+    profileXp;
+    profileLevel;
     pendingStars;
     lockedLevel;
     materials;
@@ -50,6 +54,9 @@ let User = class User {
     authPasswordHash;
     sessionToken;
     tokenExpiresAt;
+    spinWheelFragments;
+    mineSwipeFragments;
+    goldBalance;
 };
 exports.User = User;
 __decorate([
@@ -89,9 +96,25 @@ __decorate([
     __metadata("design:type", Number)
 ], User.prototype, "exp", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "vipExp", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "gameExp", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: 1 }),
     __metadata("design:type", Number)
 ], User.prototype, "level", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "profileXp", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 1 }),
+    __metadata("design:type", Number)
+], User.prototype, "profileLevel", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
@@ -204,10 +227,24 @@ __decorate([
     (0, mongoose_1.Prop)({ type: Date, default: null }),
     __metadata("design:type", Object)
 ], User.prototype, "tokenExpiresAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "spinWheelFragments", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "mineSwipeFragments", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, default: { spinWheels: 0, mineSwipe: 0 } }),
+    __metadata("design:type", Object)
+], User.prototype, "goldBalance", void 0);
 exports.User = User = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], User);
 exports.UserSchema = mongoose_1.SchemaFactory.createForClass(User);
+exports.UserSchema.index({ sessionToken: 1 }, { sparse: true });
+exports.UserSchema.index({ isBanned: 1, telegramId: 1 });
 exports.UserSchema.index({ miningStartDate: 1, isMiningNotified: 1 });
 exports.UserSchema.index({ claimedCodeDrops: 1 });
 exports.UserSchema.index({ elixirBalance: -1 });

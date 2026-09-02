@@ -17,14 +17,16 @@ export declare class LiquidityPool {
     lastBotRunAt: Date;
     lifetimeVolume: number;
     botEnabled: boolean;
-    botIntervalMinutes: number;
     botTradesPerCycle: number;
+    botIntervalMinutes: number;
     high24h: number;
     low24h: number;
     volume24h: number;
     quoteVolume24h: number;
     open24h: number;
     dayResetAt: Date;
+    cosmeticChangePct: number;
+    cosmeticPctUpdatedAt: Date;
     adminAskCeiling: number;
     adminBidFloor: number;
     adminSellWalls: {
@@ -189,7 +191,7 @@ export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPoo
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
-    botIntervalMinutes?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+    botTradesPerCycle?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
         _id: import("mongoose").Types.ObjectId;
@@ -198,7 +200,7 @@ export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPoo
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
-    botTradesPerCycle?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+    botIntervalMinutes?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
         _id: import("mongoose").Types.ObjectId;
@@ -253,6 +255,24 @@ export declare const LiquidityPoolSchema: import("mongoose").Schema<LiquidityPoo
         id: string;
     }>> | undefined;
     dayResetAt?: import("mongoose").SchemaDefinitionProperty<Date, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    cosmeticChangePct?: import("mongoose").SchemaDefinitionProperty<number, LiquidityPool, Document<unknown, {}, LiquidityPool, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    cosmeticPctUpdatedAt?: import("mongoose").SchemaDefinitionProperty<Date, LiquidityPool, Document<unknown, {}, LiquidityPool, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<LiquidityPool & {
         _id: import("mongoose").Types.ObjectId;

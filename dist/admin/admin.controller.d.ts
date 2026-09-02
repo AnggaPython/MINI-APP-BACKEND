@@ -10,7 +10,7 @@ export declare class AdminController {
     private readonly tradeSpotService;
     private readonly marketMakerService;
     constructor(adminService: AdminService, usersService: UsersService, circularCasino: CircularCasinoService, tradeSpotService: TradeSpotService, marketMakerService: MarketMakerService);
-    login(body: any, req: any): Promise<{
+    login(body: Record<string, string>, req: Record<string, unknown>): Promise<{
         success: boolean;
         token: string;
         role: string;
@@ -20,8 +20,8 @@ export declare class AdminController {
     }>;
     getFeed(): Promise<{
         totalUsers: number;
-        totalElixir: number;
-        totalAdRevenueUSD: number;
+        totalElixir: any;
+        totalAdRevenueUSD: any;
         recentUsers: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
             _id: import("mongoose").Types.ObjectId;
         }> & {
@@ -51,7 +51,7 @@ export declare class AdminController {
             averagePayoutPerImpressionUSD: number;
             lastSevenDaysRevenueUSD: number;
             dailyRunRateUSD: number;
-            primaryMilestoneUsd: 100 | 1000 | 500 | 250;
+            primaryMilestoneUsd: 100 | 250 | 500 | 1000;
             remainingUSD: number;
             progressPercent: number;
             estimatedImpressionsRemaining: number;
@@ -65,7 +65,7 @@ export declare class AdminController {
                 estImpressionsRemaining: number;
             };
             milestonesRoadmap: {
-                targetUSD: 100 | 1000 | 500 | 250;
+                targetUSD: 100 | 250 | 500 | 1000;
                 achieved: boolean;
                 progressPercent: number;
                 remainingUSD: number;
@@ -168,21 +168,21 @@ export declare class AdminController {
     }>;
     getBaseCasinoStats(): Promise<{
         success: boolean;
-        treasury: any;
-        circularPool: any;
-        burned: any;
-        taxThisCycle: any;
-        params: any;
-        liveImpactLog: any;
-        dailySnapshots30D: any;
-        monthlyBook: any;
-        topWhales: any[];
+        treasury: unknown;
+        circularPool: unknown;
+        burned: unknown;
+        taxThisCycle: unknown;
+        params: unknown;
+        liveImpactLog: unknown;
+        dailySnapshots30D: unknown;
+        monthlyBook: unknown;
+        topWhales: Record<string, unknown>[];
     }>;
     getTopWhales(): Promise<{
         success: boolean;
-        whales: any[];
+        whales: Record<string, unknown>[];
     }>;
-    updateBaseCasinoParams(body: Record<string, any>): Promise<{
+    updateBaseCasinoParams(body: Record<string, unknown>): Promise<{
         error: string;
         success?: undefined;
         params?: undefined;
@@ -190,15 +190,15 @@ export declare class AdminController {
         circularPool?: undefined;
     } | {
         success: boolean;
-        params: any;
-        treasury: any;
-        circularPool: any;
+        params: unknown;
+        treasury: unknown;
+        circularPool: unknown;
         error?: undefined;
     }>;
     closeCurrentCycle(): Promise<{
         success: boolean;
-        monthlyBook: any;
-        treasury: any;
+        monthlyBook: unknown;
+        treasury: unknown;
     }>;
     getTradeSpotBot(): Promise<{
         pair: string;
@@ -295,10 +295,10 @@ export declare class AdminController {
         pair: string;
         bidFloor: number;
         askCeiling: number;
-    }): Promise<any>;
+    }): Promise<Record<string, unknown>>;
     clearPriceControl(body: {
         pair: string;
-    }): Promise<any>;
+    }): Promise<Record<string, unknown>>;
     setWalls(body: {
         pair: string;
         sellWalls?: {
@@ -309,8 +309,8 @@ export declare class AdminController {
             price: number;
             amount: number;
         }[];
-    }): Promise<any>;
+    }): Promise<Record<string, unknown>>;
     clearWalls(body: {
         pair: string;
-    }): Promise<any>;
+    }): Promise<Record<string, unknown>>;
 }

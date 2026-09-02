@@ -10,7 +10,11 @@ export declare class User {
     isBanned: boolean;
     isWithdrawing: boolean;
     exp: number;
+    vipExp: number;
+    gameExp: number;
     level: number;
+    profileXp: number;
+    profileLevel: number;
     pendingStars: number;
     lockedLevel: number | null;
     materials: Record<string, number>;
@@ -42,6 +46,12 @@ export declare class User {
     authPasswordHash: string | null;
     sessionToken: string | null;
     tokenExpiresAt: Date | null;
+    spinWheelFragments: number;
+    mineSwipeFragments: number;
+    goldBalance: {
+        spinWheels: number;
+        mineSwipe: number;
+    };
 }
 export declare const UserSchema: import("mongoose").Schema<User, import("mongoose").Model<User, any, any, any, any, any, User>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, User, Document<unknown, {}, User, {
     id: string;
@@ -133,7 +143,43 @@ export declare const UserSchema: import("mongoose").Schema<User, import("mongoos
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
+    vipExp?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    gameExp?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
     level?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    profileXp?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    profileLevel?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
         _id: import("mongoose").Types.ObjectId;
@@ -389,6 +435,36 @@ export declare const UserSchema: import("mongoose").Schema<User, import("mongoos
         id: string;
     }>> | undefined;
     tokenExpiresAt?: import("mongoose").SchemaDefinitionProperty<Date | null, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    spinWheelFragments?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    mineSwipeFragments?: import("mongoose").SchemaDefinitionProperty<number, User, Document<unknown, {}, User, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    goldBalance?: import("mongoose").SchemaDefinitionProperty<{
+        spinWheels: number;
+        mineSwipe: number;
+    }, User, Document<unknown, {}, User, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<User & {
         _id: import("mongoose").Types.ObjectId;

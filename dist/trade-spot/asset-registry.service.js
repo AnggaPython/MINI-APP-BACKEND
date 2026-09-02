@@ -19,19 +19,18 @@ const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const asset_registry_schema_1 = require("./schemas/asset-registry.schema");
 const pool_schema_1 = require("./schemas/pool.schema");
+const trade_pairs_1 = require("./trade-pairs");
 const round8 = (n) => Math.round(n * 1e8) / 1e8;
 const ASSET_SEEDS = {
     USDC: { virtualReserve: 1_000_000, anchorUsdPrice: 1.0 },
     ELIXIR: { virtualReserve: 100_000_000, anchorUsdPrice: 0.001 },
     ELIXCOIN: { virtualReserve: 10_000_000, anchorUsdPrice: 0.00000967 },
     IRON: { virtualReserve: 10_000_000, anchorUsdPrice: 0.00000030 },
-    COPPER: { virtualReserve: 10_000_000, anchorUsdPrice: 0.00000060 },
+    COPPER: { virtualReserve: 10_000_000, anchorUsdPrice: 0.00000035 },
     SILVER: { virtualReserve: 10_000_000, anchorUsdPrice: 0.00000068 },
     GOLD: { virtualReserve: 10_000_000, anchorUsdPrice: 0.0000068 },
-    DIAMOND: { virtualReserve: 10_000_000, anchorUsdPrice: 0.000068 },
 };
-let AssetRegistryService = class AssetRegistryService {
-    static { AssetRegistryService_1 = this; }
+let AssetRegistryService = AssetRegistryService_1 = class AssetRegistryService {
     assetModel;
     poolModel;
     logger = new common_1.Logger(AssetRegistryService_1.name);
@@ -54,7 +53,7 @@ let AssetRegistryService = class AssetRegistryService {
                 });
                 this.logger.log(`[AssetRegistry] Bootstrapped ${asset}`);
             }
-            if (AssetRegistryService_1.STABLE_ASSETS.has(asset)) {
+            if (trade_pairs_1.STABLE_ASSETS.has(asset)) {
                 await this.assetModel
                     .updateOne({ asset, usdPrice: { $ne: seed.anchorUsdPrice } }, { $set: { usdPrice: seed.anchorUsdPrice } })
                     .exec();
@@ -92,6 +91,18 @@ let AssetRegistryService = class AssetRegistryService {
         return doc;
     }
     async recalcUsdPrice(asset) {
+        if (trade_pairs_1.STABLE_ASSETS.has(asset)) {
+            const seed = ASSET_SEEDS[asset];
+            if (seed) {
+                const a = await this.getAsset(asset);
+                if (a.usdPrice !== seed.anchorUsdPrice) {
+                    a.usdPrice = seed.anchorUsdPrice;
+                    this.cache.set(asset, a);
+                    await this.assetModel.updateOne({ asset }, { $set: { usdPrice: seed.anchorUsdPrice } }).exec();
+                }
+                return seed.anchorUsdPrice;
+            }
+        }
         const a = await this.getAsset(asset);
         if (a.virtualReserve <= 0 || a.anchorUsdPrice <= 0)
             return a.usdPrice;
@@ -108,6 +119,13 @@ let AssetRegistryService = class AssetRegistryService {
     }
     async getMidFromGlobalReserves(pair) {
         const [base, quote] = pair.split("/");
+        if (trade_pairs_1.STABLE_ASSETS.has(base) && trade_pairs_1.STABLE_ASSETS.has(quote)) {
+            const seedBase = ASSET_SEEDS[base];
+            const seedQuote = ASSET_SEEDS[quote];
+            if (seedBase && seedQuote && seedQuote.anchorUsdPrice > 0) {
+                return round8(seedBase.anchorUsdPrice / seedQuote.anchorUsdPrice);
+            }
+        }
         const baseAsset = await this.getAsset(base);
         const quoteAsset = await this.getAsset(quote);
         if (baseAsset.usdPrice <= 0 || quoteAsset.usdPrice <= 0) {
@@ -131,15 +149,12 @@ let AssetRegistryService = class AssetRegistryService {
         return { basePrice, quotePrice };
     }
     async propagateToAffectedPools(base, quote) {
+        const allPairs = Object.keys(trade_pairs_1.ALL_INITIAL_RATES);
+        const affectedPairList = allPairs.filter((p) => p.startsWith(`${base}/`) || p.endsWith(`/${base}`) || p.startsWith(`${quote}/`) || p.endsWith(`/${quote}`));
+        if (affectedPairList.length === 0)
+            return [];
         const affectedPools = await this.poolModel
-            .find({
-            $or: [
-                { pair: { $regex: new RegExp(`^${base}/`) } },
-                { pair: { $regex: new RegExp(`/${base}$`) } },
-                { pair: { $regex: new RegExp(`^${quote}/`) } },
-                { pair: { $regex: new RegExp(`/${quote}$`) } },
-            ],
-        })
+            .find({ pair: { $in: affectedPairList } })
             .lean()
             .exec();
         const updatedPairs = [];
@@ -154,39 +169,8 @@ let AssetRegistryService = class AssetRegistryService {
         }
         return updatedPairs;
     }
-    async propagateAllPools() {
-        const pools = await this.poolModel.find({}).lean().exec();
-        for (const pool of pools) {
-            const newMid = await this.getMidFromGlobalReserves(pool.pair);
-            if (newMid > 0) {
-                await this.poolModel
-                    .updateOne({ pair: pool.pair }, { $set: { lastMid: newMid } })
-                    .exec();
-            }
-        }
-    }
-    async migrateFromPools() {
-        const pools = await this.poolModel.find({}).lean().exec();
-        for (const pool of pools) {
-            const [base, quote] = pool.pair.split("/");
-            const baseReserve = pool.baseReserve || pool.elixcoinReserve || 0;
-            const quoteReserve = pool.quoteReserve || pool.elixirReserve || 0;
-            if (baseReserve > 0) {
-                await this.assetModel
-                    .updateOne({ asset: base }, { $max: { virtualReserve: baseReserve } })
-                    .exec();
-            }
-            if (quoteReserve > 0) {
-                await this.assetModel
-                    .updateOne({ asset: quote }, { $max: { virtualReserve: quoteReserve } })
-                    .exec();
-            }
-        }
-        this.logger.log("[AssetRegistry] Migration from pools complete");
-    }
-    static STABLE_ASSETS = new Set(["USDC", "ELIXIR"]);
     async setUsdPrice(asset, price) {
-        if (AssetRegistryService_1.STABLE_ASSETS.has(asset)) {
+        if (trade_pairs_1.STABLE_ASSETS.has(asset)) {
             const seed = ASSET_SEEDS[asset];
             if (seed) {
                 this.cache.delete(asset);
@@ -197,12 +181,6 @@ let AssetRegistryService = class AssetRegistryService {
             .updateOne({ asset }, { $set: { usdPrice: round8(price) } })
             .exec();
         this.cache.delete(asset);
-    }
-    invalidateCache(asset) {
-        if (asset)
-            this.cache.delete(asset);
-        else
-            this.cache.clear();
     }
 };
 exports.AssetRegistryService = AssetRegistryService;

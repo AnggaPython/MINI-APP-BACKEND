@@ -88,9 +88,9 @@ exports.MATERIAL_AMOUNTS = {
     RARE: [1, 1],
 };
 exports.CASE_HP_BANDS = {
-    COMMON: [180, 200],
-    MEDIUM: [200, 250],
-    RARE: [250, 400],
+    COMMON: [80, 100],
+    MEDIUM: [100, 130],
+    RARE: [130, 200],
 };
 exports.CASE_DURABILITY_COST = 3;
 exports.CASE_MATERIALS = {
@@ -183,7 +183,7 @@ const HISTORY_LIMIT = 50;
 const MAX_PLAYER_ATK = 120;
 const HIT_INTERVAL_MS = 1700;
 const CASE_COOLDOWN_MS = 78_000;
-const DESTROY_RATE_LIMIT = 5;
+const DESTROY_RATE_LIMIT_BASE = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
 let CaseBoxService = class CaseBoxService {
     caseBoxModel;
@@ -263,11 +263,26 @@ let CaseBoxService = class CaseBoxService {
                 cooldownLeft,
             };
         }
-        let levelMultiplier = 1;
+        const existingActive = await this.caseBoxModel
+            .findOne({ telegramId, status: "active" })
+            .lean()
+            .exec();
+        if (existingActive) {
+            return {
+                success: true,
+                durabilityCost: exports.CASE_DURABILITY_COST,
+                box: {
+                    caseId: existingActive._id.toString(),
+                    tier: existingActive.tier,
+                    maxHp: existingActive.maxHp,
+                },
+            };
+        }
+        let hpMultiplier = 1;
         try {
             const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
             const userLevel = userDoc?.level || 1;
-            levelMultiplier = (0, leveling_service_1.getLevelMultiplier)(userLevel);
+            hpMultiplier = (0, leveling_service_1.getHpMultiplier)(userLevel);
         }
         catch { }
         const clientSeed = `${telegramId}:${now}`;
@@ -276,7 +291,7 @@ let CaseBoxService = class CaseBoxService {
         const hpRoll = this.roll01(clientSeed, "case-hp");
         const [hpMin, hpMax] = exports.CASE_HP_BANDS[tier];
         const baseHp = hpMin + (hpMax - hpMin) * hpRoll;
-        const maxHp = Math.round(baseHp * levelMultiplier);
+        const maxHp = Math.round(baseHp * hpMultiplier);
         const box = await new this.caseBoxModel({
             telegramId,
             tier,
@@ -294,6 +309,22 @@ let CaseBoxService = class CaseBoxService {
             },
         };
     }
+    async getStatus(telegramId, caseId) {
+        const caseBox = await this.caseBoxModel
+            .findOne({ _id: caseId, telegramId })
+            .lean()
+            .exec();
+        if (!caseBox) {
+            return { success: true, exists: false, status: null };
+        }
+        return {
+            success: true,
+            exists: true,
+            status: caseBox.status,
+            tier: caseBox.tier,
+            maxHp: caseBox.maxHp,
+        };
+    }
     async destroy(telegramId, caseId) {
         const now = Date.now();
         const user = await this.usersService.findByTelegramId(telegramId);
@@ -305,7 +336,9 @@ let CaseBoxService = class CaseBoxService {
         }
         this.evictRateLimit(telegramId, now);
         const recentDestroys = this.destroyTimestamps.get(telegramId) || [];
-        if (recentDestroys.length >= DESTROY_RATE_LIMIT) {
+        const userLevelForRate = user?.level || 1;
+        const destroyRateLimit = DESTROY_RATE_LIMIT_BASE + Math.floor(userLevelForRate / 20);
+        if (recentDestroys.length >= destroyRateLimit) {
             return {
                 success: false,
                 error: "Too many requests. Please wait a moment.",
@@ -390,10 +423,12 @@ let CaseBoxService = class CaseBoxService {
             const buffRarity = this.weightedPick(buffRarityRoll, boostedBuffWeights);
             const grantResult = await this.buffCollectionsService.grantRandomBuff(telegramId, buffRarity);
             buffGranted = grantResult;
-            if (grantResult?.buffItem) {
-                rarity = grantResult.buffItem.rarity;
-                const buffSlug = grantResult.buffItem.buffId.toUpperCase().replace(/ /g, "-");
-                loot = { [grantResult.buffItem.name]: 1, __buffSlug: buffSlug };
+            const typedGrant = grantResult;
+            if (typedGrant?.buffItem) {
+                rarity = typedGrant.buffItem.rarity;
+                const buffSlug = typedGrant.buffItem.buffId.toUpperCase().replace(/ /g, "-");
+                loot = { [typedGrant.buffItem.name]: 1 };
+                loot.__buffSlug = buffSlug;
             }
             else {
                 let levelMultFallback = 1;
@@ -437,11 +472,11 @@ let CaseBoxService = class CaseBoxService {
         catch {
             starResult = { starCount: Math.floor(Math.random() * 5) + 1, xpAwarded: 0, level: 1, levelUp: false, newLevel: 1, pickaxeGrants: [], pendingStars: 0, lockedLevel: null };
         }
-        let levelMultiplier = 1;
+        let rewardMultiplier = 1;
         try {
             const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
             const userLevel = userDoc?.level || 1;
-            levelMultiplier = (0, leveling_service_1.getLevelMultiplier)(userLevel);
+            rewardMultiplier = (0, leveling_service_1.getLevelMultiplier)(userLevel);
         }
         catch { }
         return {
@@ -462,7 +497,7 @@ let CaseBoxService = class CaseBoxService {
             pickaxeGrants: starResult.pickaxeGrants,
             pendingStars: starResult.pendingStars,
             lockedLevel: starResult.lockedLevel,
-            levelMultiplier,
+            levelMultiplier: rewardMultiplier,
         };
     }
     async claimCase(caseId, telegramId) {

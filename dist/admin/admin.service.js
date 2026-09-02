@@ -44,9 +44,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var AdminService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminService = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const admin_schema_1 = require("./schemas/admin.schema");
@@ -113,13 +115,16 @@ const MONETAG_MILESTONES_USD = [100, 250, 500, 1000];
 const MONETAG_MAX_TOP_USERS = 100;
 const PROFIT_LOGS_MAX_HARD = 100;
 const PROFIT_LOGS_DEFAULT_LIMIT = 10;
-let AdminService = class AdminService {
+let AdminService = AdminService_1 = class AdminService {
+    configService;
     adminModel;
     profitLogModel;
     userModel;
+    logger = new common_1.Logger(AdminService_1.name);
     _cgCache = null;
     _cgInflight = null;
-    constructor(adminModel, profitLogModel, userModel) {
+    constructor(configService, adminModel, profitLogModel, userModel) {
+        this.configService = configService;
         this.adminModel = adminModel;
         this.profitLogModel = profitLogModel;
         this.userModel = userModel;
@@ -127,14 +132,17 @@ let AdminService = class AdminService {
     async onModuleInit() {
         const rootAdmin = await this.adminModel.findOne({ username: "superadmin" });
         if (!rootAdmin) {
-            const defaultPassword = "superadminpassword";
+            const defaultPassword = this.configService.get("ADMIN_DEFAULT_PASSWORD") || "superadminpassword";
+            if (!this.configService.get("ADMIN_DEFAULT_PASSWORD")) {
+                this.logger.warn("ADMIN_DEFAULT_PASSWORD not set — using fallback. Set env var for production!");
+            }
             const salt = await bcrypt.genSalt(10);
             const passwordHash = await bcrypt.hash(defaultPassword, salt);
             await new this.adminModel({
                 username: "superadmin",
                 passwordHash,
             }).save();
-            console.log("--- ROOT SUPERADMIN GENERATED: superadmin / superadminpassword ---");
+            this.logger.log("ROOT SUPERADMIN GENERATED: superadmin / ***");
         }
     }
     async authenticate(username, passwordString, ip = "") {
@@ -524,12 +532,13 @@ let AdminService = class AdminService {
     }
 };
 exports.AdminService = AdminService;
-exports.AdminService = AdminService = __decorate([
+exports.AdminService = AdminService = AdminService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, mongoose_1.InjectModel)(admin_schema_1.Admin.name)),
-    __param(1, (0, mongoose_1.InjectModel)(profit_log_schema_1.ProfitLog.name)),
-    __param(2, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
+    __param(1, (0, mongoose_1.InjectModel)(admin_schema_1.Admin.name)),
+    __param(2, (0, mongoose_1.InjectModel)(profit_log_schema_1.ProfitLog.name)),
+    __param(3, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
+    __metadata("design:paramtypes", [config_1.ConfigService,
+        mongoose_2.Model,
         mongoose_2.Model,
         mongoose_2.Model])
 ], AdminService);

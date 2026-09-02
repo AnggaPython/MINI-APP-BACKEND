@@ -48,7 +48,7 @@ function isMaterialBase(base) {
     return SLUG_TO_NAME.has(base.toUpperCase());
 }
 exports.COIN_BASES = new Set([
-    "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
+    "IRON", "COPPER", "SILVER", "GOLD",
     "ELIXCOIN", "ELIXIR", "USDC",
 ]);
 function isItemBase(base) {

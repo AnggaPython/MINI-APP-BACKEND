@@ -51,6 +51,7 @@ var PaymentService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const crypto = __importStar(require("crypto"));
 const users_service_1 = require("../users/users.service");
 const mongoose_1 = require("@nestjs/mongoose");
@@ -61,19 +62,28 @@ const circular_casino_service_1 = require("../admin/circular-casino.service");
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const https_proxy_agent_1 = require("https-proxy-agent");
 let PaymentService = PaymentService_1 = class PaymentService {
+    configService;
     usersService;
     txModel;
     adminService;
     circularCasino;
     logger = new common_1.Logger(PaymentService_1.name);
-    appId = "I7YTwbXVHbXGiSEb";
-    appSecret = "68e3e1e7db332c9f79a0843919619781";
-    proxyAgent = new https_proxy_agent_1.HttpsProxyAgent("http://fixie:1DUZEWZyTCkL8HB@criterium.usefixie.com:80");
-    constructor(usersService, txModel, adminService, circularCasino) {
+    constructor(configService, usersService, txModel, adminService, circularCasino) {
+        this.configService = configService;
         this.usersService = usersService;
         this.txModel = txModel;
         this.adminService = adminService;
         this.circularCasino = circularCasino;
+    }
+    get appId() {
+        return this.configService.get("CCPAYMENT_APP_ID") || "";
+    }
+    get appSecret() {
+        return this.configService.get("CCPAYMENT_APP_SECRET") || "";
+    }
+    get proxyAgent() {
+        const proxyUrl = this.configService.get("FIXIE_PROXY_URL");
+        return proxyUrl ? new https_proxy_agent_1.HttpsProxyAgent(proxyUrl) : undefined;
     }
     async createDepositCharge(telegramId, amountElixir) {
         const usdAmount = amountElixir / 10000;
@@ -708,7 +718,7 @@ let PaymentService = PaymentService_1 = class PaymentService {
                     };
                 const latestPayment = validPayments[validPayments.length - 1];
                 const usdAmt = parseFloat(latestPayment.paidValue);
-                const cryptoAmountStr = latestPayment.paidAmount;
+                void latestPayment.paidAmount;
                 const cryptoSymbol = latestPayment.coinSymbol;
                 if (usdAmt > 0) {
                     const elixirAmount = Math.floor(usdAmt * 10000);
@@ -741,11 +751,12 @@ let PaymentService = PaymentService_1 = class PaymentService {
 exports.PaymentService = PaymentService;
 exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
-    __param(1, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
-    __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
-    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
-    __metadata("design:paramtypes", [users_service_1.UsersService,
+    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => users_service_1.UsersService))),
+    __param(2, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
+    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
+    __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
+    __metadata("design:paramtypes", [config_1.ConfigService,
+        users_service_1.UsersService,
         mongoose_2.Model,
         admin_service_1.AdminService,
         circular_casino_service_1.CircularCasinoService])

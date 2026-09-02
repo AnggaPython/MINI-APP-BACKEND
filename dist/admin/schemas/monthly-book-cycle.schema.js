@@ -103,4 +103,5 @@ exports.MonthlyBookCycle = MonthlyBookCycle = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], MonthlyBookCycle);
 exports.MonthlyBookCycleSchema = mongoose_1.SchemaFactory.createForClass(MonthlyBookCycle);
+exports.MonthlyBookCycleSchema.index({ isActive: 1 });
 //# sourceMappingURL=monthly-book-cycle.schema.js.map

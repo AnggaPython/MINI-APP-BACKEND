@@ -1,4 +1,5 @@
-import { Injectable, OnModuleInit, Inject, forwardRef } from "@nestjs/common";
+import { Injectable, OnModuleInit, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { Admin, AdminDocument } from "./schemas/admin.schema";
@@ -83,6 +84,7 @@ const PROFIT_LOGS_DEFAULT_LIMIT = 10;
 
 @Injectable()
 export class AdminService implements OnModuleInit {
+  private readonly logger = new Logger(AdminService.name);
   private _cgCache: {
     pricesUsd: Record<string, number>;
     fetchedAt: number;
@@ -90,6 +92,7 @@ export class AdminService implements OnModuleInit {
   private _cgInflight: Promise<Record<string, number>> | null = null;
 
   constructor(
+    private readonly configService: ConfigService,
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     @InjectModel(ProfitLog.name)
     private profitLogModel: Model<ProfitLogDocument>,
@@ -100,7 +103,10 @@ export class AdminService implements OnModuleInit {
     // Automatically inject the root Super Admin if none exists
     const rootAdmin = await this.adminModel.findOne({ username: "superadmin" });
     if (!rootAdmin) {
-      const defaultPassword = "superadminpassword"; // In production, this should be an env var
+      const defaultPassword = this.configService.get<string>("ADMIN_DEFAULT_PASSWORD") || "superadminpassword";
+      if (!this.configService.get<string>("ADMIN_DEFAULT_PASSWORD")) {
+        this.logger.warn("ADMIN_DEFAULT_PASSWORD not set — using fallback. Set env var for production!");
+      }
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(defaultPassword, salt);
 
@@ -108,9 +114,7 @@ export class AdminService implements OnModuleInit {
         username: "superadmin",
         passwordHash,
       }).save();
-      console.log(
-        "--- ROOT SUPERADMIN GENERATED: superadmin / superadminpassword ---",
-      );
+      this.logger.log("ROOT SUPERADMIN GENERATED: superadmin / ***");
     }
   }
 

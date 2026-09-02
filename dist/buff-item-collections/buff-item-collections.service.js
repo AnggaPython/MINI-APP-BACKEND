@@ -277,7 +277,7 @@ const BUFF_TYPE_META = {
     },
     DURABILITY: {
         label: "Durability Engine",
-        description: "Restores tool durability every 5 successful hits",
+        description: "Slows down durability drain — pickaxe lasts longer",
         unit: "flat",
         icon: "🔧",
     },
@@ -340,8 +340,15 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
                 }
             }
         }
-        for (const doc of docs) {
-            await this.buffItemModel.updateOne({ buffId: doc.buffId }, { $set: doc }, { upsert: true });
+        if (docs.length > 0) {
+            const ops = docs.map(doc => ({
+                updateOne: {
+                    filter: { buffId: doc.buffId },
+                    update: { $set: doc },
+                    upsert: true,
+                },
+            }));
+            await this.buffItemModel.bulkWrite(ops, { ordered: false });
         }
         this.logger.log(`Seeded ${docs.length} buff items (deduplicated)`);
     }
@@ -438,7 +445,7 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
             return { success: false, error: "Buff item not found" };
         const instanceId = crypto.randomUUID();
         const newInstance = { instanceId, baseItemId: buffId, acquiredAt: new Date() };
-        await this.userBuffModel.updateOne({ telegramId }, { $push: { inventory: newInstance } }, { upsert: true });
+        await this.userBuffModel.updateOne({ telegramId }, { $push: { inventory: { $each: [newInstance], $slice: -2000 } } }, { upsert: true });
         return {
             success: true,
             buffItem,

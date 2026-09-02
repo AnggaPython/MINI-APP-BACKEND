@@ -148,17 +148,21 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
     async massBroadcastDM(animationUrl, message) {
         try {
             this.logger.log("Initiating Background Mass DM Broadcast... fetching targets.");
+            if (!this.botToken)
+                return;
             const mongoose = require("mongoose");
             const userModel = mongoose.model("User");
-            const users = await userModel
+            const cursor = userModel
                 .find({ isBanned: { $ne: true } }, { telegramId: 1 })
                 .lean()
-                .exec();
+                .cursor();
             let successCounter = 0;
-            this.logger.log(`Total Targets Acquired: ${users.length}. Beginning silent dispatch...`);
-            for (const user of users) {
+            let total = 0;
+            this.logger.log(`Mass DM: streaming targets via cursor...`);
+            for await (const user of cursor) {
                 if (!user.telegramId)
                     continue;
+                total++;
                 const payload = {
                     chat_id: user.telegramId,
                     animation: animationUrl,
@@ -185,9 +189,9 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
                 }
                 catch (e) {
                 }
-                await new Promise((r) => setTimeout(r, 50));
+                await new Promise((r) => setTimeout(r, 100));
             }
-            this.logger.log(`Mass Broadcast Concluded. Successfully hit ${successCounter} / ${users.length} DMs.`);
+            this.logger.log(`Mass Broadcast Concluded. Successfully hit ${successCounter} / ${total} DMs.`);
         }
         catch (e) {
             this.logger.error("Critical Failure during Mass Broadcast", e);

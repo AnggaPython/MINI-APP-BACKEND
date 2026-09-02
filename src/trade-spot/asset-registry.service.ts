@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { AssetRegistry } from "./schemas/asset-registry.schema";
 import { LiquidityPool } from "./schemas/pool.schema";
+import { ALL_INITIAL_RATES, STABLE_ASSETS } from "./trade-pairs";
 
 const round8 = (n: number) => Math.round(n * 1e8) / 1e8;
 
@@ -59,7 +60,7 @@ export class AssetRegistryService {
 
       // [SAFETY] Always enforce stable assets at anchor price on startup.
       // This corrects any drift that leaked in before the fix.
-      if (AssetRegistryService.STABLE_ASSETS.has(asset)) {
+      if (STABLE_ASSETS.has(asset)) {
         await this.assetModel
           .updateOne(
             { asset, usdPrice: { $ne: seed.anchorUsdPrice } },
@@ -116,7 +117,7 @@ export class AssetRegistryService {
    */
   async recalcUsdPrice(asset: string): Promise<number> {
     // [STABLE SKIP] Stable assets NEVER recalculate — price is always anchor.
-    if (AssetRegistryService.STABLE_ASSETS.has(asset)) {
+    if (STABLE_ASSETS.has(asset)) {
       const seed = ASSET_SEEDS[asset];
       if (seed) {
         const a = await this.getAsset(asset);
@@ -164,7 +165,7 @@ export class AssetRegistryService {
 
     // [STABLE FIX] If BOTH assets are stable, use anchor prices directly.
     // Never recalculate from virtual reserves — they drift with trades.
-    if (AssetRegistryService.STABLE_ASSETS.has(base) && AssetRegistryService.STABLE_ASSETS.has(quote)) {
+    if (STABLE_ASSETS.has(base) && STABLE_ASSETS.has(quote)) {
       const seedBase = ASSET_SEEDS[base];
       const seedQuote = ASSET_SEEDS[quote];
       if (seedBase && seedQuote && seedQuote.anchorUsdPrice > 0) {
@@ -242,16 +243,14 @@ export class AssetRegistryService {
     base: string,
     quote: string,
   ): Promise<string[]> {
-    // Find all pools that contain either base or quote
+    // Find all pools that contain either base or quote — use $in with index (no regex COLLSCAN)
+    const allPairs = Object.keys(ALL_INITIAL_RATES);
+    const affectedPairList = allPairs.filter(
+      (p) => p.startsWith(`${base}/`) || p.endsWith(`/${base}`) || p.startsWith(`${quote}/`) || p.endsWith(`/${quote}`),
+    );
+    if (affectedPairList.length === 0) return [];
     const affectedPools = await this.poolModel
-      .find({
-        $or: [
-          { pair: { $regex: `^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/` } },
-          { pair: { $regex: `/${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } },
-          { pair: { $regex: `^${quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/` } },
-          { pair: { $regex: `/${quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } },
-        ],
-      })
+      .find({ pair: { $in: affectedPairList } })
       .lean()
       .exec();
 
@@ -270,60 +269,10 @@ export class AssetRegistryService {
     return updatedPairs;
   }
 
-  // ── Propagate ALL pools (for drift cycles) ───────────────────────────
-  async propagateAllPools(): Promise<void> {
-    const pools = await this.poolModel.find({}).lean().exec();
-    for (const pool of pools) {
-      const newMid = await this.getMidFromGlobalReserves(pool.pair);
-      if (newMid > 0) {
-        await this.poolModel
-          .updateOne({ pair: pool.pair }, { $set: { lastMid: newMid } })
-          .exec();
-      }
-    }
-  }
-
-  // ── Migrate existing pool reserves into the asset registry ────────────
-  /**
-   * One-time migration: for each pool, push its baseReserve and quoteReserve
-   * into the global asset registry. This runs once on startup.
-   */
-  async migrateFromPools(): Promise<void> {
-    const pools = await this.poolModel.find({}).lean().exec();
-    for (const pool of pools) {
-      const [base, quote] = pool.pair.split("/");
-      const baseReserve =
-        pool.baseReserve || (pool as any).elixcoinReserve || 0;
-      const quoteReserve =
-        pool.quoteReserve || (pool as any).elixirReserve || 0;
-
-      if (baseReserve > 0) {
-        await this.assetModel
-          .updateOne(
-            { asset: base },
-            { $max: { virtualReserve: baseReserve } },
-          )
-          .exec();
-      }
-      if (quoteReserve > 0) {
-        await this.assetModel
-          .updateOne(
-            { asset: quote },
-            { $max: { virtualReserve: quoteReserve } },
-          )
-          .exec();
-      }
-    }
-    this.logger.log("[AssetRegistry] Migration from pools complete");
-  }
-
-  // ── Stable assets (NEVER drift from anchor price) ─────────────────────
-  private static readonly STABLE_ASSETS = new Set(["USDC", "ELIXIR", "ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"]);
-
   // ── Update USD price directly (for drift cycles) ─────────────────────
   async setUsdPrice(asset: string, price: number): Promise<void> {
     // [SAFETY] Stable assets are pegged to their anchor — never allow drift.
-    if (AssetRegistryService.STABLE_ASSETS.has(asset)) {
+    if (STABLE_ASSETS.has(asset)) {
       const seed = ASSET_SEEDS[asset];
       if (seed) {
         this.cache.delete(asset);
@@ -336,9 +285,4 @@ export class AssetRegistryService {
     this.cache.delete(asset);
   }
 
-  // ── Clear cache (call after external updates) ─────────────────────────
-  invalidateCache(asset?: string): void {
-    if (asset) this.cache.delete(asset);
-    else this.cache.clear();
-  }
 }

@@ -46,3 +46,5 @@ export class HiLoBet {
 }
 
 export const HiLoBetSchema = SchemaFactory.createForClass(HiLoBet);
+HiLoBetSchema.index({ telegramId: 1, createdAt: -1 });
+

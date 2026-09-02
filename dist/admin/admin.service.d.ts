@@ -1,15 +1,18 @@
 import { OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
 import { AdminDocument } from "./schemas/admin.schema";
 import { ProfitLogDocument } from "./schemas/profit-log.schema";
 import { UserDocument } from "../users/schemas/user.schema";
 export declare class AdminService implements OnModuleInit {
+    private readonly configService;
     private adminModel;
     private profitLogModel;
     private userModel;
+    private readonly logger;
     private _cgCache;
     private _cgInflight;
-    constructor(adminModel: Model<AdminDocument>, profitLogModel: Model<ProfitLogDocument>, userModel: Model<UserDocument>);
+    constructor(configService: ConfigService, adminModel: Model<AdminDocument>, profitLogModel: Model<ProfitLogDocument>, userModel: Model<UserDocument>);
     onModuleInit(): Promise<void>;
     authenticate(username: string, passwordString: string, ip?: string): Promise<{
         error: string;

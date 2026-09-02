@@ -3,6 +3,18 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
 
+type UserWithLevel = User & {
+  exp?: number;
+  vipExp?: number;
+  gameExp?: number;
+  level?: number;
+  pendingStars?: number;
+  lockedLevel?: number | null;
+  materials?: Record<string, number>;
+  profileXp?: number;
+  profileLevel?: number;
+};
+
 // ── XP / Level constants ──────────────────────────────────────────────────
 // 100,000 XP total from level 1 → level 100
 // Linear formula: each level requires slightly more XP than the previous.
@@ -158,14 +170,17 @@ export const hasEnoughMaterials = (
   };
 };
 
-// Cumulative XP to reach a given level from level 1
-const cumulativeXpToLevel = (level: number): number => {
+// Cumulative XP to reach a given level from level 1 — precomputed O(1)
+const CUMULATIVE_XP: number[] = (() => {
+  const arr: number[] = [0, 0];
   let total = 0;
-  for (let l = 2; l <= level; l++) {
+  for (let l = 2; l <= MAX_LEVEL; l++) {
     total += xpRequiredForLevel(l);
+    arr[l] = total;
   }
-  return total;
-};
+  return arr;
+})();
+const cumulativeXpToLevel = (level: number): number => CUMULATIVE_XP[Math.max(1, Math.min(level, MAX_LEVEL))] || 0;
 
 // ── Star XP per tier ──────────────────────────────────────────────────────
 // Each stone/case awards 1-5 stars. Each star grants XP based on the tier.
@@ -240,15 +255,15 @@ export class LevelingService {
       return { success: false, error: "User not found" };
     }
 
-    const currentXp = (user as any).exp || 0;
-    const level = (user as any).level || 1;
-    const pendingStars = (user as any).pendingStars || 0;
-    const lockedLevel = (user as any).lockedLevel || null;
-    const materials: Record<string, number> = (user as any).materials || {};
+    const currentXp = (user as UserWithLevel).gameExp ?? (user as UserWithLevel).exp ?? 0;
+    const level = (user as UserWithLevel).level || 1;
+    const pendingStars = (user as UserWithLevel).pendingStars || 0;
+    const lockedLevel = (user as UserWithLevel).lockedLevel || null;
+    const materials: Record<string, number> = (user as UserWithLevel).materials || {};
 
     // Calculate XP progress within current level
     const xpForCurrentLevel = cumulativeXpToLevel(level);
-    const xpForNextLevel = level >= MAX_LEVEL ? xpForCurrentLevel : cumulativeXpToLevel(level + 1);
+    void (level >= MAX_LEVEL ? xpForCurrentLevel : cumulativeXpToLevel(level + 1));
     const xpInLevel = currentXp - xpForCurrentLevel;
     const xpNeeded = level >= MAX_LEVEL ? 0 : xpRequiredForLevel(level + 1);
     const progress = level >= MAX_LEVEL ? 1 : (xpNeeded > 0 ? Math.min(1, xpInLevel / xpNeeded) : 1);
@@ -382,8 +397,8 @@ export class LevelingService {
 
     // Get current level
     const user = await this.userModel.findOne({ telegramId }).lean().exec();
-    const oldLevel = (user as any)?.level || 1;
-    const oldXp = (user as any)?.exp || 0;
+    const oldLevel = (user as UserWithLevel)?.level || 1;
+    const oldXp = (user as UserWithLevel)?.gameExp ?? (user as UserWithLevel)?.exp ?? 0;
     const newXp = oldXp + xpAwarded;
 
     // Calculate new level from total XP
@@ -421,8 +436,8 @@ export class LevelingService {
       }
     }
 
-    // Update user XP, level, and pending stars
-    const updateFields: any = { exp: newXp };
+    // Update user XP, level, and pending stars — dual-write for migration
+    const updateFields: Record<string, unknown> = { exp: newXp, gameExp: newXp };
     if (finalLevel !== oldLevel || !lockedLevel) {
       updateFields.level = finalLevel;
     }
@@ -434,7 +449,7 @@ export class LevelingService {
     // Profile XP: +1 only for Medium and Rare tiers (not Common/Zonk)
     const awardProfileXp = tier === "Medium" || tier === "Rare";
     if (awardProfileXp) {
-      const oldProfileXp = ((user as any)?.profileXp || 0) + 1;
+      const oldProfileXp = ((user as UserWithLevel)?.profileXp || 0) + 1;
       let newProfileLevel = 1;
       let profXpRemaining = oldProfileXp;
       for (let l = 2; l <= MAX_LEVEL; l++) {
@@ -444,7 +459,7 @@ export class LevelingService {
           newProfileLevel = l;
         } else break;
       }
-      if (newProfileLevel > ((user as any)?.profileLevel || 1)) {
+      if (newProfileLevel > ((user as UserWithLevel)?.profileLevel || 1)) {
         updateFields.profileLevel = newProfileLevel;
       }
     }
@@ -500,7 +515,7 @@ export class LevelingService {
       return { success: false, error: "User not found" };
     }
 
-    const lockedLevel = (user as any).lockedLevel as number | null;
+    const lockedLevel = (user as UserWithLevel).lockedLevel as number | null;
     if (!lockedLevel) {
       return { success: false, error: "No level is locked. Keep mining!" };
     }
@@ -510,7 +525,7 @@ export class LevelingService {
       return { success: false, error: "Invalid milestone level" };
     }
 
-    const materials: Record<string, number> = (user as any).materials || {};
+    const materials: Record<string, number> = (user as UserWithLevel).materials || {};
     const check = hasEnoughMaterials(materials, requirement);
 
     if (!check.enough) {
@@ -518,11 +533,11 @@ export class LevelingService {
     }
 
     // Deduct materials and unlock level
-    const pendingStars = (user as any).pendingStars || 0;
+    void ((user as UserWithLevel).pendingStars || 0);
     const newLevel = lockedLevel;
 
     // Build update object
-    const update: any = {
+    const update: Record<string, unknown> = {
       $set: {
         level: newLevel,
         lockedLevel: null,
@@ -601,6 +616,7 @@ export class LevelingService {
       pickaxeGrants = await this.grantPickaxesOnLevelUp(telegramId, newLevel - 1, newLevel);
     } catch { /* pickaxe grant failed — non-critical */ }
 
+    void pickaxeGrants;
     return {
       success: true,
       newLevel,

@@ -16,9 +16,5 @@ export declare class AssetRegistryService {
         quotePrice: number;
     }>;
     propagateToAffectedPools(base: string, quote: string): Promise<string[]>;
-    propagateAllPools(): Promise<void>;
-    migrateFromPools(): Promise<void>;
-    private static readonly STABLE_ASSETS;
     setUsdPrice(asset: string, price: number): Promise<void>;
-    invalidateCache(asset?: string): void;
 }

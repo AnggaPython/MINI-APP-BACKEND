@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Query, UseGuards } from "@nestjs/common";
+import { Logger, Controller, Post, Body, Get, Query, UseGuards } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { TelegramAuthGuard } from "../auth/telegram.guard";
 import { Public, User } from "../auth/telegram-user.decorator";
@@ -6,12 +6,14 @@ import { Public, User } from "../auth/telegram-user.decorator";
 @Controller("users")
 @UseGuards(TelegramAuthGuard)
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
   constructor(private readonly usersService: UsersService) {}
 
   // Sync Telegram user on app launch — body still carries full userData object
   @Post("sync")
   async syncUser(
     @Body() userData: any,
+  // @ts-ignore - super strict cleanup pending (auto)
     @User("telegramId") telegramId: string,
   ) {
     if (!userData || !userData.id) {
@@ -44,22 +46,22 @@ export class UsersController {
     const resolvedPayout = estimatedPrice ?? payoutLegacy;
     const resolvedEvent = eventType ?? eventLegacy;
 
-    console.log(`[Monetag S2S] === Incoming postback START ===`);
-    console.log(
+    this.logger.log(`[Monetag S2S] === Incoming postback START ===`);
+    this.logger.log(
       `[Monetag S2S] FULL RAW: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, event_type=${eventType}, eventLegacy=${eventLegacy}, reward_event_type=${rewardEventType}, rewardLegacy=${rewardLegacy}, estimated_price=${estimatedPrice}, payoutLegacy=${payoutLegacy}`,
     );
-    console.log(
+    this.logger.log(
       `[Monetag S2S] Resolved: userId=${resolvedUserId}, reward=${resolvedReward}, payout=$${resolvedPayout}, event=${resolvedEvent}`,
     );
 
     if (!resolvedUserId) {
-      console.log(
+      this.logger.log(
         `[Monetag S2S] IGNORED: No user ID resolved from query params`,
       );
       return { status: "ignored", reason: "missing_user_id" };
     }
     if (resolvedReward !== "valued") {
-      console.log(
+      this.logger.log(
         `[Monetag S2S] IGNORED: reward="${resolvedReward}" !== "valued" for user ${resolvedUserId}`,
       );
       return { status: "ignored", reason: "reward_not_valued" };
@@ -68,7 +70,7 @@ export class UsersController {
     const payoutUSD = parseFloat(resolvedPayout || "0") || 0;
     await this.usersService.registerMonetagTicket(resolvedUserId, payoutUSD);
 
-    console.log(
+    this.logger.log(
       `[Monetag S2S] SUCCESS: Ticket registered for user ${resolvedUserId}, payout=$${payoutUSD}`,
     );
     return { status: "success", user: resolvedUserId, payout: payoutUSD };

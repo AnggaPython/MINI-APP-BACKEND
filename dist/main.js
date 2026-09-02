@@ -1,9 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const app_module_1 = require("./app.module");
 async function bootstrap() {
-    const app = await core_1.NestFactory.create(app_module_1.AppModule, { rawBody: true });
+    const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'warn' : 'debug');
+    const levels = logLevel === 'verbose' ? ['log', 'error', 'warn', 'debug', 'verbose'] : logLevel === 'debug' ? ['log', 'error', 'warn', 'debug'] : logLevel === 'warn' ? ['error', 'warn'] : ['log', 'error', 'warn'];
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, { rawBody: true, logger: [...levels] });
     const allowedOrigins = [
         "http://localhost:3000",
         "http://localhost:3001",
@@ -38,9 +41,9 @@ async function bootstrap() {
     });
     const port = process.env.PORT || 3001;
     await app.listen(port);
-    console.log(`✅ Backend listening on port ${port} — CORS whitelist LOCALHOST ONLY`);
-    console.log(`   Allowed origins (${allowedOrigins.length}): ${allowedOrigins.join(", ")}`);
-    console.log(`   ℹ️  Sebelum production launch: tambahkan domain Vercel/Railway di src/main.ts allowedOrigins`);
+    new common_1.Logger("Bootstrap").log(`✅ Backend listening on port ${port} — CORS whitelist LOCALHOST ONLY`);
+    new common_1.Logger("Bootstrap").log(`   Allowed origins (${allowedOrigins.length}): ${allowedOrigins.join(", ")}`);
+    new common_1.Logger("Bootstrap").log(`   ℹ️  Sebelum production launch: tambahkan domain Vercel/Railway di src/main.ts allowedOrigins`);
 }
 bootstrap();
 //# sourceMappingURL=main.js.map

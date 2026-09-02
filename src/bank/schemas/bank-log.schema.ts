@@ -16,3 +16,6 @@ export class BankLog {
 }
 
 export const BankLogSchema = SchemaFactory.createForClass(BankLog);
+BankLogSchema.index({ telegramId: 1, createdAt: -1 });
+BankLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
+

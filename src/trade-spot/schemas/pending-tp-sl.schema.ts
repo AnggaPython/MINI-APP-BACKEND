@@ -45,5 +45,6 @@ export class PendingTpSl {
   triggeredAt: Date;
 }
 
-export const PendingTpSlSchema =
-  SchemaFactory.createForClass(PendingTpSl);
+export const PendingTpSlSchema = SchemaFactory.createForClass(PendingTpSl);
+PendingTpSlSchema.index({ pair: 1, triggered: 1, cancelled: 1 });
+PendingTpSlSchema.index({ telegramId: 1, pair: 1 });

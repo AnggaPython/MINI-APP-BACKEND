@@ -28,14 +28,15 @@ export class AdminController {
 
   @Public()
   @Post("login")
-  async login(@Body() body: any, @Req() req: any) {
+  async login(@Body() body: Record<string, string>, @Req() req: Record<string, unknown>) {
+    const reqHeaders = (req as any as { headers: Record<string, string>; socket: { remoteAddress: string } });
     if (!body.username || !body.password) {
       return { error: "Missing username or password" };
     }
 
     // Primitive IP parsing
     const ip =
-      req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+      reqHeaders.headers["x-forwarded-for"] || reqHeaders.socket.remoteAddress || "unknown";
 
     return await this.adminService.authenticate(
       body.username,
@@ -205,7 +206,7 @@ export class AdminController {
   }
 
   @Post("base-casino/params")
-  async updateBaseCasinoParams(@Body() body: Record<string, any>) {
+  async updateBaseCasinoParams(@Body() body: Record<string, unknown>) {
     if (!body || typeof body !== "object") return { error: "Invalid payload" };
     const safeNumbers: Record<string, number> = {};
     for (const [k, v] of Object.entries(body)) {

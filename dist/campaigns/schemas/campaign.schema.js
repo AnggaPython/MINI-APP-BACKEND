@@ -73,4 +73,7 @@ exports.Campaign = Campaign = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], Campaign);
 exports.CampaignSchema = mongoose_1.SchemaFactory.createForClass(Campaign);
+exports.CampaignSchema.index({ status: 1, rewardPerClick: -1 });
+exports.CampaignSchema.index({ creatorTelegramId: 1, createdAt: -1 });
+exports.CampaignSchema.index({ remainingBudget: 1 });
 //# sourceMappingURL=campaign.schema.js.map

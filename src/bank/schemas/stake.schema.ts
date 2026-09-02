@@ -40,3 +40,7 @@ export class Stake {
 }
 
 export const StakeSchema = SchemaFactory.createForClass(Stake);
+StakeSchema.index({ status: 1, isXpClaimed: 1, lastClaimDate: 1 });
+StakeSchema.index({ status: 1, telegramId: 1 });
+StakeSchema.index({ telegramId: 1, status: 1 });
+

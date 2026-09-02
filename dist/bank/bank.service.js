@@ -38,13 +38,21 @@ let BankService = BankService_1 = class BankService {
         this.adminService = adminService;
     }
     PLATFORM_TAX = 0.05;
+    tvlCache = null;
+    TVL_CACHE_MS = 30_000;
     async handleAutoClaim() {
-        const activeStakes = await this.stakeModel
-            .find({ status: "active" })
-            .exec();
         const now = new Date();
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-        for (const stake of activeStakes) {
+        const cursor = this.stakeModel
+            .find({
+            status: "active",
+            $or: [
+                { isXpClaimed: false },
+                { lastClaimDate: { $lte: new Date(now.getTime() - ONE_DAY_MS) } },
+            ],
+        })
+            .cursor();
+        for await (const stake of cursor) {
             let stakeUpdated = false;
             const MS_7_DAYS = 7 * 24 * 60 * 60 * 1000;
             const msSinceStake = now.getTime() - stake.stakeDate.getTime();
@@ -108,13 +116,20 @@ let BankService = BankService_1 = class BankService {
             .sort({ createdAt: -1 })
             .limit(10)
             .exec();
-        const tvlAgg = await this.stakeModel
-            .aggregate([
-            { $match: { status: "active" } },
-            { $group: { _id: null, total: { $sum: "$amount" } } },
-        ])
-            .exec();
-        const networkStaked = tvlAgg.length > 0 ? tvlAgg[0].total : 0;
+        let networkStaked;
+        if (this.tvlCache && Date.now() - this.tvlCache.ts < this.TVL_CACHE_MS) {
+            networkStaked = this.tvlCache.value;
+        }
+        else {
+            const tvlAgg = await this.stakeModel
+                .aggregate([
+                { $match: { status: "active" } },
+                { $group: { _id: null, total: { $sum: "$amount" } } },
+            ])
+                .exec();
+            networkStaked = tvlAgg.length > 0 ? tvlAgg[0].total : 0;
+            this.tvlCache = { value: networkStaked, ts: Date.now() };
+        }
         const globalTvlBase = 683983000;
         const totalLiquidityPool = globalTvlBase + networkStaked;
         let totalUnclaimedEarning = 0;
@@ -305,7 +320,7 @@ let BankService = BankService_1 = class BankService {
 };
 exports.BankService = BankService;
 __decorate([
-    (0, schedule_1.Cron)(schedule_1.CronExpression.EVERY_MINUTE),
+    (0, schedule_1.Cron)(schedule_1.CronExpression.EVERY_HOUR),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)

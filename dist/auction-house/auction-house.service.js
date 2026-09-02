@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 var AuctionHouseService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuctionHouseService = exports.LISTING_DURATION_MS = exports.COLLATERAL_DEPOSIT = exports.MIN_PRICE_TABLE = void 0;
+const schedule_1 = require("@nestjs/schedule");
 const material_tools_1 = require("../constants/material-tools");
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
@@ -291,7 +292,6 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         return count;
     }
     async browse(params) {
-        await this.expireOldListings();
         const { search, buffType, rarity, sort = "newest", page = 1, limit = 50, } = params;
         const filter = { status: "active" };
         if (buffType && ["ATK", "ECONOMY", "DURABILITY", "DROPRATE"].includes(buffType)) {
@@ -378,7 +378,6 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         };
     }
     async browseItemListings(baseItemId) {
-        await this.expireOldListings();
         const listings = await this.auctionModel
             .find({ baseItemId, status: "active" })
             .sort({ price: 1 })
@@ -403,7 +402,6 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         };
     }
     async myListings(telegramId) {
-        await this.expireOldListings();
         const listings = await this.auctionModel
             .find({ sellerId: telegramId, status: { $in: ["active", "sold", "cancelled"] } })
             .sort({ listedAt: -1 })
@@ -445,7 +443,6 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         };
     }
     async getStats() {
-        await this.expireOldListings();
         const totalActive = await this.auctionModel.countDocuments({ status: "active" });
         const totalSold = await this.auctionModel.countDocuments({ status: "sold" });
         const rarityAgg = await this.auctionModel.aggregate([
@@ -476,6 +473,12 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
     }
 };
 exports.AuctionHouseService = AuctionHouseService;
+__decorate([
+    (0, schedule_1.Cron)(schedule_1.CronExpression.EVERY_HOUR),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AuctionHouseService.prototype, "expireOldListings", null);
 exports.AuctionHouseService = AuctionHouseService = AuctionHouseService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(auction_schema_1.Auction.name)),

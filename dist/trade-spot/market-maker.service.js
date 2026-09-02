@@ -73,8 +73,6 @@ let MarketMakerService = MarketMakerService_1 = class MarketMakerService {
         for (const pool of pools) {
             if (pool.botEnabled === false)
                 continue;
-            if (!trade_spot_service_1.CORE_BOT_PAIRS.has(pool.pair))
-                continue;
             const tradesPerHour = pool.botTradesPerCycle ?? 10;
             this.ensureSchedule(pool.pair, tradesPerHour);
             const schedule = this.schedules.get(pool.pair) ?? [];
@@ -121,7 +119,7 @@ let MarketMakerService = MarketMakerService_1 = class MarketMakerService {
             const pool = await this.tradeSpotService.getPool(pair);
             const done = this.hourCounts.get(pair) ?? 0;
             const total = (this.schedules.get(pair) ?? []).length;
-            console.log(`[MM Bot] ${pair} — ${count} trades (mid ${pool.lastMid.toFixed(8)}), ${fills.length} user order(s) filled [hour ${done}/${total}]`);
+            this.logger.log(`[MM Bot] ${pair} — ${count} trades (mid ${pool.lastMid.toFixed(8)}), ${fills.length} user order(s) filled [hour ${done}/${total}]`);
             return count;
         }
         finally {

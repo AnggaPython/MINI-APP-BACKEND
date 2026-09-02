@@ -68,5 +68,8 @@ exports.MiningStone = MiningStone = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], MiningStone);
 exports.MiningStoneSchema = mongoose_1.SchemaFactory.createForClass(MiningStone);
+exports.MiningStoneSchema.index({ telegramId: 1, status: 1 });
+exports.MiningStoneSchema.index({ telegramId: 1, status: 1, claimedAt: -1 });
+exports.MiningStoneSchema.index({ telegramId: 1, status: 1, claimAction: 1 });
 exports.MiningStoneSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 //# sourceMappingURL=mining-stone.schema.js.map

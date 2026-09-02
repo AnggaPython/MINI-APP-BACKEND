@@ -12,7 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LevelingService = exports.LEVEL_BENEFITS = exports.STAR_XP_PER_TIER = exports.hasEnoughMaterials = exports.getMilestoneRequirement = exports.isMilestoneLevel = exports.xpRequiredForLevel = exports.getLevelMultiplier = void 0;
+exports.LevelingService = exports.LEVEL_BENEFITS = exports.STAR_XP_PER_TIER = exports.hasEnoughMaterials = exports.getMilestoneRequirement = exports.isMilestoneLevel = exports.xpRequiredForLevel = exports.getHpMultiplier = exports.getLevelMultiplier = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
@@ -26,6 +26,13 @@ const getLevelMultiplier = (level) => {
     return Math.round((baseMultiplier + milestoneBonus) * 100) / 100;
 };
 exports.getLevelMultiplier = getLevelMultiplier;
+const getHpMultiplier = (level) => {
+    const clamped = Math.max(1, Math.min(level, MAX_LEVEL));
+    const base = 1 + (clamped - 1) * 0.05;
+    const milestone = Math.floor(clamped / 5) * 0.25;
+    return Math.round((base + milestone) * 100) / 100;
+};
+exports.getHpMultiplier = getHpMultiplier;
 const xpRequiredForLevel = (level) => {
     if (level <= 1)
         return 0;
@@ -111,13 +118,16 @@ const hasEnoughMaterials = (userMaterials, requirement) => {
     };
 };
 exports.hasEnoughMaterials = hasEnoughMaterials;
-const cumulativeXpToLevel = (level) => {
+const CUMULATIVE_XP = (() => {
+    const arr = [0, 0];
     let total = 0;
-    for (let l = 2; l <= level; l++) {
+    for (let l = 2; l <= MAX_LEVEL; l++) {
         total += (0, exports.xpRequiredForLevel)(l);
+        arr[l] = total;
     }
-    return total;
-};
+    return arr;
+})();
+const cumulativeXpToLevel = (level) => CUMULATIVE_XP[Math.max(1, Math.min(level, MAX_LEVEL))] || 0;
 exports.STAR_XP_PER_TIER = {
     Common: 100,
     Medium: 200,
@@ -166,13 +176,13 @@ let LevelingService = class LevelingService {
         if (!user) {
             return { success: false, error: "User not found" };
         }
-        const currentXp = user.exp || 0;
+        const currentXp = user.gameExp ?? user.exp ?? 0;
         const level = user.level || 1;
         const pendingStars = user.pendingStars || 0;
         const lockedLevel = user.lockedLevel || null;
         const materials = user.materials || {};
         const xpForCurrentLevel = cumulativeXpToLevel(level);
-        const xpForNextLevel = level >= MAX_LEVEL ? xpForCurrentLevel : cumulativeXpToLevel(level + 1);
+        void (level >= MAX_LEVEL ? xpForCurrentLevel : cumulativeXpToLevel(level + 1));
         const xpInLevel = currentXp - xpForCurrentLevel;
         const xpNeeded = level >= MAX_LEVEL ? 0 : (0, exports.xpRequiredForLevel)(level + 1);
         const progress = level >= MAX_LEVEL ? 1 : (xpNeeded > 0 ? Math.min(1, xpInLevel / xpNeeded) : 1);
@@ -265,7 +275,7 @@ let LevelingService = class LevelingService {
         const xpAwarded = starCount * xpPerStar;
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
         const oldLevel = user?.level || 1;
-        const oldXp = user?.exp || 0;
+        const oldXp = user?.gameExp ?? user?.exp ?? 0;
         const newXp = oldXp + xpAwarded;
         let newLevel = 1;
         let xpRemaining = newXp;
@@ -295,7 +305,7 @@ let LevelingService = class LevelingService {
                 }
             }
         }
-        const updateFields = { exp: newXp };
+        const updateFields = { exp: newXp, gameExp: newXp };
         if (finalLevel !== oldLevel || !lockedLevel) {
             updateFields.level = finalLevel;
         }
@@ -303,8 +313,28 @@ let LevelingService = class LevelingService {
             updateFields.lockedLevel = lockedLevel;
             updateFields.pendingStars = starCount;
         }
+        const awardProfileXp = tier === "Medium" || tier === "Rare";
+        if (awardProfileXp) {
+            const oldProfileXp = (user?.profileXp || 0) + 1;
+            let newProfileLevel = 1;
+            let profXpRemaining = oldProfileXp;
+            for (let l = 2; l <= MAX_LEVEL; l++) {
+                const needed = (0, exports.xpRequiredForLevel)(l);
+                if (profXpRemaining >= needed) {
+                    profXpRemaining -= needed;
+                    newProfileLevel = l;
+                }
+                else
+                    break;
+            }
+            if (newProfileLevel > (user?.profileLevel || 1)) {
+                updateFields.profileLevel = newProfileLevel;
+            }
+        }
         await this.userModel
-            .findOneAndUpdate({ telegramId }, { $set: updateFields })
+            .findOneAndUpdate({ telegramId }, awardProfileXp
+            ? { $set: updateFields, $inc: { profileXp: 1 } }
+            : { $set: updateFields })
             .exec();
         let pickaxeGrants = [];
         if (finalLevel > oldLevel) {
@@ -336,7 +366,7 @@ let LevelingService = class LevelingService {
         if (!check.enough) {
             return { success: false, error: "Not enough materials. Keep mining case boxes!" };
         }
-        const pendingStars = user.pendingStars || 0;
+        void (user.pendingStars || 0);
         const newLevel = lockedLevel;
         const update = {
             $set: {
@@ -405,6 +435,7 @@ let LevelingService = class LevelingService {
             pickaxeGrants = await this.grantPickaxesOnLevelUp(telegramId, newLevel - 1, newLevel);
         }
         catch { }
+        void pickaxeGrants;
         return {
             success: true,
             newLevel,

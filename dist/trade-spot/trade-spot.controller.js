@@ -15,15 +15,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradeSpotController = void 0;
 const common_1 = require("@nestjs/common");
 const trade_spot_service_1 = require("./trade-spot.service");
-const trade_spot_service_2 = require("./trade-spot.service");
+const trade_pairs_1 = require("./trade-pairs");
+const sse_service_1 = require("./sse.service");
 const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let TradeSpotController = class TradeSpotController {
     tradeSpotService;
-    constructor(tradeSpotService) {
+    sseService;
+    constructor(tradeSpotService, sseService) {
         this.tradeSpotService = tradeSpotService;
+        this.sseService = sseService;
     }
     async pairs() {
-        const pairs = Object.keys(trade_spot_service_2.MINERAL_INITIAL_RATES).sort();
+        const pairs = Object.keys(trade_pairs_1.MINERAL_INITIAL_RATES).sort();
         return { success: true, pairs };
     }
     async ticker(pair) {
@@ -77,6 +80,16 @@ let TradeSpotController = class TradeSpotController {
             return { success: false, error: "Missing orderId" };
         }
         return this.tradeSpotService.cancelOrder(telegramId, String(body.orderId));
+    }
+    events(pair, res) {
+        const pairName = pair || "ELIXCOIN/ELIXIR";
+        this.sseService.subscribe(pairName, res);
+        this.tradeSpotService.getTicker(pairName).then((ticker) => {
+            try {
+                res.write(`event: ticker\ndata: ${JSON.stringify(ticker)}\n\n`);
+            }
+            catch { }
+        }).catch(() => { });
     }
 };
 exports.TradeSpotController = TradeSpotController;
@@ -182,8 +195,17 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "cancelOrder", null);
+__decorate([
+    (0, common_1.Get)("events"),
+    __param(0, (0, common_1.Query)("pair")),
+    __param(1, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], TradeSpotController.prototype, "events", null);
 exports.TradeSpotController = TradeSpotController = __decorate([
     (0, common_1.Controller)("trade-spot"),
-    __metadata("design:paramtypes", [trade_spot_service_1.TradeSpotService])
+    __metadata("design:paramtypes", [trade_spot_service_1.TradeSpotService,
+        sse_service_1.SseService])
 ], TradeSpotController);
 //# sourceMappingURL=trade-spot.controller.js.map

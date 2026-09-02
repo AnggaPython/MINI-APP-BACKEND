@@ -11,14 +11,16 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var UsersController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersController = void 0;
 const common_1 = require("@nestjs/common");
 const users_service_1 = require("./users.service");
 const telegram_guard_1 = require("../auth/telegram.guard");
 const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
-let UsersController = class UsersController {
+let UsersController = UsersController_1 = class UsersController {
     usersService;
+    logger = new common_1.Logger(UsersController_1.name);
     constructor(usersService) {
         this.usersService = usersService;
     }
@@ -35,20 +37,20 @@ let UsersController = class UsersController {
         const resolvedReward = rewardEventType ?? rewardLegacy;
         const resolvedPayout = estimatedPrice ?? payoutLegacy;
         const resolvedEvent = eventType ?? eventLegacy;
-        console.log(`[Monetag S2S] === Incoming postback START ===`);
-        console.log(`[Monetag S2S] FULL RAW: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, event_type=${eventType}, eventLegacy=${eventLegacy}, reward_event_type=${rewardEventType}, rewardLegacy=${rewardLegacy}, estimated_price=${estimatedPrice}, payoutLegacy=${payoutLegacy}`);
-        console.log(`[Monetag S2S] Resolved: userId=${resolvedUserId}, reward=${resolvedReward}, payout=$${resolvedPayout}, event=${resolvedEvent}`);
+        this.logger.log(`[Monetag S2S] === Incoming postback START ===`);
+        this.logger.log(`[Monetag S2S] FULL RAW: telegram_id=${telegramId}, userid=${userid}, ymid=${ymid}, event_type=${eventType}, eventLegacy=${eventLegacy}, reward_event_type=${rewardEventType}, rewardLegacy=${rewardLegacy}, estimated_price=${estimatedPrice}, payoutLegacy=${payoutLegacy}`);
+        this.logger.log(`[Monetag S2S] Resolved: userId=${resolvedUserId}, reward=${resolvedReward}, payout=$${resolvedPayout}, event=${resolvedEvent}`);
         if (!resolvedUserId) {
-            console.log(`[Monetag S2S] IGNORED: No user ID resolved from query params`);
+            this.logger.log(`[Monetag S2S] IGNORED: No user ID resolved from query params`);
             return { status: "ignored", reason: "missing_user_id" };
         }
         if (resolvedReward !== "valued") {
-            console.log(`[Monetag S2S] IGNORED: reward="${resolvedReward}" !== "valued" for user ${resolvedUserId}`);
+            this.logger.log(`[Monetag S2S] IGNORED: reward="${resolvedReward}" !== "valued" for user ${resolvedUserId}`);
             return { status: "ignored", reason: "reward_not_valued" };
         }
         const payoutUSD = parseFloat(resolvedPayout || "0") || 0;
         await this.usersService.registerMonetagTicket(resolvedUserId, payoutUSD);
-        console.log(`[Monetag S2S] SUCCESS: Ticket registered for user ${resolvedUserId}, payout=$${payoutUSD}`);
+        this.logger.log(`[Monetag S2S] SUCCESS: Ticket registered for user ${resolvedUserId}, payout=$${payoutUSD}`);
         return { status: "success", user: resolvedUserId, payout: payoutUSD };
     }
     async devPublicLogin(username, password) {
@@ -344,7 +346,7 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getHiLoHistory", null);
-exports.UsersController = UsersController = __decorate([
+exports.UsersController = UsersController = UsersController_1 = __decorate([
     (0, common_1.Controller)("users"),
     (0, common_1.UseGuards)(telegram_guard_1.TelegramAuthGuard),
     __metadata("design:paramtypes", [users_service_1.UsersService])

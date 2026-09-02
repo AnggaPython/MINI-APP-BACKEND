@@ -1,6 +1,7 @@
 import { UsersService } from "./users.service";
 export declare class UsersController {
     private readonly usersService;
+    private readonly logger;
     constructor(usersService: UsersService);
     syncUser(userData: any, telegramId: string): Promise<{
         success: boolean;
@@ -181,7 +182,7 @@ export declare class UsersController {
         success: boolean;
         balance: number;
         cryptoBalances: Record<string, number>;
-        materials: any;
+        materials: Record<string, number>;
         ownedPickaxes: string[];
         cwalletUid: string | null;
         solanaAddress: string | null;
@@ -290,7 +291,7 @@ export declare class UsersController {
         newBalance: number;
         vestingLocked: number;
         vestingTurnoverRequired: number;
-        circularMeta: any;
+        circularMeta: Record<string, unknown>;
         error?: undefined;
     } | {
         success: boolean;
@@ -300,7 +301,7 @@ export declare class UsersController {
         isWin: boolean;
         profit: number;
         newBalance: number;
-        error?: undefined;
+        error: string;
         vestingLocked?: undefined;
         vestingTurnoverRequired?: undefined;
         circularMeta?: undefined;

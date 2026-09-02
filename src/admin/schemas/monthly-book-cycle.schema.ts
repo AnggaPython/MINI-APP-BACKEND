@@ -65,3 +65,4 @@ export class MonthlyBookCycle {
 
 export const MonthlyBookCycleSchema =
   SchemaFactory.createForClass(MonthlyBookCycle);
+MonthlyBookCycleSchema.index({ isActive: 1 });

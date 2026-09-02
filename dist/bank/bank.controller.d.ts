@@ -28,8 +28,8 @@ export declare class BankController {
                 id: string;
             })[];
             totalUnclaimedEarning: number;
-            totalLiquidityPool: any;
-            networkStaked: any;
+            totalLiquidityPool: number;
+            networkStaked: number;
             personalStaked: number;
         };
         error?: undefined;

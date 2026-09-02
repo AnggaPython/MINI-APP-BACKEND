@@ -111,17 +111,4 @@ export class SseService {
     if (set.size === 0) this.subscribers.delete(pair);
   }
 
-  /**
-   * Broadcast to ALL pairs that share an asset (cross-pair sync).
-   * E.g. after an IRON trade, notify both IRON/USDC and ELIXCOIN/IRON.
-   */
-  broadcastToPairs(
-    pairs: string[],
-    event: string,
-    data: Record<string, unknown>,
-  ): void {
-    for (const pair of pairs) {
-      this.broadcast(pair, event, data);
-    }
-  }
 }

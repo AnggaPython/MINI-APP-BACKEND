@@ -346,8 +346,15 @@ let MarketplaceService = MarketplaceService_1 = class MarketplaceService {
                 active: true,
             });
         }
-        for (const doc of docs) {
-            await this.marketplaceModel.updateOne({ itemId: doc.itemId }, { $set: doc }, { upsert: true });
+        if (docs.length > 0) {
+            const ops = docs.map(doc => ({
+                updateOne: {
+                    filter: { itemId: doc.itemId },
+                    update: { $set: doc },
+                    upsert: true,
+                },
+            }));
+            await this.marketplaceModel.bulkWrite(ops, { ordered: false });
         }
         this.logger.log(`Seeded ${docs.length} marketplace items`);
     }

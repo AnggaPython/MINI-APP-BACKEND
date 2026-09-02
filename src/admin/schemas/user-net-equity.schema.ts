@@ -70,3 +70,5 @@ export class UserNetEquity {
 }
 
 export const UserNetEquitySchema = SchemaFactory.createForClass(UserNetEquity);
+UserNetEquitySchema.index({ totalBetsLifetime: 1 });
+

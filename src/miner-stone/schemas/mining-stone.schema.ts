@@ -56,5 +56,9 @@ export class MiningStone {
 }
 
 export const MiningStoneSchema = SchemaFactory.createForClass(MiningStone);
+MiningStoneSchema.index({ telegramId: 1, status: 1 });
+MiningStoneSchema.index({ telegramId: 1, status: 1, claimedAt: -1 });
+MiningStoneSchema.index({ telegramId: 1, status: 1, claimAction: 1 });
+
 
 MiningStoneSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });

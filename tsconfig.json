@@ -5,6 +5,7 @@
     "resolvePackageJsonExports": true,
     "esModuleInterop": true,
     "isolatedModules": true,
+    "verbatimModuleSyntax": false,
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
@@ -16,10 +17,18 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
-  }
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false
+  },
+  "exclude": ["node_modules", "dist", "scripts", "src/**/*.spec.ts"]
 }

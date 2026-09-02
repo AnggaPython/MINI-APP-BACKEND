@@ -33,4 +33,6 @@ exports.BankLog = BankLog = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], BankLog);
 exports.BankLogSchema = mongoose_1.SchemaFactory.createForClass(BankLog);
+exports.BankLogSchema.index({ telegramId: 1, createdAt: -1 });
+exports.BankLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
 //# sourceMappingURL=bank-log.schema.js.map

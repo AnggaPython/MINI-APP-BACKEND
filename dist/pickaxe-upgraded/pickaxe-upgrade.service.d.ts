@@ -34,7 +34,7 @@ export declare class PickaxeUpgradeService {
         materialCounts?: undefined;
     } | {
         success: boolean;
-        upgrades: Record<string, any>;
+        upgrades: Record<string, Record<string, unknown>>;
         materialCounts: {
             common: number;
             medium: number;

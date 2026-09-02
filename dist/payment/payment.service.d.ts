@@ -1,18 +1,20 @@
+import { ConfigService } from "@nestjs/config";
 import { UsersService } from "../users/users.service";
 import { Model } from "mongoose";
 import { Transaction, TransactionDocument } from "./schemas/transaction.schema";
 import { AdminService } from "../admin/admin.service";
 import { CircularCasinoService } from "../admin/circular-casino.service";
 export declare class PaymentService {
+    private readonly configService;
     private usersService;
     private txModel;
     private adminService;
     private circularCasino;
     private readonly logger;
-    private readonly appId;
-    private readonly appSecret;
-    private readonly proxyAgent;
-    constructor(usersService: UsersService, txModel: Model<TransactionDocument>, adminService: AdminService, circularCasino: CircularCasinoService);
+    constructor(configService: ConfigService, usersService: UsersService, txModel: Model<TransactionDocument>, adminService: AdminService, circularCasino: CircularCasinoService);
+    private get appId();
+    private get appSecret();
+    private get proxyAgent();
     createDepositCharge(telegramId: string, amountElixir: number): Promise<{
         success: boolean;
         paymentUrl: any;

@@ -83,4 +83,5 @@ exports.HiLoBet = HiLoBet = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], HiLoBet);
 exports.HiLoBetSchema = mongoose_1.SchemaFactory.createForClass(HiLoBet);
+exports.HiLoBetSchema.index({ telegramId: 1, createdAt: -1 });
 //# sourceMappingURL=hilo-bet.schema.js.map

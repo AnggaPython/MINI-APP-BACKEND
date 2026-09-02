@@ -8,6 +8,10 @@ export declare class OpenOrder {
     amount: number;
     filledAmount: number;
     status: "OPEN" | "FILLED" | "CANCELLED";
+    iceberg: boolean;
+    icebergTotal: number;
+    icebergChunkSize: number;
+    icebergChunksFilled: number;
 }
 export declare const OpenOrderSchema: import("mongoose").Schema<OpenOrder, import("mongoose").Model<OpenOrder, any, any, any, any, any, OpenOrder>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, OpenOrder, Document<unknown, {}, OpenOrder, {
     id: string;
@@ -73,6 +77,42 @@ export declare const OpenOrderSchema: import("mongoose").Schema<OpenOrder, impor
         id: string;
     }>> | undefined;
     status?: import("mongoose").SchemaDefinitionProperty<"OPEN" | "FILLED" | "CANCELLED", OpenOrder, Document<unknown, {}, OpenOrder, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    iceberg?: import("mongoose").SchemaDefinitionProperty<boolean, OpenOrder, Document<unknown, {}, OpenOrder, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    icebergTotal?: import("mongoose").SchemaDefinitionProperty<number, OpenOrder, Document<unknown, {}, OpenOrder, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    icebergChunkSize?: import("mongoose").SchemaDefinitionProperty<number, OpenOrder, Document<unknown, {}, OpenOrder, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    icebergChunksFilled?: import("mongoose").SchemaDefinitionProperty<number, OpenOrder, Document<unknown, {}, OpenOrder, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<OpenOrder & {
         _id: import("mongoose").Types.ObjectId;

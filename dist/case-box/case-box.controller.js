@@ -26,6 +26,11 @@ let CaseBoxController = class CaseBoxController {
             return { success: false, error: "Missing telegramId" };
         return await this.caseBoxService.spawn(telegramId);
     }
+    async checkStatus(telegramId, caseId) {
+        if (!caseId)
+            return { success: false, error: "Missing caseId" };
+        return await this.caseBoxService.getStatus(telegramId, caseId);
+    }
     async destroyCase(telegramId, caseId) {
         if (!caseId)
             return { success: false, error: "Missing caseId" };
@@ -50,6 +55,14 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], CaseBoxController.prototype, "spawn", null);
+__decorate([
+    (0, common_1.Post)("status"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)("caseId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], CaseBoxController.prototype, "checkStatus", null);
 __decorate([
     (0, common_1.Post)("destroy"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
