@@ -311,6 +311,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
               ? `+${value}% ${meta.label}`
               : `+${value} ${meta.label}`;
 
+          const displayName = itemId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
           docs.push({
             buffId: itemId, // e.g. "roman-coin" (not ATK-COMMON-01)
             collectionItemId: itemId,
@@ -318,7 +319,7 @@ export class BuffItemCollectionsService implements OnModuleInit {
             rarity,
             buffValue: value,
             buffUnit: meta.unit,
-            name: `${meta.label} ${rarity} #${i + 1}`,
+            name: displayName,
             description,
             icon: meta.icon,
           });

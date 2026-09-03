@@ -255,6 +255,51 @@ export class MinerStoneService {
       hpMultiplier = getHpMultiplier(userLevel);
     } catch { /* leveling unavailable — use base multiplier */ }
 
+    return this.spawnFresh(telegramId, now, hpMultiplier);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // POST /miner-stone/rotate — abandon the current active stone (NO loot,
+  // NO XP, NO fragments) and spawn a fresh one. Powers the client's
+  // session time limit: when the UI countdown ends, the old session is
+  // replaced even mid-HP — no need to destroy first.
+  // ─────────────────────────────────────────────────────────────
+  async rotate(telegramId: string) {
+    const now = Date.now();
+    const last = this.lastSpawnAt.get(telegramId);
+    if (last && now - last < SPAWN_THROTTLE_MS) {
+      return {
+        success: false,
+        error: "Please wait a moment before spawning a new stone.",
+      };
+    }
+    this.lastSpawnAt.set(telegramId, now);
+    // Lazy cleanup keeps the throttle map memory-bounded (stale entries only)
+    if (this.lastSpawnAt.size > 5000) {
+      for (const [key, ts] of this.lastSpawnAt) {
+        if (now - ts > 60000) this.lastSpawnAt.delete(key);
+      }
+    }
+
+    // Expire any active stone as-is. Original expireAt is kept so the TTL
+    // index still cleans the document up; nothing is rolled or awarded.
+    await this.miningStoneModel
+      .updateMany({ telegramId, status: "active" }, { $set: { status: "expired" } })
+      .exec();
+
+    // Fetch user level for HP scaling (uses aggressive HP multiplier)
+    let hpMultiplier = 1;
+    try {
+      const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+      const userLevel = (userDoc as any)?.level || 1;
+      hpMultiplier = getHpMultiplier(userLevel);
+    } catch { /* leveling unavailable — use base multiplier */ }
+
+    return this.spawnFresh(telegramId, now, hpMultiplier);
+  }
+
+  /** Roll tier + HP and persist a brand-new active stone. Shared by spawn/rotate. */
+  private async spawnFresh(telegramId: string, now: number, hpMultiplier: number) {
     // Weighted tier roll: most spawns are Common, Medium/Rare only sometimes
     const clientSeed = `${telegramId}:${now}`;
     const tierRoll = this.roll01(clientSeed, "tier");

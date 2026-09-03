@@ -18,6 +18,17 @@ export class MinerStoneController {
   }
 
   /**
+   * Rotate session — abandon the current active stone (NO loot, NO XP) and
+   * spawn a fresh one. Called when the client's session countdown ends, so
+   * the old session is replaced even mid-HP without destroying first.
+   */
+  @Post("rotate")
+  async rotate(@User("telegramId") telegramId: string) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return await this.minerStoneService.rotate(telegramId);
+  }
+
+  /**
    * Claimed stone history (tier, MPa, rewards) for the History tab.
    * Read-only; claimed stones are retained for 30 days by the TTL index.
    */

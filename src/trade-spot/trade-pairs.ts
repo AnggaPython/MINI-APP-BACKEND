@@ -53,6 +53,7 @@ export const TRADE_LIMITS: Record<string, { min: number; max: number }> = {
  *  Pools are created on-demand when a user first requests a pair. */
 export const MINERAL_INITIAL_RATES: Record<string, number> = {
   "ELIXCOIN/ELIXIR": 0.09674384,
+  "ELIXCOIN/USDC": 0.00000967,
   // Cross-pair mineral pairs (shared pool — price synced via AssetRegistry)
   // mid = basePrice(USD) / quotePrice(USD)
   "ELIXCOIN/IRON": 32.23,    // 0.00000967 / 0.00000030 = 32.23 IRON per ELIXCOIN
