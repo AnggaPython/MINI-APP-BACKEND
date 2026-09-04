@@ -6,8 +6,8 @@ export declare class AchievementsService {
     private usersService;
     constructor(achievementModel: Model<AchievementDocument>, usersService: UsersService);
     getStats(telegramId: string): Promise<{
-        current: number;
-        claimed: boolean;
+        current: any;
+        claimed: any;
         id: number;
         title: string;
         reward: number;

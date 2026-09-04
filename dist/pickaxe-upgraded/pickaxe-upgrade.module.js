@@ -12,6 +12,7 @@ const mongoose_1 = require("@nestjs/mongoose");
 const pickaxe_upgrade_service_1 = require("./pickaxe-upgrade.service");
 const pickaxe_upgrade_controller_1 = require("./pickaxe-upgrade.controller");
 const user_schema_1 = require("../users/schemas/user.schema");
+const leveling_module_1 = require("../leveling-miner/leveling.module");
 let PickaxeUpgradeModule = class PickaxeUpgradeModule {
 };
 exports.PickaxeUpgradeModule = PickaxeUpgradeModule;
@@ -21,6 +22,7 @@ exports.PickaxeUpgradeModule = PickaxeUpgradeModule = __decorate([
             mongoose_1.MongooseModule.forFeature([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
             ]),
+            leveling_module_1.LevelingModule,
         ],
         controllers: [pickaxe_upgrade_controller_1.PickaxeUpgradeController],
         providers: [pickaxe_upgrade_service_1.PickaxeUpgradeService],

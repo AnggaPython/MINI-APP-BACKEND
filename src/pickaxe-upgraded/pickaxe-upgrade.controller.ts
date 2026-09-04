@@ -23,4 +23,15 @@ export class PickaxeUpgradeController {
     if (!body?.tier) return { success: false, error: "Missing tier" };
     return await this.upgradeService.upgradePickaxe(telegramId, String(body.tier));
   }
+
+  /** POST /pickaxe-upgrade/skin — equip an unlocked milestone skin (visual only) */
+  @Post("skin")
+  async setSkin(
+    @User("telegramId") telegramId: string,
+    @Body() body: { tier?: string; skin?: string },
+  ): Promise<any> {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    if (!body?.tier || !body?.skin) return { success: false, error: "Missing tier or skin" };
+    return await this.upgradeService.setActiveSkin(telegramId, String(body.tier), String(body.skin));
+  }
 }

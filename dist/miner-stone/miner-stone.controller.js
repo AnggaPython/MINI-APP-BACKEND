@@ -26,6 +26,11 @@ let MinerStoneController = class MinerStoneController {
             return { success: false, error: "Missing telegramId" };
         return await this.minerStoneService.spawn(telegramId);
     }
+    async rotate(telegramId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return await this.minerStoneService.rotate(telegramId);
+    }
     async history(telegramId) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
@@ -36,6 +41,16 @@ let MinerStoneController = class MinerStoneController {
             return { success: false, error: "Missing tier" };
         }
         return await this.minerStoneService.repairPickaxe(telegramId, String(body.tier));
+    }
+    async getDurability(telegramId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return await this.minerStoneService.getDurability(telegramId);
+    }
+    async syncDurability(telegramId, body) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return await this.minerStoneService.syncDurability(telegramId, body?.durability || {});
     }
     async destroy(telegramId, body) {
         if (!telegramId || !body?.stoneId) {
@@ -59,6 +74,13 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], MinerStoneController.prototype, "spawn", null);
 __decorate([
+    (0, common_1.Post)("rotate"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], MinerStoneController.prototype, "rotate", null);
+__decorate([
     (0, common_1.Get)("history"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
@@ -73,6 +95,21 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], MinerStoneController.prototype, "repairPickaxe", null);
+__decorate([
+    (0, common_1.Get)("durability"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], MinerStoneController.prototype, "getDurability", null);
+__decorate([
+    (0, common_1.Post)("durability/sync"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], MinerStoneController.prototype, "syncDurability", null);
 __decorate([
     (0, common_1.Post)("destroy"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),

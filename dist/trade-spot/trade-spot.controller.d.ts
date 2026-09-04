@@ -69,7 +69,7 @@ export declare class TradeSpotController {
             amount: number;
             total: number;
             fee: number;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
             time: Date;
         }[];
     }>;
@@ -175,7 +175,7 @@ export declare class TradeSpotController {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
             time: Date;
         }[];
         page: number;
@@ -202,7 +202,7 @@ export declare class TradeSpotController {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             quoteBalance: number;
@@ -222,7 +222,7 @@ export declare class TradeSpotController {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             quoteBalance: number;

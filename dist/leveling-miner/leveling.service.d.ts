@@ -22,6 +22,11 @@ export interface LevelBenefit {
     description: string;
     pickaxeGrant?: string;
 }
+export declare const PICKAXE_UPGRADE_GATES: Record<string, {
+    tier: string;
+    level: number;
+}>;
+export declare function isUpgradeGateMet(upgradeLevels: Record<string, number> | undefined | null, pickaxe: string): boolean;
 export declare const LEVEL_BENEFITS: LevelBenefit[];
 export declare class LevelingService {
     private userModel;
@@ -77,6 +82,7 @@ export declare class LevelingService {
         totalXp: number;
     }>;
     private grantPickaxesOnLevelUp;
+    grantPendingPickaxes(telegramId: string): Promise<string[]>;
     awardStoneXp(telegramId: string, tier: string): Promise<{
         starCount: number;
         xpAwarded: number;

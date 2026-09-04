@@ -30,10 +30,13 @@ let User = class User {
     lockedLevel;
     materials;
     pickaxeUpgrades;
+    unlockedPickaxeSkins;
+    activePickaxeSkins;
     claimedVipRanks;
     cryptoBalances;
     ownedPickaxes;
     pickaxeRepairs;
+    pickaxeDurability;
     elixirBalance;
     lifetimeElixir;
     miningStartDate;
@@ -134,6 +137,14 @@ __decorate([
 __decorate([
     (0, mongoose_1.Prop)({ type: [String], default: [] }),
     __metadata("design:type", Array)
+], User.prototype, "unlockedPickaxeSkins", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, default: {} }),
+    __metadata("design:type", Object)
+], User.prototype, "activePickaxeSkins", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
 ], User.prototype, "claimedVipRanks", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
@@ -147,6 +158,10 @@ __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
     __metadata("design:type", Object)
 ], User.prototype, "pickaxeRepairs", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, default: {} }),
+    __metadata("design:type", Object)
+], User.prototype, "pickaxeDurability", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)

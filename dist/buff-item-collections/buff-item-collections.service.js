@@ -326,6 +326,7 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
                     const description = meta.unit === "percent"
                         ? `+${value}% ${meta.label}`
                         : `+${value} ${meta.label}`;
+                    const displayName = itemId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
                     docs.push({
                         buffId: itemId,
                         collectionItemId: itemId,
@@ -333,7 +334,7 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
                         rarity,
                         buffValue: value,
                         buffUnit: meta.unit,
-                        name: `${meta.label} ${rarity} #${i + 1}`,
+                        name: displayName,
                         description,
                         icon: meta.icon,
                     });

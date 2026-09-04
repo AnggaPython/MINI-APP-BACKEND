@@ -19,6 +19,7 @@ import { BuffItemCollectionsModule } from "./buff-item-collections/buff-item-col
 import { AuctionHouseModule } from "./auction-house/auction-house.module";
 import { LevelingModule } from "./leveling-miner/leveling.module";
 import { PickaxeUpgradeModule } from "./pickaxe-upgraded/pickaxe-upgrade.module";
+import { AutoMiningModule } from "./auto-mining/auto-mining.module";
 import { FragmentModule } from "./fragment/fragment.module";
 
 @Module({
@@ -49,6 +50,7 @@ import { FragmentModule } from "./fragment/fragment.module";
     AuctionHouseModule,
     LevelingModule,
     PickaxeUpgradeModule,
+    AutoMiningModule,
     FragmentModule,
   ],
   controllers: [AppController],

@@ -632,7 +632,7 @@ export class CaseBoxService {
     };
   }
 
-  async claimCase(caseId: string, telegramId: string) {
+  async claimCase(caseId: string, telegramId: string, opts?: { autoRun?: boolean }) {
     const user = await this.userModel.findOne({ telegramId }).exec();
     if (!user) return { success: false, error: "User not found" };
 
@@ -646,7 +646,10 @@ export class CaseBoxService {
     }
 
     const { tier, outcome, loot } = opened;
-    const adRequired = tier === "MEDIUM" || tier === "RARE";
+    // Auto-mining runs (paid SaaS subscription) bypass the S2S ad ticket:
+    // the subscription itself is the monetization, quota-limited to
+    // 500 runs/day. The flag is internal-only — never exposed via controller.
+    const adRequired = (tier === "MEDIUM" || tier === "RARE") && !opts?.autoRun;
 
     if (outcome !== "ZONK" && adRequired && (user.adTickets || 0) < 1) {
       return {

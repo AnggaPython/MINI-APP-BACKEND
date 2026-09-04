@@ -15,6 +15,7 @@ import {
 } from "./schemas/referral-log.schema";
 import { HiLoBet, HiLoBetDocument } from "./schemas/hilo-bet.schema";
 import { AchievementsService } from "../achievements/achievements.service";
+import { ANCHOR_USD_PRICES } from "../constants/anchor-prices";
 import { AdminService } from "../admin/admin.service";
 import { CircularCasinoService } from "../admin/circular-casino.service";
 
@@ -347,7 +348,7 @@ export class UsersService {
         const baseReward = user.isMiningBoosted ? 5 : 2.5;
         let baseEarned = (baseReward / 7200) * secondsToClaim;
 
-        const vipRank = getUserVipRank((user as unknown as { vipExp?: number }).vipExp ?? user.exp ?? 0);
+        const vipRank = getUserVipRank((user as unknown as { vipExp?: number }).vipExp ?? 0);
         let totalBonusMultiplier = vipRank.miningBoost; // e.g. 0.1 for 10%
 
         // Code Drop Voucher adds fixed +50% (0.5) to the multiplier pool
@@ -669,7 +670,7 @@ export class UsersService {
         const rank = VIP_RANKS.find((r) => r.name === rankName.toUpperCase());
         if (!rank) return { error: "Invalid rank" };
 
-        if (((user as unknown as { vipExp?: number }).vipExp ?? user.exp ?? 0) < rank.xp)
+        if (((user as unknown as { vipExp?: number }).vipExp ?? 0) < rank.xp)
             return { error: "Not enough XP for this rank" };
         if (user.claimedVipRanks && user.claimedVipRanks.includes(rank.name))
             return { error: "Rank already claimed" };
@@ -907,7 +908,7 @@ export class UsersService {
             lastFaucetRoll: user?.lastFaucetRoll || null,
             totalReferrals,
             exp: user?.exp || 0,
-            vipExp: (user as unknown as { vipExp?: number }).vipExp ?? user?.exp ?? 0,
+            vipExp: (user as unknown as { vipExp?: number }).vipExp ?? 0,
             gameExp: (user as unknown as { gameExp?: number }).gameExp ?? user?.exp ?? 0,
             isBanned: Boolean(user?.isBanned),
         };
@@ -1085,7 +1086,10 @@ export class UsersService {
                 const balance = user.cryptoBalances[sym] || 0;
                 if (balance <= 0) continue;
 
-                let cryptoPrice = 1.0;
+                // Game coins have no CoinGecko listing — value them at the
+                // trade-spot USD anchor. Unknown symbols are REJECTED
+                // (fail-closed): the old $1.0 fallback printed money.
+                let cryptoPrice: number | null = null;
                 const geckoId = coinGeckoMap[sym];
 
                 if (geckoId) {
@@ -1095,6 +1099,12 @@ export class UsersService {
                             error: `Price Oracle is offline for ${sym}. Trading is paused.`,
                         };
                     cryptoPrice = livePrice;
+                } else if (ANCHOR_USD_PRICES[sym] !== undefined) {
+                    cryptoPrice = ANCHOR_USD_PRICES[sym];
+                } else {
+                    return {
+                        error: `No price reference for ${sym}. Conversion paused.`,
+                    };
                 }
 
                 const grossUsdValue = balance * cryptoPrice;

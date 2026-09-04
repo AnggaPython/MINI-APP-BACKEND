@@ -12,7 +12,8 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LevelingService = exports.LEVEL_BENEFITS = exports.STAR_XP_PER_TIER = exports.hasEnoughMaterials = exports.getMilestoneRequirement = exports.isMilestoneLevel = exports.xpRequiredForLevel = exports.getHpMultiplier = exports.getLevelMultiplier = void 0;
+exports.LevelingService = exports.LEVEL_BENEFITS = exports.PICKAXE_UPGRADE_GATES = exports.STAR_XP_PER_TIER = exports.hasEnoughMaterials = exports.getMilestoneRequirement = exports.isMilestoneLevel = exports.xpRequiredForLevel = exports.getHpMultiplier = exports.getLevelMultiplier = void 0;
+exports.isUpgradeGateMet = isUpgradeGateMet;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
@@ -129,12 +130,12 @@ const CUMULATIVE_XP = (() => {
 })();
 const cumulativeXpToLevel = (level) => CUMULATIVE_XP[Math.max(1, Math.min(level, MAX_LEVEL))] || 0;
 exports.STAR_XP_PER_TIER = {
-    Common: 100,
-    Medium: 200,
-    Rare: 500,
-    COMMON: 100,
-    MEDIUM: 200,
-    RARE: 500,
+    Common: 10,
+    Medium: 25,
+    Rare: 60,
+    COMMON: 10,
+    MEDIUM: 25,
+    RARE: 60,
 };
 const PICKAXE_UNLOCK_LEVELS = {
     Uncommon: 15,
@@ -143,6 +144,19 @@ const PICKAXE_UNLOCK_LEVELS = {
     Legendary: 55,
     Mythic: 70,
 };
+exports.PICKAXE_UPGRADE_GATES = {
+    Uncommon: { tier: "Common", level: 5 },
+    Rare: { tier: "Uncommon", level: 5 },
+    Epic: { tier: "Rare", level: 10 },
+    Legendary: { tier: "Epic", level: 5 },
+    Mythic: { tier: "Legendary", level: 5 },
+};
+function isUpgradeGateMet(upgradeLevels, pickaxe) {
+    const gate = exports.PICKAXE_UPGRADE_GATES[pickaxe];
+    if (!gate)
+        return true;
+    return (upgradeLevels?.[gate.tier] ?? 0) >= gate.level;
+}
 exports.LEVEL_BENEFITS = [
     { level: 1, title: "Welcome Miner!", description: "Start your mining journey" },
     { level: 5, title: "Apprentice Miner", description: "Unlock Medium stones more often" },
@@ -252,8 +266,14 @@ let LevelingService = class LevelingService {
     }
     async grantPickaxesOnLevelUp(telegramId, oldLevel, newLevel) {
         const granted = [];
+        let upgradeLevels = {};
+        try {
+            const u = await this.userModel.findOne({ telegramId }).lean().exec();
+            upgradeLevels = (u?.pickaxeUpgrades) || {};
+        }
+        catch { }
         for (const [pickaxe, unlockLevel] of Object.entries(PICKAXE_UNLOCK_LEVELS)) {
-            if (newLevel >= unlockLevel && oldLevel < unlockLevel) {
+            if (newLevel >= unlockLevel && oldLevel < unlockLevel && isUpgradeGateMet(upgradeLevels, pickaxe)) {
                 const updated = await this.userModel
                     .findOneAndUpdate({
                     telegramId,
@@ -266,6 +286,36 @@ let LevelingService = class LevelingService {
                     granted.push(pickaxe);
                 }
             }
+        }
+        return granted;
+    }
+    async grantPendingPickaxes(telegramId) {
+        const granted = [];
+        let user = null;
+        try {
+            user = await this.userModel.findOne({ telegramId }).lean().exec();
+        }
+        catch {
+            return granted;
+        }
+        const u = user;
+        if (!u)
+            return granted;
+        const userLevel = u.level ?? 1;
+        const owned = u.ownedPickaxes?.length ? u.ownedPickaxes : ["Common"];
+        const upgradeLevels = u.pickaxeUpgrades || {};
+        for (const [pickaxe, unlockLevel] of Object.entries(PICKAXE_UNLOCK_LEVELS)) {
+            if (userLevel < unlockLevel)
+                continue;
+            if (owned.includes(pickaxe))
+                continue;
+            if (!isUpgradeGateMet(upgradeLevels, pickaxe))
+                continue;
+            const updated = await this.userModel
+                .findOneAndUpdate({ telegramId, ownedPickaxes: { $nin: [pickaxe] } }, { $addToSet: { ownedPickaxes: { $each: ["Common", pickaxe] } } }, { returnDocument: "after" })
+                .exec();
+            if (updated)
+                granted.push(pickaxe);
         }
         return granted;
     }
@@ -313,7 +363,9 @@ let LevelingService = class LevelingService {
             updateFields.lockedLevel = lockedLevel;
             updateFields.pendingStars = starCount;
         }
-        const awardProfileXp = tier === "Medium" || tier === "Rare";
+        const upperTier = tier.toUpperCase();
+        const awardVipXp = upperTier === "MEDIUM" || upperTier === "RARE";
+        const awardProfileXp = awardVipXp;
         if (awardProfileXp) {
             const oldProfileXp = (user?.profileXp || 0) + 1;
             let newProfileLevel = 1;
@@ -333,7 +385,7 @@ let LevelingService = class LevelingService {
         }
         await this.userModel
             .findOneAndUpdate({ telegramId }, awardProfileXp
-            ? { $set: updateFields, $inc: { profileXp: 1 } }
+            ? { $set: updateFields, $inc: { profileXp: 1, vipExp: 1 } }
             : { $set: updateFields })
             .exec();
         let pickaxeGrants = [];

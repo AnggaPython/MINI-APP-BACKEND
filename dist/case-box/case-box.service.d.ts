@@ -104,7 +104,9 @@ export declare class CaseBoxService {
         levelMultiplier: number;
         error?: undefined;
     }>;
-    claimCase(caseId: string, telegramId: string): Promise<{
+    claimCase(caseId: string, telegramId: string, opts?: {
+        autoRun?: boolean;
+    }): Promise<{
         success: boolean;
         error: string;
         adRequired?: undefined;

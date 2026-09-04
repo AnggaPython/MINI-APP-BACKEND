@@ -28,6 +28,7 @@ const buff_item_collections_module_1 = require("./buff-item-collections/buff-ite
 const auction_house_module_1 = require("./auction-house/auction-house.module");
 const leveling_module_1 = require("./leveling-miner/leveling.module");
 const pickaxe_upgrade_module_1 = require("./pickaxe-upgraded/pickaxe-upgrade.module");
+const auto_mining_module_1 = require("./auto-mining/auto-mining.module");
 const fragment_module_1 = require("./fragment/fragment.module");
 let AppModule = class AppModule {
 };
@@ -61,6 +62,7 @@ exports.AppModule = AppModule = __decorate([
             auction_house_module_1.AuctionHouseModule,
             leveling_module_1.LevelingModule,
             pickaxe_upgrade_module_1.PickaxeUpgradeModule,
+            auto_mining_module_1.AutoMiningModule,
             fragment_module_1.FragmentModule,
         ],
         controllers: [app_controller_1.AppController],

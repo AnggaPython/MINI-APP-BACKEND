@@ -12,7 +12,8 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PickaxeUpgradeService = exports.PICKAXE_UPGRADE_COST = exports.PICKAXE_UPGRADE_PER_LEVEL = exports.PICKAXE_BASE_STATS = exports.MAX_UPGRADE_LEVEL = void 0;
+exports.PickaxeUpgradeService = exports.SKIN_MILESTONES = exports.PICKAXE_UPGRADE_COST = exports.PICKAXE_UPGRADE_PER_LEVEL = exports.PICKAXE_BASE_STATS = exports.MAX_UPGRADE_LEVEL = void 0;
+exports.skinIdFor = skinIdFor;
 exports.getUpgradeStats = getUpgradeStats;
 exports.getTotalUpgradeCost = getTotalUpgradeCost;
 exports.getMaterialToolsNeeded = getMaterialToolsNeeded;
@@ -20,6 +21,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const user_schema_1 = require("../users/schemas/user.schema");
+const leveling_service_1 = require("../leveling-miner/leveling.service");
 const PICKAXE_TIERS = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
 exports.MAX_UPGRADE_LEVEL = 20;
 exports.PICKAXE_BASE_STATS = {
@@ -46,6 +48,10 @@ exports.PICKAXE_UPGRADE_COST = {
     Legendary: { GOLD: 2500, DIAMOND: 150, materialRarity: "RARE" },
     Mythic: { GOLD: 5000, DIAMOND: 500, materialRarity: "RARE" },
 };
+exports.SKIN_MILESTONES = [10, 15, 20];
+function skinIdFor(tier, level) {
+    return `${tier.toLowerCase()}-${level}`;
+}
 function getUpgradeStats(tier, upgradeLevel) {
     const base = exports.PICKAXE_BASE_STATS[tier];
     const perLevel = exports.PICKAXE_UPGRADE_PER_LEVEL[tier];
@@ -105,8 +111,10 @@ function isMaterialRaritySufficient(have, need) {
 }
 let PickaxeUpgradeService = class PickaxeUpgradeService {
     userModel;
-    constructor(userModel) {
+    levelingService;
+    constructor(userModel, levelingService) {
         this.userModel = userModel;
+        this.levelingService = levelingService;
     }
     async getUpgradeStatus(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
@@ -180,6 +188,8 @@ let PickaxeUpgradeService = class PickaxeUpgradeService {
                 medium: totalMedium,
                 rare: totalRare,
             },
+            unlockedPickaxeSkins: (user.unlockedPickaxeSkins) || [],
+            activePickaxeSkins: (user.activePickaxeSkins) || {},
         };
     }
     async upgradePickaxe(telegramId, tier) {
@@ -194,6 +204,18 @@ let PickaxeUpgradeService = class PickaxeUpgradeService {
         if (!ownedPickaxes.includes(tier)) {
             return { success: false, error: "Pickaxe not owned" };
         }
+        const ux = user;
+        if (ux.cryptoBalances == null || ux.materials == null) {
+            const setDefaults = {};
+            if (ux.cryptoBalances == null)
+                setDefaults["cryptoBalances"] = {};
+            if (ux.materials == null)
+                setDefaults["materials"] = {};
+            await this.userModel.updateOne({ telegramId }, { $set: setDefaults }).exec();
+        }
+        await this.userModel
+            .updateOne({ telegramId, [`pickaxeUpgrades.${tier}`]: { $exists: false } }, { $set: { [`pickaxeUpgrades.${tier}`]: 0 } })
+            .exec();
         const upgradeLevels = user.pickaxeUpgrades || {};
         const currentLevel = upgradeLevels[tier] || 0;
         if (currentLevel >= exports.MAX_UPGRADE_LEVEL) {
@@ -235,17 +257,79 @@ let PickaxeUpgradeService = class PickaxeUpgradeService {
         incUpdate[`materials.${materialFound}`] = -1;
         const newLevel = currentLevel + 1;
         const newStats = getUpgradeStats(tier, newLevel);
+        const balanceGuards = {};
+        for (const [resource, amount] of Object.entries(costPerLevel)) {
+            if (resource === "materialRarity")
+                continue;
+            balanceGuards[`cryptoBalances.${resource}`] = {
+                $gte: amount || 0,
+            };
+        }
+        balanceGuards[`materials.${materialFound}`] = { $gte: 1 };
         const updated = await this.userModel
             .findOneAndUpdate({
             telegramId,
-            [`pickaxeUpgrades.${tier}`]: { $lt: exports.MAX_UPGRADE_LEVEL },
+            [`pickaxeUpgrades.${tier}`]: currentLevel,
+            ...balanceGuards,
         }, {
             $set: { [`pickaxeUpgrades.${tier}`]: newLevel },
             $inc: incUpdate,
         }, { returnDocument: "after" })
             .exec();
         if (!updated) {
+            try {
+                const fresh = (await this.userModel
+                    .findOne({ telegramId })
+                    .lean()
+                    .exec());
+                const reasons = [];
+                if (fresh?.pickaxeUpgrades == null) {
+                    reasons.push("pickaxeUpgrades map is null (legacy account — dotted query cannot match)");
+                }
+                const freshLevel = fresh?.pickaxeUpgrades?.[tier] ?? 0;
+                if (freshLevel !== currentLevel) {
+                    reasons.push(`level changed concurrently (expected ${currentLevel}, now ${String(freshLevel)}) — please retry`);
+                }
+                else if (!(typeof freshLevel === "number" && freshLevel < exports.MAX_UPGRADE_LEVEL)) {
+                    reasons.push(`level is ${String(freshLevel)} (${typeof freshLevel})`);
+                }
+                for (const [resource, amount] of Object.entries(costPerLevel)) {
+                    if (resource === "materialRarity")
+                        continue;
+                    const have = fresh?.cryptoBalances?.[resource] ?? 0;
+                    if (!(typeof have === "number" && have >= (amount || 0))) {
+                        reasons.push(`${resource}: have ${String(have)} (${typeof have}), need ${amount}`);
+                    }
+                }
+                const freshMats = fresh?.materials || {};
+                const matOk = Object.entries(freshMats).some(([name, count]) => count > 0 &&
+                    isMaterialRaritySufficient(getMaterialRarity(name) || "", requiredRarity));
+                if (!matOk)
+                    reasons.push(`no ${requiredRarity} material tool in inventory`);
+                if (reasons.length > 0) {
+                    return { success: false, error: `Upgrade blocked — ${reasons.join("; ")}` };
+                }
+            }
+            catch {
+            }
             return { success: false, error: "Upgrade failed — insufficient resources or already maxed" };
+        }
+        let skinUnlocked = null;
+        if (exports.SKIN_MILESTONES.includes(newLevel)) {
+            skinUnlocked = skinIdFor(tier, newLevel);
+            await this.userModel
+                .updateOne({ telegramId }, {
+                $addToSet: { unlockedPickaxeSkins: skinUnlocked },
+                $set: { [`activePickaxeSkins.${tier}`]: skinUnlocked },
+            })
+                .exec();
+        }
+        let pickaxeGrants = [];
+        try {
+            pickaxeGrants = await this.levelingService.grantPendingPickaxes(telegramId);
+        }
+        catch {
+            pickaxeGrants = [];
         }
         return {
             success: true,
@@ -256,13 +340,42 @@ let PickaxeUpgradeService = class PickaxeUpgradeService {
                 ...Object.fromEntries(Object.entries(costPerLevel).filter(([k]) => k !== "materialRarity")),
                 [materialFound]: 1,
             },
+            pickaxeGrants,
+            skinUnlocked,
         };
+    }
+    async setActiveSkin(telegramId, tier, skin) {
+        if (!PICKAXE_TIERS.includes(tier)) {
+            return { success: false, error: "Invalid pickaxe tier" };
+        }
+        if (skin === "default") {
+            await this.userModel
+                .updateOne({ telegramId }, { $unset: { [`activePickaxeSkins.${tier}`]: 1 } })
+                .exec();
+            return { success: true, tier, skin };
+        }
+        const expectedPrefix = `${tier.toLowerCase()}-`;
+        if (!skin.startsWith(expectedPrefix)) {
+            return { success: false, error: "Skin does not belong to this tier" };
+        }
+        const milestone = Number(skin.slice(expectedPrefix.length));
+        if (!exports.SKIN_MILESTONES.includes(milestone)) {
+            return { success: false, error: "Unknown skin" };
+        }
+        const updated = await this.userModel
+            .findOneAndUpdate({ telegramId, unlockedPickaxeSkins: skin }, { $set: { [`activePickaxeSkins.${tier}`]: skin } }, { returnDocument: "after" })
+            .exec();
+        if (!updated) {
+            return { success: false, error: "Skin not unlocked yet" };
+        }
+        return { success: true, tier, skin };
     }
 };
 exports.PickaxeUpgradeService = PickaxeUpgradeService;
 exports.PickaxeUpgradeService = PickaxeUpgradeService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        leveling_service_1.LevelingService])
 ], PickaxeUpgradeService);
 //# sourceMappingURL=pickaxe-upgrade.service.js.map

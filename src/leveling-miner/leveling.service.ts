@@ -184,15 +184,16 @@ const cumulativeXpToLevel = (level: number): number => CUMULATIVE_XP[Math.max(1,
 
 // ── Star XP per tier ──────────────────────────────────────────────────────
 // Each stone/case awards 1-5 stars. Each star grants XP based on the tier.
+// Tuned so the 1→100 journey takes months of casual play (not days).
 export const STAR_XP_PER_TIER: Record<string, number> = {
   // Miner Stone
-  Common: 100,
-  Medium: 200,
-  Rare: 500,
+  Common: 10,
+  Medium: 25,
+  Rare: 60,
   // Case Box (uppercase)
-  COMMON: 100,
-  MEDIUM: 200,
-  RARE: 500,
+  COMMON: 10,
+  MEDIUM: 25,
+  RARE: 60,
 };
 
 // ── Level Benefits ────────────────────────────────────────────────────────
@@ -216,6 +217,29 @@ const PICKAXE_UNLOCK_LEVELS: Record<string, number> = {
   Legendary: 55,
   Mythic: 70,
 };
+
+// ── Pickaxe Upgrade Gates ──────────────────────────────────────────────────
+// Unlocking a tier ALSO requires the previous tier upgraded to a minimum
+// level (5/5/10/5/5). The user-level gate above stays the primary pacing;
+// this proves engagement without hard-blocking (max upgrade stays 20).
+// Existing owners are grandfathered (grants only add, never remove).
+export const PICKAXE_UPGRADE_GATES: Record<string, { tier: string; level: number }> = {
+  Uncommon: { tier: "Common", level: 5 },
+  Rare: { tier: "Uncommon", level: 5 },
+  Epic: { tier: "Rare", level: 10 },
+  Legendary: { tier: "Epic", level: 5 },
+  Mythic: { tier: "Legendary", level: 5 },
+};
+
+/** True when the upgrade gate for a tier is satisfied. */
+export function isUpgradeGateMet(
+  upgradeLevels: Record<string, number> | undefined | null,
+  pickaxe: string,
+): boolean {
+  const gate = PICKAXE_UPGRADE_GATES[pickaxe];
+  if (!gate) return true; // Common has no gate
+  return (upgradeLevels?.[gate.tier] ?? 0) >= gate.level;
+}
 
 export const LEVEL_BENEFITS: LevelBenefit[] = [
   { level: 1, title: "Welcome Miner!", description: "Start your mining journey" },
@@ -353,9 +377,17 @@ export class LevelingService {
   ): Promise<string[]> {
     const granted: string[] = [];
 
+    // Upgrade-gate check needs current upgrade levels (one extra read, only
+    // when a level-up actually happened).
+    let upgradeLevels: Record<string, number> = {};
+    try {
+      const u = await this.userModel.findOne({ telegramId }).lean().exec();
+      upgradeLevels = ((u as unknown as { pickaxeUpgrades?: Record<string, number> })?.pickaxeUpgrades) || {};
+    } catch { /* treat gates as unmet-safe: skip below */ }
+
     for (const [pickaxe, unlockLevel] of Object.entries(PICKAXE_UNLOCK_LEVELS)) {
-      // Grant if the user crossed this unlock level
-      if (newLevel >= unlockLevel && oldLevel < unlockLevel) {
+      // Grant if the user crossed this unlock level AND meets the upgrade gate
+      if (newLevel >= unlockLevel && oldLevel < unlockLevel && isUpgradeGateMet(upgradeLevels, pickaxe)) {
         // Atomic: only add if not already owned
         const updated = await this.userModel
           .findOneAndUpdate(
@@ -374,6 +406,47 @@ export class LevelingService {
           granted.push(pickaxe);
         }
       }
+    }
+
+    return granted;
+  }
+
+  /**
+   * Grant any pending pickaxe tiers: user level already reached the unlock
+   * level earlier, but the upgrade gate was unmet at the time (e.g. Common
+   * hit Lv 5 after user Lv 15). Called after each successful pickaxe upgrade.
+   * Grandfather-safe: only adds, never removes.
+   */
+  async grantPendingPickaxes(telegramId: string): Promise<string[]> {
+    const granted: string[] = [];
+    let user: unknown = null;
+    try {
+      user = await this.userModel.findOne({ telegramId }).lean().exec();
+    } catch {
+      return granted;
+    }
+    const u = user as unknown as {
+      level?: number;
+      ownedPickaxes?: string[];
+      pickaxeUpgrades?: Record<string, number>;
+    } | null;
+    if (!u) return granted;
+    const userLevel = u.level ?? 1;
+    const owned = u.ownedPickaxes?.length ? u.ownedPickaxes : ["Common"];
+    const upgradeLevels = u.pickaxeUpgrades || {};
+
+    for (const [pickaxe, unlockLevel] of Object.entries(PICKAXE_UNLOCK_LEVELS)) {
+      if (userLevel < unlockLevel) continue;
+      if (owned.includes(pickaxe)) continue;
+      if (!isUpgradeGateMet(upgradeLevels, pickaxe)) continue;
+      const updated = await this.userModel
+        .findOneAndUpdate(
+          { telegramId, ownedPickaxes: { $nin: [pickaxe] } },
+          { $addToSet: { ownedPickaxes: { $each: ["Common", pickaxe] } } },
+          { returnDocument: "after" },
+        )
+        .exec();
+      if (updated) granted.push(pickaxe);
     }
 
     return granted;
@@ -446,8 +519,13 @@ export class LevelingService {
       updateFields.pendingStars = starCount; // Stars held
     }
 
-    // Profile XP: +1 only for Medium and Rare tiers (not Common/Zonk)
-    const awardProfileXp = tier === "Medium" || tier === "Rare";
+    // VIP XP: flat +1, ONLY for breaking Medium/Rare stones AND Medium/Rare
+    // case boxes. Case-insensitive: stone tiers are "Medium"/"Rare", case-box
+    // tiers are "MEDIUM"/"RARE". This is a separate wallet from game XP —
+    // star count and STAR_XP_PER_TIER never affect it.
+    const upperTier = tier.toUpperCase();
+    const awardVipXp = upperTier === "MEDIUM" || upperTier === "RARE";
+    const awardProfileXp = awardVipXp;
     if (awardProfileXp) {
       const oldProfileXp = ((user as UserWithLevel)?.profileXp || 0) + 1;
       let newProfileLevel = 1;
@@ -468,7 +546,7 @@ export class LevelingService {
       .findOneAndUpdate(
         { telegramId },
         awardProfileXp
-          ? { $set: updateFields, $inc: { profileXp: 1 } }
+          ? { $set: updateFields, $inc: { profileXp: 1, vipExp: 1 } }
           : { $set: updateFields },
       )
       .exec();

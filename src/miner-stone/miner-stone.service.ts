@@ -12,6 +12,7 @@ import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
   // @ts-ignore - super strict cleanup pending (auto)
 import { LevelingService, STAR_XP_PER_TIER, getLevelMultiplier, getHpMultiplier } from "../leveling-miner/leveling.service";
+import { getUpgradeStats } from "../pickaxe-upgraded/pickaxe-upgrade.service";
 import { FragmentService } from "../fragment/fragment.service";
 
 /**
@@ -376,12 +377,19 @@ export class MinerStoneService {
     }
 
     const now = new Date();
+    // Upgrade-aware max durability (a Lv20 Common holds 55, not 25) — the
+    // server sets the source-of-truth value in the same atomic op.
+    const upgradeLevel = ((user as unknown as { pickaxeUpgrades?: Record<string, number> })?.pickaxeUpgrades?.[tier as PickaxeTier]) ?? 0;
+    const maxDurability = getUpgradeStats(tier as PickaxeTier, upgradeLevel).maxDurability;
     const updated = await this.userModel
       .findOneAndUpdate(
         filter,
         {
           $inc: { ...inc, [`pickaxeRepairs.${tier}.count`]: 1 },
-          $set: { [`pickaxeRepairs.${tier}.lastRepairAt`]: now },
+          $set: {
+            [`pickaxeRepairs.${tier}.lastRepairAt`]: now,
+            [`pickaxeDurability.${tier}`]: maxDurability,
+          },
           // Idempotent backfill — legacy docs missing the field get Common (+ tier) here
           $addToSet: { ownedPickaxes: { $each: ["Common", tier] } },
         },
@@ -407,10 +415,52 @@ export class MinerStoneService {
       cost,
       repairedAt: now,
       balances,
+      durability: maxDurability,
       ownedPickaxes: updated.ownedPickaxes?.length
         ? updated.ownedPickaxes
         : ["Common"],
     };
+  }
+
+  // ── Pickaxe durability (server source of truth) ──────────────────────────
+  // Max per tier respects upgrade level. Unknown/negative inputs are clamped.
+  private durabilityMaxFor(tier: string, upgradeLevel: number): number {
+    try {
+      return getUpgradeStats(tier as PickaxeTier, upgradeLevel).maxDurability;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Read server durability map (clamped to upgrade-aware max). */
+  async getDurability(telegramId: string) {
+    const user = await this.usersService.findByTelegramId(telegramId);
+    if (!user) return { success: false, error: "User account not found" };
+    const stored = (user as unknown as { pickaxeDurability?: Record<string, number> })?.pickaxeDurability || {};
+    const levels = (user as unknown as { pickaxeUpgrades?: Record<string, number> })?.pickaxeUpgrades || {};
+    const durability: Record<string, number> = {};
+    for (const t of PICKAXE_TIERS) {
+      const max = this.durabilityMaxFor(t, levels[t] ?? 0);
+      const v = Number(stored[t]);
+      durability[t] = Number.isFinite(v) ? Math.max(0, Math.min(v, max)) : max;
+    }
+    return { success: true, durability };
+  }
+
+  /** Write-through sync from client (session boundaries / page hide). */
+  async syncDurability(telegramId: string, durability: Record<string, number>) {
+    const user = await this.usersService.findByTelegramId(telegramId);
+    if (!user) return { success: false, error: "User account not found" };
+    const levels = (user as unknown as { pickaxeUpgrades?: Record<string, number> })?.pickaxeUpgrades || {};
+    const set: Record<string, number> = {};
+    for (const t of PICKAXE_TIERS) {
+      const v = Number((durability || {})[t]);
+      if (!Number.isFinite(v)) continue;
+      set[`pickaxeDurability.${t}`] = Math.max(0, Math.min(v, this.durabilityMaxFor(t, levels[t] ?? 0)));
+    }
+    if (Object.keys(set).length === 0) return { success: false, error: "Nothing to sync" };
+    await this.userModel.updateOne({ telegramId }, { $set: set }).exec();
+    return { success: true };
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -597,7 +647,7 @@ export class MinerStoneService {
   //          cryptoBalances.ELIXCOIN — NOT elixirBalance: the two coins are
   //          separate entities. Atomic + idempotent per stone (claimAction lock).
   // ─────────────────────────────────────────────────────────────
-  async claimRewards(telegramId: string, stoneId: string, action: string) {
+  async claimRewards(telegramId: string, stoneId: string, action: string, opts?: { autoRun?: boolean }) {
     if (action !== "save" && action !== "sell") {
       return { success: false, error: "Invalid claim action" };
     }
@@ -623,7 +673,10 @@ export class MinerStoneService {
       };
     }
 
-    const adRequired = pending.tier === "Medium" || pending.tier === "Rare";
+    // Auto-mining runs (paid SaaS subscription) bypass the S2S ad ticket:
+    // the subscription itself is the monetization, quota-limited to
+    // 500 runs/day. The flag is internal-only — never exposed via controller.
+    const adRequired = (pending.tier === "Medium" || pending.tier === "Rare") && !opts?.autoRun;
     if (adRequired && (user.adTickets || 0) < 1) {
       return {
         success: false,

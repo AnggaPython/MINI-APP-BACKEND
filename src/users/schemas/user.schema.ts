@@ -67,6 +67,13 @@ export class User {
   @Prop({ type: Object, default: {} })
   pickaxeUpgrades: Record<string, number>;
 
+  // Milestone skins: unlocked skin ids (e.g. "common-10") + active per tier
+  @Prop({ type: [String], default: [] })
+  unlockedPickaxeSkins: string[];
+
+  @Prop({ type: Object, default: {} })
+  activePickaxeSkins: Record<string, string>;
+
   @Prop({ type: [String], default: [] })
   claimedVipRanks: string[];
 
@@ -81,6 +88,10 @@ export class User {
   @Prop({ type: Object, default: {} })
   pickaxeRepairs: Record<string, { count: number; lastRepairAt: Date }>;
 
+  // Server-authoritative durability per tier (source of truth across
+  // refreshes/devices; localStorage is only a write-through cache).
+  @Prop({ type: Object, default: {} })
+  pickaxeDurability: Record<string, number>;
   @Prop({ default: 0 })
   elixirBalance: number;
 

@@ -33,6 +33,13 @@ let PickaxeUpgradeController = class PickaxeUpgradeController {
             return { success: false, error: "Missing tier" };
         return await this.upgradeService.upgradePickaxe(telegramId, String(body.tier));
     }
+    async setSkin(telegramId, body) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        if (!body?.tier || !body?.skin)
+            return { success: false, error: "Missing tier or skin" };
+        return await this.upgradeService.setActiveSkin(telegramId, String(body.tier), String(body.skin));
+    }
 };
 exports.PickaxeUpgradeController = PickaxeUpgradeController;
 __decorate([
@@ -50,6 +57,14 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], PickaxeUpgradeController.prototype, "upgradePickaxe", null);
+__decorate([
+    (0, common_1.Post)("skin"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], PickaxeUpgradeController.prototype, "setSkin", null);
 exports.PickaxeUpgradeController = PickaxeUpgradeController = __decorate([
     (0, common_1.Controller)("pickaxe-upgrade"),
     __metadata("design:paramtypes", [pickaxe_upgrade_service_1.PickaxeUpgradeService])

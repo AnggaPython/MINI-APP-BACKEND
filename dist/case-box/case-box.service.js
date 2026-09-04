@@ -500,7 +500,7 @@ let CaseBoxService = class CaseBoxService {
             levelMultiplier: rewardMultiplier,
         };
     }
-    async claimCase(caseId, telegramId) {
+    async claimCase(caseId, telegramId, opts) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         if (!user)
             return { success: false, error: "User not found" };
@@ -512,7 +512,7 @@ let CaseBoxService = class CaseBoxService {
             return { success: false, error: "Case not ready for claim or already claimed." };
         }
         const { tier, outcome, loot } = opened;
-        const adRequired = tier === "MEDIUM" || tier === "RARE";
+        const adRequired = (tier === "MEDIUM" || tier === "RARE") && !opts?.autoRun;
         if (outcome !== "ZONK" && adRequired && (user.adTickets || 0) < 1) {
             return {
                 success: false,

@@ -15,6 +15,18 @@ export declare class MinerStoneController {
         success: boolean;
         error: string;
     }>;
+    rotate(telegramId: string): Promise<{
+        success: boolean;
+        stone: {
+            stoneId: string;
+            tier: import("./schemas/mining-stone.schema").StoneTier;
+            maxHp: number;
+            zonk: boolean;
+        };
+    } | {
+        success: boolean;
+        error: string;
+    }>;
     history(telegramId: string): Promise<{
         success: boolean;
         history: {
@@ -36,7 +48,25 @@ export declare class MinerStoneController {
         cost: Record<string, number>;
         repairedAt: Date;
         balances: Record<string, number>;
+        durability: number;
         ownedPickaxes: string[];
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    getDurability(telegramId: string): Promise<{
+        success: boolean;
+        durability: Record<string, number>;
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    syncDurability(telegramId: string, body: {
+        durability?: Record<string, number>;
+    }): Promise<{
+        success: boolean;
         error?: undefined;
     } | {
         success: boolean;

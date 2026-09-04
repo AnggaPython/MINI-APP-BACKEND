@@ -36,6 +36,19 @@ export declare class MinerStoneService {
         };
         error?: undefined;
     }>;
+    rotate(telegramId: string): Promise<{
+        success: boolean;
+        stone: {
+            stoneId: string;
+            tier: StoneTier;
+            maxHp: number;
+            zonk: boolean;
+        };
+    } | {
+        success: boolean;
+        error: string;
+    }>;
+    private spawnFresh;
     repairPickaxe(telegramId: string, tier: string): Promise<{
         success: boolean;
         error: string;
@@ -43,6 +56,7 @@ export declare class MinerStoneService {
         cost?: undefined;
         repairedAt?: undefined;
         balances?: undefined;
+        durability?: undefined;
         ownedPickaxes?: undefined;
     } | {
         success: boolean;
@@ -50,7 +64,25 @@ export declare class MinerStoneService {
         cost: Record<string, number>;
         repairedAt: Date;
         balances: Record<string, number>;
+        durability: number;
         ownedPickaxes: string[];
+        error?: undefined;
+    }>;
+    private durabilityMaxFor;
+    getDurability(telegramId: string): Promise<{
+        success: boolean;
+        error: string;
+        durability?: undefined;
+    } | {
+        success: boolean;
+        durability: Record<string, number>;
+        error?: undefined;
+    }>;
+    syncDurability(telegramId: string, durability: Record<string, number>): Promise<{
+        success: boolean;
+        error: string;
+    } | {
+        success: boolean;
         error?: undefined;
     }>;
     destroy(telegramId: string, stoneId: string): Promise<{
@@ -119,7 +151,9 @@ export declare class MinerStoneService {
         };
         error?: undefined;
     }>;
-    claimRewards(telegramId: string, stoneId: string, action: string): Promise<{
+    claimRewards(telegramId: string, stoneId: string, action: string, opts?: {
+        autoRun?: boolean;
+    }): Promise<{
         success: boolean;
         error: string;
         adRequired?: undefined;

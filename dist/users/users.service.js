@@ -59,6 +59,7 @@ const user_schema_1 = require("./schemas/user.schema");
 const referral_log_schema_1 = require("./schemas/referral-log.schema");
 const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
 const achievements_service_1 = require("../achievements/achievements.service");
+const anchor_prices_1 = require("../constants/anchor-prices");
 const admin_service_1 = require("../admin/admin.service");
 const circular_casino_service_1 = require("../admin/circular-casino.service");
 exports.VIP_RANKS = [
@@ -309,7 +310,7 @@ let UsersService = UsersService_1 = class UsersService {
             secondsToClaim = 0;
         const baseReward = user.isMiningBoosted ? 5 : 2.5;
         let baseEarned = (baseReward / 7200) * secondsToClaim;
-        const vipRank = getUserVipRank(user.vipExp ?? user.exp ?? 0);
+        const vipRank = getUserVipRank(user.vipExp ?? 0);
         let totalBonusMultiplier = vipRank.miningBoost;
         if (user.miningVoucherExpiry && new Date() < user.miningVoucherExpiry) {
             totalBonusMultiplier += 0.5;
@@ -537,7 +538,7 @@ let UsersService = UsersService_1 = class UsersService {
         const rank = exports.VIP_RANKS.find((r) => r.name === rankName.toUpperCase());
         if (!rank)
             return { error: "Invalid rank" };
-        if ((user.vipExp ?? user.exp ?? 0) < rank.xp)
+        if ((user.vipExp ?? 0) < rank.xp)
             return { error: "Not enough XP for this rank" };
         if (user.claimedVipRanks && user.claimedVipRanks.includes(rank.name))
             return { error: "Rank already claimed" };
@@ -716,7 +717,7 @@ let UsersService = UsersService_1 = class UsersService {
             lastFaucetRoll: user?.lastFaucetRoll || null,
             totalReferrals,
             exp: user?.exp || 0,
-            vipExp: user.vipExp ?? user?.exp ?? 0,
+            vipExp: user.vipExp ?? 0,
             gameExp: user.gameExp ?? user?.exp ?? 0,
             isBanned: Boolean(user?.isBanned),
         };
@@ -852,7 +853,7 @@ let UsersService = UsersService_1 = class UsersService {
                 const balance = user.cryptoBalances[sym] || 0;
                 if (balance <= 0)
                     continue;
-                let cryptoPrice = 1.0;
+                let cryptoPrice = null;
                 const geckoId = coinGeckoMap[sym];
                 if (geckoId) {
                     const livePrice = await this.getLivePrice(geckoId);
@@ -861,6 +862,14 @@ let UsersService = UsersService_1 = class UsersService {
                             error: `Price Oracle is offline for ${sym}. Trading is paused.`,
                         };
                     cryptoPrice = livePrice;
+                }
+                else if (anchor_prices_1.ANCHOR_USD_PRICES[sym] !== undefined) {
+                    cryptoPrice = anchor_prices_1.ANCHOR_USD_PRICES[sym];
+                }
+                else {
+                    return {
+                        error: `No price reference for ${sym}. Conversion paused.`,
+                    };
                 }
                 const grossUsdValue = balance * cryptoPrice;
                 const feeUsd = grossUsdValue * 0.003;

@@ -56,6 +56,7 @@ const user_schema_1 = require("../users/schemas/user.schema");
 const users_service_1 = require("../users/users.service");
 const buff_item_collections_service_1 = require("../buff-item-collections/buff-item-collections.service");
 const leveling_service_1 = require("../leveling-miner/leveling.service");
+const pickaxe_upgrade_service_1 = require("../pickaxe-upgraded/pickaxe-upgrade.service");
 const fragment_service_1 = require("../fragment/fragment.service");
 const TIER_CONFIG = {
     Common: {
@@ -200,6 +201,37 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             hpMultiplier = (0, leveling_service_1.getHpMultiplier)(userLevel);
         }
         catch { }
+        return this.spawnFresh(telegramId, now, hpMultiplier);
+    }
+    async rotate(telegramId) {
+        const now = Date.now();
+        const last = this.lastSpawnAt.get(telegramId);
+        if (last && now - last < SPAWN_THROTTLE_MS) {
+            return {
+                success: false,
+                error: "Please wait a moment before spawning a new stone.",
+            };
+        }
+        this.lastSpawnAt.set(telegramId, now);
+        if (this.lastSpawnAt.size > 5000) {
+            for (const [key, ts] of this.lastSpawnAt) {
+                if (now - ts > 60000)
+                    this.lastSpawnAt.delete(key);
+            }
+        }
+        await this.miningStoneModel
+            .updateMany({ telegramId, status: "active" }, { $set: { status: "expired" } })
+            .exec();
+        let hpMultiplier = 1;
+        try {
+            const userDoc = await this.userModel.findOne({ telegramId }).lean().exec();
+            const userLevel = userDoc?.level || 1;
+            hpMultiplier = (0, leveling_service_1.getHpMultiplier)(userLevel);
+        }
+        catch { }
+        return this.spawnFresh(telegramId, now, hpMultiplier);
+    }
+    async spawnFresh(telegramId, now, hpMultiplier) {
         const clientSeed = `${telegramId}:${now}`;
         const tierRoll = this.roll01(clientSeed, "tier");
         let tier;
@@ -258,10 +290,15 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             inc[`cryptoBalances.${resource}`] = -amount;
         }
         const now = new Date();
+        const upgradeLevel = (user?.pickaxeUpgrades?.[tier]) ?? 0;
+        const maxDurability = (0, pickaxe_upgrade_service_1.getUpgradeStats)(tier, upgradeLevel).maxDurability;
         const updated = await this.userModel
             .findOneAndUpdate(filter, {
             $inc: { ...inc, [`pickaxeRepairs.${tier}.count`]: 1 },
-            $set: { [`pickaxeRepairs.${tier}.lastRepairAt`]: now },
+            $set: {
+                [`pickaxeRepairs.${tier}.lastRepairAt`]: now,
+                [`pickaxeDurability.${tier}`]: maxDurability,
+            },
             $addToSet: { ownedPickaxes: { $each: ["Common", tier] } },
         }, { returnDocument: "after" })
             .exec();
@@ -281,10 +318,50 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             cost,
             repairedAt: now,
             balances,
+            durability: maxDurability,
             ownedPickaxes: updated.ownedPickaxes?.length
                 ? updated.ownedPickaxes
                 : ["Common"],
         };
+    }
+    durabilityMaxFor(tier, upgradeLevel) {
+        try {
+            return (0, pickaxe_upgrade_service_1.getUpgradeStats)(tier, upgradeLevel).maxDurability;
+        }
+        catch {
+            return 0;
+        }
+    }
+    async getDurability(telegramId) {
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (!user)
+            return { success: false, error: "User account not found" };
+        const stored = user?.pickaxeDurability || {};
+        const levels = user?.pickaxeUpgrades || {};
+        const durability = {};
+        for (const t of exports.PICKAXE_TIERS) {
+            const max = this.durabilityMaxFor(t, levels[t] ?? 0);
+            const v = Number(stored[t]);
+            durability[t] = Number.isFinite(v) ? Math.max(0, Math.min(v, max)) : max;
+        }
+        return { success: true, durability };
+    }
+    async syncDurability(telegramId, durability) {
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (!user)
+            return { success: false, error: "User account not found" };
+        const levels = user?.pickaxeUpgrades || {};
+        const set = {};
+        for (const t of exports.PICKAXE_TIERS) {
+            const v = Number((durability || {})[t]);
+            if (!Number.isFinite(v))
+                continue;
+            set[`pickaxeDurability.${t}`] = Math.max(0, Math.min(v, this.durabilityMaxFor(t, levels[t] ?? 0)));
+        }
+        if (Object.keys(set).length === 0)
+            return { success: false, error: "Nothing to sync" };
+        await this.userModel.updateOne({ telegramId }, { $set: set }).exec();
+        return { success: true };
     }
     async destroy(telegramId, stoneId) {
         const now = Date.now();
@@ -413,7 +490,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
             fragmentDrops,
         };
     }
-    async claimRewards(telegramId, stoneId, action) {
+    async claimRewards(telegramId, stoneId, action, opts) {
         if (action !== "save" && action !== "sell") {
             return { success: false, error: "Invalid claim action" };
         }
@@ -434,7 +511,7 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                 error: "Rewards already claimed or stone not found.",
             };
         }
-        const adRequired = pending.tier === "Medium" || pending.tier === "Rare";
+        const adRequired = (pending.tier === "Medium" || pending.tier === "Rare") && !opts?.autoRun;
         if (adRequired && (user.adTickets || 0) < 1) {
             return {
                 success: false,

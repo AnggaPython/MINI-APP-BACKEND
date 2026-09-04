@@ -58,6 +58,26 @@ export class MinerStoneController {
   }
 
   /**
+   * Server-authoritative durability (source of truth across refreshes and
+   * devices; localStorage is only a write-through cache).
+   */
+  @Get("durability")
+  async getDurability(@User("telegramId") telegramId: string) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return await this.minerStoneService.getDurability(telegramId);
+  }
+
+  /** Write-through sync from client (session boundaries / page hide). */
+  @Post("durability/sync")
+  async syncDurability(
+    @User("telegramId") telegramId: string,
+    @Body() body: { durability?: Record<string, number> },
+  ) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return await this.minerStoneService.syncDurability(telegramId, body?.durability || {});
+  }
+
+  /**
    * Destroy the stone & roll its loot — called exactly once, after the stone
    * is fully destroyed on the client. Only the stoneId travels; the server
    * derives tier + rewards (or ZONK) from its own stored data, and the loot

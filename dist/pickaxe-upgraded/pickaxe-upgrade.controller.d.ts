@@ -10,6 +10,8 @@ export declare class PickaxeUpgradeController {
             medium: number;
             rare: number;
         };
+        unlockedPickaxeSkins: string[];
+        activePickaxeSkins: Record<string, string>;
         error?: undefined;
     } | {
         success: boolean;
@@ -17,5 +19,9 @@ export declare class PickaxeUpgradeController {
     }>;
     upgradePickaxe(telegramId: string, body: {
         tier?: string;
+    }): Promise<any>;
+    setSkin(telegramId: string, body: {
+        tier?: string;
+        skin?: string;
     }): Promise<any>;
 }
