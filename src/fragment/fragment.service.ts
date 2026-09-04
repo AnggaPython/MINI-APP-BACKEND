@@ -41,30 +41,29 @@ function randomDropAmount(): number {
 const SPIN_WHEEL_COST = 50; // fragments required per spin
 
 export interface SpinWheelReward {
-  type: string;        // resource name or "ELIXCOIN"
+  type: string;        // reward asset ("GOLD") or "NOPE"
   amount: number;
   label: string;       // display name
   color: string;       // UI color
 }
 
-// Weighted reward table (cumulative weights out of 1000)
+// Weighted reward table (cumulative weights out of 1000).
+// GOLD-only, 3 tiers: 5 GOLD 60% / 10 GOLD 30% / 50 GOLD 10%.
+// NOTE: the frontend wheel shows extra display-only segments
+// (NOPE, 250, 500, 1000, 5000 GOLD) as visual sweeteners —
+// the pointer can never land on them because every amount the
+// server returns (5/10/50) matches a real segment.
 const SPIN_WHEEL_REWARDS: Array<{ weight: number; reward: SpinWheelReward }> = [
-  { weight: 300,  reward: { type: "IRON",      amount: 50,   label: "Iron",        color: "#b0b7c3" } },
-  { weight: 550,  reward: { type: "COPPER",    amount: 30,   label: "Copper",      color: "#f97316" } },
-  { weight: 700,  reward: { type: "SILVER",    amount: 10,   label: "Silver",      color: "#d8dee9" } },
-  { weight: 820,  reward: { type: "GOLD",      amount: 3,    label: "Gold",        color: "#facc15" } },
-  { weight: 900,  reward: { type: "DIAMOND",   amount: 1,    label: "Diamond",     color: "#22d3ee" } },
-  { weight: 950,  reward: { type: "ELIXCOIN",  amount: 10,   label: "ElixCoin",    color: "#a78bfa" } },
-  { weight: 980,  reward: { type: "ELIXCOIN",  amount: 50,   label: "ElixCoin",    color: "#a78bfa" } },
-  { weight: 995,  reward: { type: "GOLD",      amount: 10,   label: "Gold ×10",    color: "#facc15" } },
-  { weight: 1000, reward: { type: "DIAMOND",   amount: 5,    label: "Diamond ×5",  color: "#22d3ee" } },
+  { weight: 600,  reward: { type: "GOLD", amount: 5,  label: "5 GOLD",  color: "#3b4a5c" } },
+  { weight: 900,  reward: { type: "GOLD", amount: 10, label: "10 GOLD", color: "#3a4a5a" } },
+  { weight: 1000, reward: { type: "GOLD", amount: 50, label: "50 GOLD", color: "#405060" } },
 ];
 
 // ── Mine Swipe configuration ──────────────────────────────────────────────
 const MINE_SWIPE_COST = 50; // fragments required per game
 const MINE_SWIPE_BOARD_SIZE = 5; // 5×5 grid
 const MINE_SWIPE_MINE_COUNT = 5; // 5 mines in 25 tiles = 80% safe
-const MINE_SWIPE_BASE_REWARD_PER_TILE = 2; // base ELIXCOIN per safe tile
+const MINE_SWIPE_BASE_REWARD_PER_TILE = 2; // base GOLD per safe tile
 const MINE_SWIPE_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 // ── Helper: provably-fair RNG 0-1 ────────────────────────────────────────
@@ -107,7 +106,7 @@ export class FragmentService {
       mineSwipe: (user as unknown as UserWithFragments).mineSwipeFragments || 0,
       holdingBalance: {
         spinWheels: goldBal.spinWheels || 0,  // GOLD from spin wheel
-        mineSwipe: goldBal.mineSwipe || 0,     // ELIXCOIN from mine swipe
+        mineSwipe: goldBal.mineSwipe || 0,     // GOLD from mine swipe
       },
     };
   }
@@ -167,7 +166,7 @@ export class FragmentService {
   // SPIN WHEEL
   // ───────────────────────────────────────────────────────────────────────
 
-  /** Play the Spin Wheel: deduct 100 fragments, roll reward, credit resources. */
+  /** Play the Spin Wheel: deduct 50 fragments, roll reward, credit resources. */
   async spinWheel(telegramId: string) {
     const user = await this.userModel.findOne({ telegramId }).lean().exec();
     if (!user) return { success: false, error: "User not found" };
@@ -196,11 +195,8 @@ export class FragmentService {
       spinWheelFragments: -SPIN_WHEEL_COST,
     };
 
-    if (selected.type === "ELIXCOIN") {
-      // ELIXCOIN from spin → holding balance (mineSwipe slot used generically)
-      inc["goldBalance.mineSwipe"] = selected.amount;
-    } else {
-      // GOLD / resources from spin → holding balance (spinWheels slot)
+    if (selected.amount > 0) {
+      // GOLD-only → holding balance (spinWheels slot), claimed to cryptoBalances.GOLD
       inc["goldBalance.spinWheels"] = selected.amount;
     }
 
@@ -354,17 +350,37 @@ export class FragmentService {
     // Check if all safe tiles are revealed (auto-win)
     const totalSafe = session.boardSize * session.boardSize - session.mineCount;
     if (session.revealed.length >= totalSafe) {
-      session.status = "won";
-      session.finalReward = session.accumulatedReward;
+      // Full-board win — auto-credit holding immediately so the reward
+      // can't be lost if the client never calls claim afterwards.
+      // Status goes straight to "claimed" to prevent double-credit.
+      const winReward = session.accumulatedReward;
+      session.status = "claimed";
+      session.finalReward = winReward;
       await session.save();
+
+      if (winReward > 0) {
+        await this.userModel
+          .findOneAndUpdate(
+            { telegramId },
+            { $inc: { "goldBalance.mineSwipe": winReward } },
+          )
+          .exec();
+      }
+
+      const winUser = await this.userModel.findOne({ telegramId }).lean().exec();
+      const winGoldBal = ((winUser as unknown as UserWithFragments)?.goldBalance || { spinWheels: 0, mineSwipe: 0 }) as { spinWheels: number; mineSwipe: number };
 
       return {
         success: true,
         hitMine: false,
         gameOver: true,
         won: true,
-        accumulatedReward: session.accumulatedReward,
+        accumulatedReward: winReward,
         revealed: session.revealed,
+        holdingBalance: {
+          spinWheels: winGoldBal.spinWheels || 0,
+          mineSwipe: winGoldBal.mineSwipe || 0,
+        },
       };
     }
 
@@ -403,7 +419,7 @@ export class FragmentService {
     session.finalReward = reward;
     await session.save();
 
-    // Credit ELIXCOIN into HOLDING balance (mineSwipe slot)
+    // Credit GOLD into HOLDING balance (mineSwipe slot)
     if (reward > 0) {
       await this.userModel
         .findOneAndUpdate(
@@ -431,10 +447,21 @@ export class FragmentService {
   // CLAIM HOLDING BALANCES → transfer to cryptoBalances
   // ───────────────────────────────────────────────────────────────────────
 
-  /** Claim spin wheel holding balance → transfers GOLD to cryptoBalances. */
+  /** Claim spin wheel holding balance → transfers GOLD to cryptoBalances.
+   *  Gated by Monetag S2S ad ticket: Claim button shows a rewarded ad first,
+   *  the S2S postback grants the ticket, this endpoint consumes it atomically. */
   async claimSpinWheelBalance(telegramId: string) {
     const user = await this.userModel.findOne({ telegramId }).lean().exec();
     if (!user) return { success: false, error: "User not found" };
+
+    // S2S Anti-Cheat Verification Lock (matches faucet/case-box pattern)
+    if (((user as unknown as UserWithFragments).adTickets ?? 0) < 1) {
+      return {
+        success: false,
+        error:
+          "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
+      };
+    }
 
     const goldBal = (user as unknown as UserWithFragments).goldBalance || { spinWheels: 0, mineSwipe: 0 };
     const amount = goldBal.spinWheels || 0;
@@ -442,14 +469,15 @@ export class FragmentService {
       return { success: false, error: "No GOLD to claim from Spin Wheel" };
     }
 
-    // Atomic: zero out holding + credit cryptoBalances.GOLD
+    // Atomic: zero out holding + credit cryptoBalances.GOLD + consume 1 ad ticket
     const updated = await this.userModel
       .findOneAndUpdate(
-        { telegramId, "goldBalance.spinWheels": { $gt: 0 } },
+        { telegramId, "goldBalance.spinWheels": { $gt: 0 }, adTickets: { $gte: 1 } },
         {
           $inc: {
             "goldBalance.spinWheels": -amount,
             "cryptoBalances.GOLD": amount,
+            adTickets: -1,
           },
         },
         { returnDocument: "after" },
@@ -457,7 +485,7 @@ export class FragmentService {
       .exec();
 
     if (!updated) {
-      return { success: false, error: "Nothing to claim" };
+      return { success: false, error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap to claim again." };
     }
 
     const crypto = (updated.cryptoBalances || {}) as Record<string, number>;
@@ -471,25 +499,37 @@ export class FragmentService {
     };
   }
 
-  /** Claim mine swipe holding balance → transfers ELIXCOIN to cryptoBalances. */
+  /** Claim mine swipe holding balance → transfers GOLD to cryptoBalances.
+   *  Gated by Monetag S2S ad ticket: Claim button shows a rewarded ad first,
+   *  the S2S postback grants the ticket, this endpoint consumes it atomically. */
   async claimMineSwipeBalance(telegramId: string) {
     const user = await this.userModel.findOne({ telegramId }).lean().exec();
     if (!user) return { success: false, error: "User not found" };
 
+    // S2S Anti-Cheat Verification Lock (matches faucet/case-box pattern)
+    if (((user as unknown as UserWithFragments).adTickets ?? 0) < 1) {
+      return {
+        success: false,
+        error:
+          "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
+      };
+    }
+
     const goldBal = (user as unknown as UserWithFragments).goldBalance || { spinWheels: 0, mineSwipe: 0 };
     const amount = goldBal.mineSwipe || 0;
     if (amount <= 0) {
-      return { success: false, error: "No ELIXCOIN to claim from Mine Swipe" };
+      return { success: false, error: "No GOLD to claim from Mine Swipe" };
     }
 
-    // Atomic: zero out holding + credit cryptoBalances.ELIXCOIN
+    // Atomic: zero out holding + credit cryptoBalances.GOLD + consume 1 ad ticket
     const updated = await this.userModel
       .findOneAndUpdate(
-        { telegramId, "goldBalance.mineSwipe": { $gt: 0 } },
+        { telegramId, "goldBalance.mineSwipe": { $gt: 0 }, adTickets: { $gte: 1 } },
         {
           $inc: {
             "goldBalance.mineSwipe": -amount,
-            "cryptoBalances.ELIXCOIN": amount,
+            "cryptoBalances.GOLD": amount,
+            adTickets: -1,
           },
         },
         { returnDocument: "after" },
@@ -497,7 +537,7 @@ export class FragmentService {
       .exec();
 
     if (!updated) {
-      return { success: false, error: "Nothing to claim" };
+      return { success: false, error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap to claim again." };
     }
 
     const crypto = (updated.cryptoBalances || {}) as Record<string, number>;

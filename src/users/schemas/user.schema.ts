@@ -154,7 +154,7 @@ export class User {
   tokenExpiresAt: Date | null;
 
   // ── Fragment system (miner-stone mini-games) ─────────────────────────
-  // Fragments drop randomly when destroying stones. Collect 100 to play:
+  // Fragments drop randomly when destroying stones. Collect 50 to play:
   //   spin-wheel  → lucky wheel spin (stateless, instant reward)
   //   mine-swipe  → minesweeper-style multi-step game
   @Prop({ default: 0 })
@@ -169,7 +169,7 @@ export class User {
   // satisfying cash-out moment and prevents instant abuse.
   //
   // spinWheels  → GOLD rewards from Spin Wheel
-  // mineSwipe   → ELIXCOIN rewards from Mine Swipe
+  // mineSwipe   → GOLD rewards from Mine Swipe
   @Prop({ type: Object, default: { spinWheels: 0, mineSwipe: 0 } })
   goldBalance: { spinWheels: number; mineSwipe: number };
 }

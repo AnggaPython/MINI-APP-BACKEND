@@ -141,10 +141,10 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
     ],
     MEDIUM: [
       "meissen-porcelain",         // (note: re-using visually, but real mapping below)
-      "jade-vase",      // Green Jade Vase
-      "cloisonne",       // Cloisonne Enamel
+      "jade-vase-durability",      // Green Jade Vase (Durability variant — distinct buff from Economy jade-vase)
+      "cloisonne-durability",      // Cloisonne Enamel (Durability variant)
       "goddess-lakshmi",  // Goddess Lakshmi
-      "greek-god",   // Greek God Statue
+      "greek-god-durability",      // Greek God Statue (Durability variant)
       "quartz-crystal",       // Quartz Crystal
       "ruby-stone",            // Ruby Stone
       "sapphire-stone",        // Sapphire Stone
@@ -152,28 +152,28 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
       "amethyst-crystal",     // Amethyst Crystal
     ],
     RARE: [
-      "gem-chest",         // Gemstone Chest
-      "crystal-chest",         // Crystal Chest
+      "gem-chest-durability",      // Gemstone Chest (Durability variant — distinct buff from Economy gem-chest)
+      "crystal-chest-durability",  // Crystal Chest (Durability variant)
       "dragon-orb",    // Dragon Crystal Ball
       "ras-necklace",            // Ra's Necklace
       "solomon-ring",       // Solomon's Ring
       "caduceus",       // Caduceus
       "emperor-crown",       // Emperor's Crown
       "divine-chest",            // Divine Chest
-      "eternal-chest",           // Eternal Chest
+      "eternal-chest-durability",  // Eternal Chest (Durability variant)
       "multiverse-chest",      // Multiverse Chest
     ],
     ULTRA_RARE: [
-      "super-cubist-vase",         // Cubist Vase
+      "cubist-vase",         // Cubist Vase (Durability non-super variant — distinct buff from Economy super-cubist-vase)
       "super-jeweled-vase",         // Jeweled Vase
-      "super-globe-vase",           // Globe Vase
-      "super-millefiori",      // Millefiori Glass
-      "super-greek-amphora",      // Greek Amphora
-      "super-wedgwood-jasper",        // Wedgwood Jasper
-      "super-golden-pharaoh",   // Golden Pharaoh
-      "super-jade-dragon",     // Jade Dragon
-      "super-phoenix-statue",        // Phoenix Statue
-      "super-jade-tortoise",      // Jade Tortoise
+      "globe-vase",           // Globe Vase (Durability non-super variant)
+      "millefiori",      // Millefiori Glass (Durability non-super variant)
+      "greek-amphora",      // Greek Amphora (Durability non-super variant)
+      "wedgwood-jasper",        // Wedgwood Jasper (Durability non-super variant)
+      "golden-pharaoh",   // Golden Pharaoh (Durability non-super variant)
+      "jade-dragon",     // Jade Dragon (Durability non-super variant)
+      "phoenix-statue",        // Phoenix Statue (Durability non-super variant)
+      "jade-tortoise",      // Jade Tortoise (Durability non-super variant)
     ],
   },
 
@@ -204,13 +204,13 @@ const BUFF_ASSIGNMENTS: Record<BuffType, Record<BuffRarity, string[]>> = {
       "egypt-papyrus",       // Egyptian Papyrus
     ],
     RARE: [
-      "mystery-chest",       // Mysterious Chest
-      "sky-chest",          // Sky Chest
-      "dragon-map",            // Dragon Treasure Map
-      "dragon-letter",           // Ancient Dragon Letter
-      "dragon-tome",           // Dragon Tome
-      "dragon-compass",          // Dragon Compass
-      "dragon-seal",           // Dragon Seal
+      "mystery-chest-droprate",    // Mysterious Chest (DropRate variant — distinct buff from Economy mystery-chest)
+      "sky-chest-droprate",        // Sky Chest (DropRate variant)
+      "dragon-map-droprate",       // Dragon Treasure Map (DropRate variant)
+      "dragon-letter-droprate",    // Ancient Dragon Letter (DropRate variant)
+      "dragon-tome-droprate",      // Dragon Tome (DropRate variant)
+      "dragon-compass-droprate",   // Dragon Compass (DropRate variant)
+      "dragon-seal-droprate",      // Dragon Seal (DropRate variant)
       "dragon-chest",            // Dragon Chest
       "hellfire-chest",          // Hellfire Chest
       "kings-gold-chest",       // King's Gold Chest

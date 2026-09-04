@@ -17,7 +17,7 @@ export class FragmentController {
 
   // ── Spin Wheel ─────────────────────────────────────────────────────────
 
-  /** Play the Spin Wheel: costs 100 spin-wheel fragments, instant reward. */
+  /** Play the Spin Wheel: costs 50 spin-wheel fragments, instant reward. */
   @Post("spin-wheel/spin")
   async spinWheel(@User("telegramId") telegramId: string) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
@@ -33,7 +33,7 @@ export class FragmentController {
     return await this.fragmentService.claimSpinWheelBalance(telegramId);
   }
 
-  /** Claim mine swipe ELIXCOIN holding balance → transfers to cryptoBalances.ELIXCOIN. */
+  /** Claim mine swipe GOLD holding balance → transfers to cryptoBalances.GOLD. */
   @Post("mine-swipe/claim-balance")
   async claimMineSwipe(@User("telegramId") telegramId: string) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
@@ -42,7 +42,7 @@ export class FragmentController {
 
   // ── Mine Swipe ─────────────────────────────────────────────────────────
 
-  /** Start a new Mine Swipe game: costs 100 mine-swipe fragments. */
+  /** Start a new Mine Swipe game: costs 50 mine-swipe fragments. */
   @Post("mine-swipe/start")
   async mineSwipeStart(@User("telegramId") telegramId: string) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
