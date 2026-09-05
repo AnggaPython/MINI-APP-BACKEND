@@ -17,9 +17,26 @@ export class TelegramBotService implements OnModuleInit {
   }
 
   onModuleInit() {
-    if (this.botToken) {
-      this.startPolling();
+    // Single-consumer guard: Telegram delivers each getUpdates update to
+    // only ONE poller. Never run two instances (local + production, or two
+    // Railway replicas) with the same TELEGRAM_BOT_TOKEN — they steal
+    // /start updates from each other and referral deep-links get lost.
+    // Set BOT_POLLING_ENABLED=false on every instance except the one that
+    // should answer /start messages.
+    const pollingEnabled = this.configService.get<string>("BOT_POLLING_ENABLED");
+    if (!this.botToken) {
+      this.logger.warn(
+        "TELEGRAM_BOT_TOKEN not set — bot /start replies (referral deep-links) are DISABLED.",
+      );
+      return;
     }
+    if (pollingEnabled === "false") {
+      this.logger.log(
+        "Bot polling disabled via BOT_POLLING_ENABLED=false — another instance owns getUpdates.",
+      );
+      return;
+    }
+    this.startPolling();
   }
 
   private async startPolling() {

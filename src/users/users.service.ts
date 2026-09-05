@@ -181,7 +181,7 @@ export class UsersService {
                             [
                                 {
                                     text: "💰 CLAIM EXTRACTED ELIXIR",
-                                    url: "https://t.me/ElixirAds_bot/app?startapp=earn",
+                                    url: "https://t.me/ElixirAds_bot/ElixirNetwork?startapp=earn",
                                 },
                             ],
                         ],
@@ -267,20 +267,63 @@ export class UsersService {
 
         // Increment Upline achievements upon new valid referral registration
         if (isNewReferralCapture && referredBy) {
-            // Berikan 50 ELIXIR Instan ke saldo utama Upline
-            await this.userModel.updateOne(
-                { telegramId: referredBy },
-                { $inc: { elixirBalance: 50, lifetimeElixir: 50 } }
-            ).catch(console.error);
-
-            await this.achievementsService.incrementProgress(
-                referredBy,
-                [12, 13, 14, 15, 16, 17],
-                1,
-            ).catch(console.error);
+            await this.grantReferralReward(referredBy);
         }
 
         return user;
+    }
+
+    /**
+     * Instant +50 ELIXIR to the upline's main balance + referral milestones.
+     * Shared by auto-capture (sync) and manual code entry (claim-invite).
+     */
+    private async grantReferralReward(uplineTelegramId: string): Promise<void> {
+        // Berikan 50 ELIXIR Instan ke saldo utama Upline
+        await this.userModel.updateOne(
+            { telegramId: uplineTelegramId },
+            { $inc: { elixirBalance: 50, lifetimeElixir: 50 } }
+        ).catch(console.error);
+
+        await this.achievementsService.incrementProgress(
+            uplineTelegramId,
+            [12, 13, 14, 15, 16, 17],
+            1,
+        ).catch(console.error);
+    }
+
+    /**
+     * Manual invite-code binding — fallback for users who entered via the
+     * bot Menu/LAUNCH button (which can never carry a referral param).
+     * Accepts a raw inviter telegram ID or a pasted referral link
+     * (both `?start=` and `?startapp=` formats).
+     */
+    async claimInvite(
+        telegramId: string,
+        code: string,
+    ): Promise<{ user?: User; error?: string }> {
+        const telegramIdStr = telegramId.toString();
+        const match = (code || "").match(/(\d{5,})/);
+        const uplineId = match ? match[1] : "";
+
+        if (!uplineId) return { error: "Invalid invite code." };
+        if (uplineId === telegramIdStr) return { error: "You cannot invite yourself." };
+
+        const user = await this.userModel.findOne({ telegramId: telegramIdStr }).exec();
+        if (!user) return { error: "User not found. Please reopen the app first." };
+        if (user.referredBy) return { error: "An invite code is already bound to your account." };
+
+        const upline = await this.userModel.findOne({ telegramId: uplineId }).exec();
+        if (!upline) return { error: "Inviter not found. Check the code and try again." };
+
+        await this.userModel.updateOne(
+            { telegramId: telegramIdStr },
+            { $set: { referredBy: uplineId } },
+        ).exec();
+        await this.grantReferralReward(uplineId);
+
+        const updated = await this.userModel.findOne({ telegramId: telegramIdStr }).exec();
+        if (!updated) return { error: "User not found. Please reopen the app first." };
+        return { user: updated };
     }
 
     async startMining(

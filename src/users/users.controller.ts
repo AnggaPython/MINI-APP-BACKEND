@@ -131,6 +131,19 @@ export class UsersController {
     };
   }
 
+  // Manual invite-code binding — fallback when the invitee entered via the
+  // bot Menu/LAUNCH button (which cannot carry a referral param).
+  @Post("claim-invite")
+  async claimInvite(
+    @User("telegramId") telegramId: string,
+    @Body("code") code: string,
+  ) {
+    if (!code) return { success: false, error: "Missing invite code" };
+    const result = await this.usersService.claimInvite(telegramId, code);
+    if (result.error) return { success: false, error: result.error };
+    return { success: true, user: result.user };
+  }
+
   @Post("claim-daily")
   async claimDaily(@User("telegramId") telegramId: string) {
     const result = await this.usersService.claimDailyLogin(telegramId);
