@@ -267,21 +267,31 @@ export class UsersService {
 
         // Increment Upline achievements upon new valid referral registration
         if (isNewReferralCapture && referredBy) {
-            await this.grantReferralReward(referredBy);
+            await this.grantReferralReward(
+                referredBy,
+                (username as string) || telegramIdStr,
+            );
         }
 
         return user;
     }
 
     /**
-     * Instant +50 ELIXIR to the upline's main balance + referral milestones.
-     * Shared by auto-capture (sync) and manual code entry (claim-invite).
+     * +50 ELIXIR invite reward into the upline's referral VAULT
+     * (claimable via claim-referral at >= 1000) + a visible Commission
+     * Log row. Shared by auto-capture (sync) and manual code entry
+     * (claim-invite). Kept out of the liquid balance on purpose so
+     * delete-and-rejoin farming is worthless.
      */
-    private async grantReferralReward(uplineTelegramId: string): Promise<void> {
-        // Berikan 50 ELIXIR Instan ke saldo utama Upline
-        await this.userModel.updateOne(
-            { telegramId: uplineTelegramId },
-            { $inc: { elixirBalance: 50, lifetimeElixir: 50 } }
+    private async grantReferralReward(
+        uplineTelegramId: string,
+        downlineUsername: string,
+    ): Promise<void> {
+        await this.creditReferralBonus(
+            uplineTelegramId,
+            50,
+            downlineUsername,
+            "Invite Bonus",
         ).catch(console.error);
 
         await this.achievementsService.incrementProgress(
@@ -319,7 +329,7 @@ export class UsersService {
             { telegramId: telegramIdStr },
             { $set: { referredBy: uplineId } },
         ).exec();
-        await this.grantReferralReward(uplineId);
+        await this.grantReferralReward(uplineId, user.username || telegramIdStr);
 
         const updated = await this.userModel.findOne({ telegramId: telegramIdStr }).exec();
         if (!updated) return { error: "User not found. Please reopen the app first." };
