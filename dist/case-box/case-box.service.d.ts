@@ -43,9 +43,9 @@ export declare class CaseBoxService {
         success: boolean;
         durabilityCost: number;
         box: {
-            caseId: string;
-            tier: CaseTier;
-            maxHp: number;
+            caseId: any;
+            tier: any;
+            maxHp: any;
         };
         error?: undefined;
         cooldownLeft?: undefined;
@@ -59,9 +59,9 @@ export declare class CaseBoxService {
     } | {
         success: boolean;
         exists: boolean;
-        status: string;
-        tier: CaseTier;
-        maxHp: number;
+        status: any;
+        tier: any;
+        maxHp: any;
     }>;
     destroy(telegramId: string, caseId: string): Promise<{
         success: boolean;
@@ -85,8 +85,8 @@ export declare class CaseBoxService {
         levelMultiplier?: undefined;
     } | {
         success: boolean;
-        caseId: string;
-        tier: CaseTier;
+        caseId: any;
+        tier: any;
         outcome: CaseOutcome;
         rarity: CaseTier | null;
         loot: Record<string, number> | null;
@@ -121,14 +121,6 @@ export declare class CaseBoxService {
     }>;
     history(telegramId: string): Promise<{
         success: boolean;
-        history: {
-            caseId: string;
-            tier: CaseTier;
-            maxHp: number;
-            outcome: CaseOutcome | null;
-            rarity: CaseTier | null;
-            loot: Record<string, number>;
-            openedAt: Date | null;
-        }[];
+        history: any;
     }>;
 }

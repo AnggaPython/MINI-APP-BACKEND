@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var BuffItemCollectionsService_1;
+var _a, _b, _c;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BuffItemCollectionsService = void 0;
 const common_1 = require("@nestjs/common");
@@ -176,10 +177,10 @@ const BUFF_ASSIGNMENTS = {
         ],
         MEDIUM: [
             "meissen-porcelain",
-            "jade-vase",
-            "cloisonne",
+            "jade-vase-durability",
+            "cloisonne-durability",
             "goddess-lakshmi",
-            "greek-god",
+            "greek-god-durability",
             "quartz-crystal",
             "ruby-stone",
             "sapphire-stone",
@@ -187,28 +188,28 @@ const BUFF_ASSIGNMENTS = {
             "amethyst-crystal",
         ],
         RARE: [
-            "gem-chest",
-            "crystal-chest",
+            "gem-chest-durability",
+            "crystal-chest-durability",
             "dragon-orb",
             "ras-necklace",
             "solomon-ring",
             "caduceus",
             "emperor-crown",
             "divine-chest",
-            "eternal-chest",
+            "eternal-chest-durability",
             "multiverse-chest",
         ],
         ULTRA_RARE: [
-            "super-cubist-vase",
+            "cubist-vase",
             "super-jeweled-vase",
-            "super-globe-vase",
-            "super-millefiori",
-            "super-greek-amphora",
-            "super-wedgwood-jasper",
-            "super-golden-pharaoh",
-            "super-jade-dragon",
-            "super-phoenix-statue",
-            "super-jade-tortoise",
+            "globe-vase",
+            "millefiori",
+            "greek-amphora",
+            "wedgwood-jasper",
+            "golden-pharaoh",
+            "jade-dragon",
+            "phoenix-statue",
+            "jade-tortoise",
         ],
     },
     DROPRATE: {
@@ -237,13 +238,13 @@ const BUFF_ASSIGNMENTS = {
             "egypt-papyrus",
         ],
         RARE: [
-            "mystery-chest",
-            "sky-chest",
-            "dragon-map",
-            "dragon-letter",
-            "dragon-tome",
-            "dragon-compass",
-            "dragon-seal",
+            "mystery-chest-droprate",
+            "sky-chest-droprate",
+            "dragon-map-droprate",
+            "dragon-letter-droprate",
+            "dragon-tome-droprate",
+            "dragon-compass-droprate",
+            "dragon-seal-droprate",
             "dragon-chest",
             "hellfire-chest",
             "kings-gold-chest",
@@ -620,8 +621,6 @@ exports.BuffItemCollectionsService = BuffItemCollectionsService = BuffItemCollec
     __param(0, (0, mongoose_1.InjectModel)(buff_item_schema_1.BuffItem.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_buff_collection_schema_1.UserBuffCollection.name)),
     __param(2, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object])
 ], BuffItemCollectionsService);
 //# sourceMappingURL=buff-item-collections.service.js.map

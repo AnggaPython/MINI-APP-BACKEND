@@ -5,6 +5,10 @@ import { UsersService } from "./users.service";
 import { UsersController } from "./users.controller";
 import { User, UserSchema } from "./schemas/user.schema";
 import { ReferralLog, ReferralLogSchema } from "./schemas/referral-log.schema";
+import {
+  ReferralNotification,
+  ReferralNotificationSchema,
+} from "./schemas/referral-notification.schema";
 import { HiLoBet, HiLoBetSchema } from "./schemas/hilo-bet.schema";
 import { AchievementsModule } from "../achievements/achievements.module";
 import { AdminModule } from "../admin/admin.module";
@@ -15,6 +19,7 @@ import { TelegramAuthGuard } from "../auth/telegram.guard";
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: ReferralLog.name, schema: ReferralLogSchema },
+      { name: ReferralNotification.name, schema: ReferralNotificationSchema },
       { name: HiLoBet.name, schema: HiLoBetSchema },
     ]),
     forwardRef(() => AchievementsModule),

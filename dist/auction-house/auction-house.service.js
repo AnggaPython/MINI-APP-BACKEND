@@ -12,6 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var AuctionHouseService_1;
+var _a, _b, _c, _d;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuctionHouseService = exports.LISTING_DURATION_MS = exports.COLLATERAL_DEPOSIT = exports.MIN_PRICE_TABLE = void 0;
 const schedule_1 = require("@nestjs/schedule");
@@ -485,10 +486,6 @@ exports.AuctionHouseService = AuctionHouseService = AuctionHouseService_1 = __de
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(2, (0, mongoose_1.InjectModel)(buff_item_schema_1.BuffItem.name)),
     __param(3, (0, mongoose_1.InjectModel)(user_buff_collection_schema_1.UserBuffCollection.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        users_service_1.UsersService])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object, users_service_1.UsersService])
 ], AuctionHouseService);
 //# sourceMappingURL=auction-house.service.js.map

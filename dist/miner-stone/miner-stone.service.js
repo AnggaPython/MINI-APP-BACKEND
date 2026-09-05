@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var MinerStoneService_1;
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MinerStoneService = exports.PICKAXE_TIERS = exports.ELIX_RATES = void 0;
 const common_1 = require("@nestjs/common");
@@ -633,9 +634,7 @@ exports.MinerStoneService = MinerStoneService = MinerStoneService_1 = __decorate
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(mining_stone_schema_1.MiningStone.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        users_service_1.UsersService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService,
         buff_item_collections_service_1.BuffItemCollectionsService,
         leveling_service_1.LevelingService,
         fragment_service_1.FragmentService])

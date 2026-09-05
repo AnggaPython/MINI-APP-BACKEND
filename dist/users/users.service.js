@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var UsersService_1;
+var _a, _b, _c, _d;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = exports.VIP_RANKS = void 0;
 exports.getUserVipRank = getUserVipRank;
@@ -57,7 +58,9 @@ const schedule_1 = require("@nestjs/schedule");
 const messages_constant_1 = require("../bot/messages.constant");
 const user_schema_1 = require("./schemas/user.schema");
 const referral_log_schema_1 = require("./schemas/referral-log.schema");
+const referral_notification_schema_1 = require("./schemas/referral-notification.schema");
 const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
+const bot_links_1 = require("../bot/bot-links");
 const achievements_service_1 = require("../achievements/achievements.service");
 const anchor_prices_1 = require("../constants/anchor-prices");
 const admin_service_1 = require("../admin/admin.service");
@@ -141,14 +144,16 @@ function getUserVipRank(exp) {
 let UsersService = UsersService_1 = class UsersService {
     userModel;
     referralLogModel;
+    referralNotifModel;
     hiloBetModel;
     achievementsService;
     adminService;
     circularCasino;
     logger = new common_1.Logger(UsersService_1.name);
-    constructor(userModel, referralLogModel, hiloBetModel, achievementsService, adminService, circularCasino) {
+    constructor(userModel, referralLogModel, referralNotifModel, hiloBetModel, achievementsService, adminService, circularCasino) {
         this.userModel = userModel;
         this.referralLogModel = referralLogModel;
+        this.referralNotifModel = referralNotifModel;
         this.hiloBetModel = hiloBetModel;
         this.achievementsService = achievementsService;
         this.adminService = adminService;
@@ -202,7 +207,7 @@ let UsersService = UsersService_1 = class UsersService {
                             [
                                 {
                                     text: "💰 CLAIM EXTRACTED ELIXIR",
-                                    url: "https://t.me/ElixirAds_bot/app?startapp=earn",
+                                    url: (0, bot_links_1.miniAppLink)("earn"),
                                 },
                             ],
                         ],
@@ -258,10 +263,50 @@ let UsersService = UsersService_1 = class UsersService {
         }, { returnDocument: "after", upsert: true })
             .exec();
         if (isNewReferralCapture && referredBy) {
-            await this.userModel.updateOne({ telegramId: referredBy }, { $inc: { elixirBalance: 50, lifetimeElixir: 50 } }).catch(console.error);
-            await this.achievementsService.incrementProgress(referredBy, [12, 13, 14, 15, 16, 17], 1).catch(console.error);
+            await this.grantReferralReward(referredBy, username || telegramIdStr, telegramIdStr);
         }
         return user;
+    }
+    VAULT_MIN_CLAIM = 250;
+    async grantReferralReward(uplineTelegramId, downlineUsername, downlineTelegramId) {
+        await this.creditReferralBonus(uplineTelegramId, 50, downlineUsername, "Invite Bonus").catch(console.error);
+        await this.creditReferralBonus(downlineTelegramId, 25, downlineUsername, "Welcome Bonus").catch(console.error);
+        await new this.referralNotifModel({
+            recipientTelegramId: uplineTelegramId,
+            kind: "invite",
+            downlineUsername,
+            amount: 50,
+        }).save().catch(console.error);
+        await new this.referralNotifModel({
+            recipientTelegramId: downlineTelegramId,
+            kind: "welcome",
+            downlineUsername,
+            amount: 25,
+        }).save().catch(console.error);
+        await this.achievementsService.incrementProgress(uplineTelegramId, [12, 13, 14, 15, 16, 17], 1).catch(console.error);
+    }
+    async claimInvite(telegramId, code) {
+        const telegramIdStr = telegramId.toString();
+        const match = (code || "").match(/(\d{5,})/);
+        const uplineId = match ? match[1] : "";
+        if (!uplineId)
+            return { error: "Invalid invite code." };
+        if (uplineId === telegramIdStr)
+            return { error: "You cannot invite yourself." };
+        const user = await this.userModel.findOne({ telegramId: telegramIdStr }).exec();
+        if (!user)
+            return { error: "User not found. Please reopen the app first." };
+        if (user.referredBy)
+            return { error: "An invite code is already bound to your account." };
+        const upline = await this.userModel.findOne({ telegramId: uplineId }).exec();
+        if (!upline)
+            return { error: "Inviter not found. Check the code and try again." };
+        await this.userModel.updateOne({ telegramId: telegramIdStr }, { $set: { referredBy: uplineId } }).exec();
+        await this.grantReferralReward(uplineId, user.username || telegramIdStr, telegramIdStr);
+        const updated = await this.userModel.findOne({ telegramId: telegramIdStr }).exec();
+        if (!updated)
+            return { error: "User not found. Please reopen the app first." };
+        return { user: updated };
     }
     async startMining(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
@@ -473,6 +518,41 @@ let UsersService = UsersService_1 = class UsersService {
         }
         return !!result;
     }
+    async getPendingNotifications(telegramId) {
+        const rows = await this.referralNotifModel
+            .find({ recipientTelegramId: telegramId, ackedAt: null })
+            .sort({ createdAt: 1 })
+            .limit(50)
+            .lean()
+            .exec();
+        return rows.map((r) => {
+            const row = r;
+            return {
+                id: row._id.toString(),
+                kind: row.kind,
+                downlineUsername: row.downlineUsername,
+                amount: row.amount,
+                createdAt: row.createdAt,
+            };
+        });
+    }
+    async ackNotifications(telegramId, ids, via) {
+        if (!Array.isArray(ids) || ids.length === 0)
+            return { acked: 0 };
+        const clean = [...new Set(ids)]
+            .filter((x) => typeof x === "string" && /^[a-f0-9]{24}$/i.test(x))
+            .slice(0, 50);
+        if (clean.length === 0)
+            return { acked: 0 };
+        const res = await this.referralNotifModel
+            .updateMany({
+            _id: { $in: clean },
+            recipientTelegramId: telegramId,
+            ackedAt: null,
+        }, { $set: { ackedAt: new Date(), ackedVia: via || "dismiss" } })
+            .exec();
+        return { acked: res.modifiedCount || 0 };
+    }
     async getReferralStats(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
         const totalReferrals = await this.userModel
@@ -492,12 +572,25 @@ let UsersService = UsersService_1 = class UsersService {
     }
     async claimReferralVault(telegramId) {
         const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user || (user.referralBalance || 0) < 1000)
-            return { error: "Minimum 1000 ELIXIR required to claim vault" };
+        if (!user || (user.referralBalance || 0) < this.VAULT_MIN_CLAIM)
+            return { error: `Minimum ${this.VAULT_MIN_CLAIM} ELIXIR required to claim vault` };
+        if ((user.adTickets || 0) < 1) {
+            return {
+                error: "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
+            };
+        }
         const claimAmount = user.referralBalance;
         const updated = await this.userModel
-            .findOneAndUpdate({ telegramId, referralBalance: { $gte: 1000 } }, {
-            $inc: { elixirBalance: claimAmount, lifetimeElixir: claimAmount },
+            .findOneAndUpdate({
+            telegramId,
+            referralBalance: { $gte: this.VAULT_MIN_CLAIM },
+            adTickets: { $gte: 1 },
+        }, {
+            $inc: {
+                elixirBalance: claimAmount,
+                lifetimeElixir: claimAmount,
+                adTickets: -1,
+            },
             $set: { referralBalance: 0 },
         }, { returnDocument: "after" })
             .exec();
@@ -825,6 +918,13 @@ let UsersService = UsersService_1 = class UsersService {
     async convertDustToElixir(telegramId, coinsToConvert) {
         if (!coinsToConvert || coinsToConvert.length === 0)
             return { error: "No coins selected" };
+        const GAME_COINS = new Set([
+            "ELIXIR", "ELIXCOIN",
+            "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
+        ]);
+        const blocked = coinsToConvert.map((c) => c.toUpperCase()).find((sym) => GAME_COINS.has(sym));
+        if (blocked)
+            return { error: `${blocked} cannot be converted. Only native tokens/coins are convertible to ELIXIR.` };
         const locked = await this.lockUserForWithdrawal(telegramId);
         if (!locked)
             return { error: "A transaction is currently processing, please wait." };
@@ -1168,14 +1268,12 @@ exports.UsersService = UsersService = UsersService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(1, (0, mongoose_1.InjectModel)(referral_log_schema_1.ReferralLog.name)),
-    __param(2, (0, mongoose_1.InjectModel)(hilo_bet_schema_1.HiLoBet.name)),
-    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
-    __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
-    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        achievements_service_1.AchievementsService,
+    __param(2, (0, mongoose_1.InjectModel)(referral_notification_schema_1.ReferralNotification.name)),
+    __param(3, (0, mongoose_1.InjectModel)(hilo_bet_schema_1.HiLoBet.name)),
+    __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => achievements_service_1.AchievementsService))),
+    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
+    __param(6, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object, achievements_service_1.AchievementsService,
         admin_service_1.AdminService,
         circular_casino_service_1.CircularCasinoService])
 ], UsersService);

@@ -13,7 +13,7 @@ export declare class AuctionHouseController {
         collateralDeposit: number;
         listingDurationDays: number;
         auction: {
-            id: string;
+            id: any;
             itemCategory: "buff" | "material";
             instanceId: string | undefined;
             baseItemId: string | undefined;
@@ -23,8 +23,8 @@ export declare class AuctionHouseController {
             price: number;
             tax: number;
             netAmount: number;
-            sellerName: string;
-            listedAt: Date;
+            sellerName: any;
+            listedAt: any;
         };
         error?: undefined;
     } | {
@@ -36,13 +36,13 @@ export declare class AuctionHouseController {
     }): Promise<{
         success: boolean;
         purchased: {
-            instanceId: string | undefined;
-            baseItemId: string;
-            buffType: string;
-            rarity: string;
-            price: number;
-            tax: number;
-            seller: string;
+            instanceId: any;
+            baseItemId: any;
+            buffType: any;
+            rarity: any;
+            price: any;
+            tax: any;
+            seller: any;
         };
         error?: undefined;
     } | {
@@ -53,8 +53,8 @@ export declare class AuctionHouseController {
         auctionId: string;
     }): Promise<{
         success: boolean;
-        instanceId: string | undefined;
-        collateralDeposit: number;
+        instanceId: any;
+        collateralDeposit: any;
         penalty: number;
         returnedDeposit: number;
         error?: undefined;
@@ -81,52 +81,15 @@ export declare class AuctionHouseController {
     }>;
     browseItem(telegramId: string, baseItemId: string): Promise<{
         success: boolean;
-        buffItem: (import("../buff-item-collections/schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        }) | null;
-        listings: {
-            id: string;
-            instanceId: string | undefined;
-            baseItemId: string;
-            sellerId: string;
-            sellerName: string;
-            price: number;
-            tax: number;
-            netAmount: number;
-            listedAt: Date;
-            expiresAt: Date;
-        }[];
+        buffItem: any;
+        listings: any;
     } | {
         success: boolean;
         error: string;
     }>;
     myListings(telegramId: string): Promise<{
         success: boolean;
-        listings: {
-            id: string;
-            instanceId: string | undefined;
-            baseItemId: string;
-            buffType: string;
-            rarity: string;
-            price: number;
-            tax: number;
-            netAmount: number;
-            status: import("./schemas/auction.schema").AuctionStatus;
-            sellerName: string;
-            buyerId: string | null;
-            listedAt: Date;
-            expiresAt: Date;
-            resolvedAt: Date;
-            collateralDeposit: number;
-            collateralReturned: boolean;
-            name: string;
-            description: string;
-            icon: string;
-            buffValue: number;
-            buffUnit: "flat" | "percent";
-        }[];
+        listings: any;
     } | {
         success: boolean;
         error: string;
@@ -134,8 +97,8 @@ export declare class AuctionHouseController {
     getStats(telegramId: string): Promise<{
         success: boolean;
         stats: {
-            totalActive: number;
-            totalSold: number;
+            totalActive: any;
+            totalSold: any;
             totalVolume: any;
             totalTaxCollected: any;
             avgByRarity: any;

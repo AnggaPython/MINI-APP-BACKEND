@@ -9,12 +9,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 var TelegramBotService_1;
+var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TelegramBotService = void 0;
 const common_1 = require("@nestjs/common");
 const schedule_1 = require("@nestjs/schedule");
 const config_1 = require("@nestjs/config");
 const messages_constant_1 = require("./messages.constant");
+const bot_links_1 = require("./bot-links");
 let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
     configService;
     logger = new common_1.Logger(TelegramBotService_1.name);
@@ -25,9 +27,16 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
         this.botToken = this.configService.get("TELEGRAM_BOT_TOKEN") || "";
     }
     onModuleInit() {
-        if (this.botToken) {
-            this.startPolling();
+        const pollingEnabled = this.configService.get("BOT_POLLING_ENABLED");
+        if (!this.botToken) {
+            this.logger.warn("TELEGRAM_BOT_TOKEN not set — bot /start replies (referral deep-links) are DISABLED.");
+            return;
         }
+        if (pollingEnabled === "false") {
+            this.logger.log("Bot polling disabled via BOT_POLLING_ENABLED=false — another instance owns getUpdates.");
+            return;
+        }
+        this.startPolling();
     }
     async startPolling() {
         this.logger.log("Native Telegram Long-Polling engine ignited for Deep Links...");
@@ -69,7 +78,7 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
                         [
                             {
                                 text: "🚀 PLAY ELIXIR NOW",
-                                url: `https://t.me/ElixirAds_bot/ElixirNetwork${referralParam}`,
+                                url: (0, bot_links_1.miniAppLink)(referralParam ? parts[1] : undefined),
                             },
                         ],
                     ],
@@ -109,7 +118,7 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
                     [
                         {
                             text: "🚀 OPEN ELIXIR APP",
-                            url: "https://t.me/ElixirAds_bot?start",
+                            url: (0, bot_links_1.botChatLink)(),
                         },
                     ],
                 ],
@@ -173,7 +182,7 @@ let TelegramBotService = TelegramBotService_1 = class TelegramBotService {
                             [
                                 {
                                     text: "🚀 OPEN APP & REDEEM DROP",
-                                    url: "https://t.me/ElixirAds_bot/ElixirNetwork?startapp=bonus",
+                                    url: (0, bot_links_1.miniAppLink)("bonus"),
                                 },
                             ],
                         ],
@@ -207,6 +216,6 @@ __decorate([
 ], TelegramBotService.prototype, "postDailyVoucherCode", null);
 exports.TelegramBotService = TelegramBotService = TelegramBotService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [config_1.ConfigService])
+    __metadata("design:paramtypes", [typeof (_a = typeof config_1.ConfigService !== "undefined" && config_1.ConfigService) === "function" ? _a : Object])
 ], TelegramBotService);
 //# sourceMappingURL=bot.service.js.map

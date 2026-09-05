@@ -45,6 +45,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var FragmentService_1;
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FragmentService = void 0;
 const common_1 = require("@nestjs/common");
@@ -65,15 +66,9 @@ function randomDropAmount() {
 }
 const SPIN_WHEEL_COST = 50;
 const SPIN_WHEEL_REWARDS = [
-    { weight: 300, reward: { type: "IRON", amount: 50, label: "Iron", color: "#b0b7c3" } },
-    { weight: 550, reward: { type: "COPPER", amount: 30, label: "Copper", color: "#f97316" } },
-    { weight: 700, reward: { type: "SILVER", amount: 10, label: "Silver", color: "#d8dee9" } },
-    { weight: 820, reward: { type: "GOLD", amount: 3, label: "Gold", color: "#facc15" } },
-    { weight: 900, reward: { type: "DIAMOND", amount: 1, label: "Diamond", color: "#22d3ee" } },
-    { weight: 950, reward: { type: "ELIXCOIN", amount: 10, label: "ElixCoin", color: "#a78bfa" } },
-    { weight: 980, reward: { type: "ELIXCOIN", amount: 50, label: "ElixCoin", color: "#a78bfa" } },
-    { weight: 995, reward: { type: "GOLD", amount: 10, label: "Gold ×10", color: "#facc15" } },
-    { weight: 1000, reward: { type: "DIAMOND", amount: 5, label: "Diamond ×5", color: "#22d3ee" } },
+    { weight: 600, reward: { type: "GOLD", amount: 5, label: "5 GOLD", color: "#3b4a5c" } },
+    { weight: 900, reward: { type: "GOLD", amount: 10, label: "10 GOLD", color: "#3a4a5a" } },
+    { weight: 1000, reward: { type: "GOLD", amount: 50, label: "50 GOLD", color: "#405060" } },
 ];
 const MINE_SWIPE_COST = 50;
 const MINE_SWIPE_BOARD_SIZE = 5;
@@ -160,10 +155,7 @@ let FragmentService = FragmentService_1 = class FragmentService {
         const inc = {
             spinWheelFragments: -SPIN_WHEEL_COST,
         };
-        if (selected.type === "ELIXCOIN") {
-            inc["goldBalance.mineSwipe"] = selected.amount;
-        }
-        else {
+        if (selected.amount > 0) {
             inc["goldBalance.spinWheels"] = selected.amount;
         }
         const updated = await this.userModel
@@ -270,16 +262,28 @@ let FragmentService = FragmentService_1 = class FragmentService {
         session.accumulatedReward = Math.round(session.revealed.length * session.rewardPerTile * 100) / 100;
         const totalSafe = session.boardSize * session.boardSize - session.mineCount;
         if (session.revealed.length >= totalSafe) {
-            session.status = "won";
-            session.finalReward = session.accumulatedReward;
+            const winReward = session.accumulatedReward;
+            session.status = "claimed";
+            session.finalReward = winReward;
             await session.save();
+            if (winReward > 0) {
+                await this.userModel
+                    .findOneAndUpdate({ telegramId }, { $inc: { "goldBalance.mineSwipe": winReward } })
+                    .exec();
+            }
+            const winUser = await this.userModel.findOne({ telegramId }).lean().exec();
+            const winGoldBal = (winUser?.goldBalance || { spinWheels: 0, mineSwipe: 0 });
             return {
                 success: true,
                 hitMine: false,
                 gameOver: true,
                 won: true,
-                accumulatedReward: session.accumulatedReward,
+                accumulatedReward: winReward,
                 revealed: session.revealed,
+                holdingBalance: {
+                    spinWheels: winGoldBal.spinWheels || 0,
+                    mineSwipe: winGoldBal.mineSwipe || 0,
+                },
             };
         }
         await session.save();
@@ -329,21 +333,28 @@ let FragmentService = FragmentService_1 = class FragmentService {
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
         if (!user)
             return { success: false, error: "User not found" };
+        if ((user.adTickets ?? 0) < 1) {
+            return {
+                success: false,
+                error: "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
+            };
+        }
         const goldBal = user.goldBalance || { spinWheels: 0, mineSwipe: 0 };
         const amount = goldBal.spinWheels || 0;
         if (amount <= 0) {
             return { success: false, error: "No GOLD to claim from Spin Wheel" };
         }
         const updated = await this.userModel
-            .findOneAndUpdate({ telegramId, "goldBalance.spinWheels": { $gt: 0 } }, {
+            .findOneAndUpdate({ telegramId, "goldBalance.spinWheels": { $gt: 0 }, adTickets: { $gte: 1 } }, {
             $inc: {
                 "goldBalance.spinWheels": -amount,
                 "cryptoBalances.GOLD": amount,
+                adTickets: -1,
             },
         }, { returnDocument: "after" })
             .exec();
         if (!updated) {
-            return { success: false, error: "Nothing to claim" };
+            return { success: false, error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap to claim again." };
         }
         const crypto = (updated.cryptoBalances || {});
         const goldBal2 = (updated.goldBalance || { spinWheels: 0, mineSwipe: 0 });
@@ -358,21 +369,28 @@ let FragmentService = FragmentService_1 = class FragmentService {
         const user = await this.userModel.findOne({ telegramId }).lean().exec();
         if (!user)
             return { success: false, error: "User not found" };
+        if ((user.adTickets ?? 0) < 1) {
+            return {
+                success: false,
+                error: "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
+            };
+        }
         const goldBal = user.goldBalance || { spinWheels: 0, mineSwipe: 0 };
         const amount = goldBal.mineSwipe || 0;
         if (amount <= 0) {
-            return { success: false, error: "No ELIXCOIN to claim from Mine Swipe" };
+            return { success: false, error: "No GOLD to claim from Mine Swipe" };
         }
         const updated = await this.userModel
-            .findOneAndUpdate({ telegramId, "goldBalance.mineSwipe": { $gt: 0 } }, {
+            .findOneAndUpdate({ telegramId, "goldBalance.mineSwipe": { $gt: 0 }, adTickets: { $gte: 1 } }, {
             $inc: {
                 "goldBalance.mineSwipe": -amount,
-                "cryptoBalances.ELIXCOIN": amount,
+                "cryptoBalances.GOLD": amount,
+                adTickets: -1,
             },
         }, { returnDocument: "after" })
             .exec();
         if (!updated) {
-            return { success: false, error: "Nothing to claim" };
+            return { success: false, error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap to claim again." };
         }
         const crypto = (updated.cryptoBalances || {});
         const goldBal2 = (updated.goldBalance || { spinWheels: 0, mineSwipe: 0 });
@@ -409,7 +427,6 @@ exports.FragmentService = FragmentService = FragmentService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(1, (0, mongoose_1.InjectModel)(mine_swipe_session_schema_1.MineSwipeSession.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object])
 ], FragmentService);
 //# sourceMappingURL=fragment.service.js.map

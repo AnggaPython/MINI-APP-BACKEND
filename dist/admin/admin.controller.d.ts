@@ -13,33 +13,25 @@ export declare class AdminController {
     login(body: Record<string, string>, req: Record<string, unknown>): Promise<{
         success: boolean;
         token: string;
-        role: string;
+        role: any;
         error?: undefined;
     } | {
         error: string;
     }>;
     getFeed(): Promise<{
-        totalUsers: number;
+        totalUsers: any;
         totalElixir: any;
         totalAdRevenueUSD: any;
-        recentUsers: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        recentUsers: any;
         success: boolean;
     }>;
     getTopUsers(page?: string, limit?: string): Promise<{
-        users: (import("../users/schemas/user.schema").User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        users: any;
         page: number;
         perPage: number;
-        totalUsers: number;
+        totalUsers: any;
         hasMore: boolean;
-        loadedCount: number;
+        loadedCount: any;
         success: boolean;
     }>;
     getProfitBalances(): Promise<{
@@ -107,7 +99,7 @@ export declare class AdminController {
     }>;
     getProfitLogs(coin: string, page?: string, limit?: string): Promise<{
         success: boolean;
-        logs: import("./schemas/profit-log.schema").ProfitLogDocument[];
+        logs: any[];
         pagination: {
             page: number;
             perPage: number;
@@ -209,9 +201,9 @@ export declare class AdminController {
         nextBotRunAt: Date;
         success: boolean;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -238,9 +230,9 @@ export declare class AdminController {
         lastBotRunAt: Date;
         nextBotRunAt: Date;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -266,9 +258,9 @@ export declare class AdminController {
         nextBotRunAt: Date;
         success: boolean;
         botRunCount: number;
-        botTrades: number;
-        userTrades: number;
-        totalTrades: number;
+        botTrades: any;
+        userTrades: any;
+        totalTrades: any;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;

@@ -5,6 +5,7 @@ import {
   DAILY_DROP_TEMPLATES,
   DAILY_DROP_ANIMATIONS,
 } from "./messages.constant";
+import { miniAppLink, botChatLink } from "./bot-links";
 
 @Injectable()
 export class TelegramBotService implements OnModuleInit {
@@ -90,7 +91,7 @@ export class TelegramBotService implements OnModuleInit {
             [
               {
                 text: "🚀 PLAY ELIXIR NOW",
-                url: `https://t.me/ElixirAds_bot/ElixirNetwork${referralParam}`,
+                url: miniAppLink(referralParam ? parts[1] : undefined),
               },
             ],
           ],
@@ -145,10 +146,10 @@ export class TelegramBotService implements OnModuleInit {
       reply_markup: {
         inline_keyboard: [
           [
-            {
-              text: "🚀 OPEN ELIXIR APP",
-              url: "https://t.me/ElixirAds_bot?start",
-            },
+              {
+                text: "🚀 OPEN ELIXIR APP",
+                url: botChatLink(),
+              },
           ],
         ],
       },
@@ -231,7 +232,7 @@ export class TelegramBotService implements OnModuleInit {
               [
                 {
                   text: "🚀 OPEN APP & REDEEM DROP",
-                  url: "https://t.me/ElixirAds_bot/ElixirNetwork?startapp=bonus",
+                  url: miniAppLink("bonus"),
                 },
               ],
             ],

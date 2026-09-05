@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PickaxeUpgradeService = exports.SKIN_MILESTONES = exports.PICKAXE_UPGRADE_COST = exports.PICKAXE_UPGRADE_PER_LEVEL = exports.PICKAXE_BASE_STATS = exports.MAX_UPGRADE_LEVEL = void 0;
 exports.skinIdFor = skinIdFor;
@@ -375,7 +376,6 @@ exports.PickaxeUpgradeService = PickaxeUpgradeService;
 exports.PickaxeUpgradeService = PickaxeUpgradeService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        leveling_service_1.LevelingService])
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, leveling_service_1.LevelingService])
 ], PickaxeUpgradeService);
 //# sourceMappingURL=pickaxe-upgrade.service.js.map

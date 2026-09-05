@@ -13,7 +13,12 @@ import {
     ReferralLog,
     ReferralLogDocument,
 } from "./schemas/referral-log.schema";
+import {
+    ReferralNotification,
+    ReferralNotificationDocument,
+} from "./schemas/referral-notification.schema";
 import { HiLoBet, HiLoBetDocument } from "./schemas/hilo-bet.schema";
+import { miniAppLink } from "../bot/bot-links";
 import { AchievementsService } from "../achievements/achievements.service";
 import { ANCHOR_USD_PRICES } from "../constants/anchor-prices";
 import { AdminService } from "../admin/admin.service";
@@ -102,6 +107,8 @@ export class UsersService {
         @InjectModel(User.name) private userModel: Model<UserDocument>,
         @InjectModel(ReferralLog.name)
         private referralLogModel: Model<ReferralLogDocument>,
+        @InjectModel(ReferralNotification.name)
+        private referralNotifModel: Model<ReferralNotificationDocument>,
         @InjectModel(HiLoBet.name) private hiloBetModel: Model<HiLoBetDocument>,
         @Inject(forwardRef(() => AchievementsService))
         private achievementsService: AchievementsService,
@@ -181,7 +188,7 @@ export class UsersService {
                             [
                                 {
                                     text: "💰 CLAIM EXTRACTED ELIXIR",
-                                    url: "https://t.me/ElixirAds_bot/ElixirNetwork?startapp=earn",
+                                    url: miniAppLink("earn"),
                                 },
                             ],
                         ],
@@ -270,22 +277,27 @@ export class UsersService {
             await this.grantReferralReward(
                 referredBy,
                 (username as string) || telegramIdStr,
+                telegramIdStr,
             );
         }
 
         return user;
     }
 
+    /** Minimum vault balance to unlock CLAIM (single constant, frontend mirrors it). */
+    private readonly VAULT_MIN_CLAIM = 250;
+
     /**
-     * +50 ELIXIR invite reward into the upline's referral VAULT
-     * (claimable via claim-referral at >= 1000) + a visible Commission
-     * Log row. Shared by auto-capture (sync) and manual code entry
-     * (claim-invite). Kept out of the liquid balance on purpose so
-     * delete-and-rejoin farming is worthless.
+     * Split invite reward — upline +50, downline +25, both into the
+     * referral VAULT (claimable at >= VAULT_MIN_CLAIM with one S2S ad
+     * ticket per claim) + visible Commission Log rows. Kept out of the
+     * liquid balance on purpose so delete-and-rejoin farming is worthless.
+     * Shared by auto-capture (sync) and manual code entry (claim-invite).
      */
     private async grantReferralReward(
         uplineTelegramId: string,
         downlineUsername: string,
+        downlineTelegramId: string,
     ): Promise<void> {
         await this.creditReferralBonus(
             uplineTelegramId,
@@ -293,6 +305,28 @@ export class UsersService {
             downlineUsername,
             "Invite Bonus",
         ).catch(console.error);
+
+        await this.creditReferralBonus(
+            downlineTelegramId,
+            25,
+            downlineUsername,
+            "Welcome Bonus",
+        ).catch(console.error);
+
+        // Queue push-style modals (delivered via /users/sync, acked by client):
+        // congratulations for the upline + welcome pointer for the downline.
+        await new this.referralNotifModel({
+            recipientTelegramId: uplineTelegramId,
+            kind: "invite",
+            downlineUsername,
+            amount: 50,
+        }).save().catch(console.error);
+        await new this.referralNotifModel({
+            recipientTelegramId: downlineTelegramId,
+            kind: "welcome",
+            downlineUsername,
+            amount: 25,
+        }).save().catch(console.error);
 
         await this.achievementsService.incrementProgress(
             uplineTelegramId,
@@ -329,7 +363,7 @@ export class UsersService {
             { telegramId: telegramIdStr },
             { $set: { referredBy: uplineId } },
         ).exec();
-        await this.grantReferralReward(uplineId, user.username || telegramIdStr);
+        await this.grantReferralReward(uplineId, user.username || telegramIdStr, telegramIdStr);
 
         const updated = await this.userModel.findOne({ telegramId: telegramIdStr }).exec();
         if (!updated) return { error: "User not found. Please reopen the app first." };
@@ -638,7 +672,67 @@ export class UsersService {
         return !!result;
     }
 
+        /**
+     * Pending push-style referral modals for this user (oldest first,
+     * capped). Rides along the regular `/users/sync` response — no
+     * realtime transport needed. The client aggregates and acks.
+     */
+    async getPendingNotifications(telegramId: string) {
+        const rows = await this.referralNotifModel
+            .find({ recipientTelegramId: telegramId, ackedAt: null })
+            .sort({ createdAt: 1 })
+            .limit(50)
+            .lean()
+            .exec();
+        return rows.map((r) => {
+            // timestamps:true fields are absent from the class type
+            const row = r as unknown as {
+                _id: { toString(): string };
+                kind: string;
+                downlineUsername: string;
+                amount: number;
+                createdAt: Date;
+            };
+            return {
+                id: row._id.toString(),
+                kind: row.kind,
+                downlineUsername: row.downlineUsername,
+                amount: row.amount,
+                createdAt: row.createdAt,
+            };
+        });
+    }
+
+    /**
+     * Explicit client acknowledgement (X dismissed / CLAIM NOW tapped).
+     * Acked rows never resurface; only brand-new events trigger modals.
+     */
+    async ackNotifications(
+        telegramId: string,
+        ids: string[],
+        via?: string,
+    ): Promise<{ acked: number }> {
+        if (!Array.isArray(ids) || ids.length === 0) return { acked: 0 };
+        // Strict ObjectId shape — malformed ids must not throw CastError.
+        const clean = [...new Set(ids)]
+            .filter((x) => typeof x === "string" && /^[a-f0-9]{24}$/i.test(x))
+            .slice(0, 50);
+        if (clean.length === 0) return { acked: 0 };
+        const res = await this.referralNotifModel
+            .updateMany(
+                {
+                    _id: { $in: clean },
+                    recipientTelegramId: telegramId,
+                    ackedAt: null,
+                },
+                { $set: { ackedAt: new Date(), ackedVia: via || "dismiss" } },
+            )
+            .exec();
+        return { acked: res.modifiedCount || 0 };
+    }
+
     async getReferralStats(telegramId: string) {
+
         const user = await this.userModel.findOne({ telegramId }).exec();
         const totalReferrals = await this.userModel
             .countDocuments({ referredBy: telegramId })
@@ -659,16 +753,36 @@ export class UsersService {
 
     async claimReferralVault(telegramId: string) {
         const user = await this.userModel.findOne({ telegramId }).exec();
-        if (!user || (user.referralBalance || 0) < 1000)
-            return { error: "Minimum 1000 ELIXIR required to claim vault" };
+        if (!user || (user.referralBalance || 0) < this.VAULT_MIN_CLAIM)
+            return { error: `Minimum ${this.VAULT_MIN_CLAIM} ELIXIR required to claim vault` };
+
+        // S2S Anti-Cheat: one server-verified ad view per claim. The
+        // frontend polls this endpoint until the Monetag postback lands
+        // (error prefix MUST stay "ANTI-CHEAT" — the app retries on it).
+        if ((user.adTickets || 0) < 1) {
+            return {
+                error:
+                    "⚠️ ANTI-CHEAT: S2S Timeout. Server did not receive the token. This often happens on slow cellular networks or if the ad was closed early.",
+            };
+        }
 
         const claimAmount = user.referralBalance;
 
+        // Atomic: threshold + ticket consumed in the same update —
+        // concurrent double-claims cannot double-pay.
         const updated = await this.userModel
             .findOneAndUpdate(
-                { telegramId, referralBalance: { $gte: 1000 } },
                 {
-                    $inc: { elixirBalance: claimAmount, lifetimeElixir: claimAmount },
+                    telegramId,
+                    referralBalance: { $gte: this.VAULT_MIN_CLAIM },
+                    adTickets: { $gte: 1 },
+                },
+                {
+                    $inc: {
+                        elixirBalance: claimAmount,
+                        lifetimeElixir: claimAmount,
+                        adTickets: -1,
+                    },
                     $set: { referralBalance: 0 },
                 },
                 { returnDocument: "after" },

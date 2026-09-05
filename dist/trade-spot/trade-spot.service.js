@@ -12,6 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var TradeSpotService_1;
+var _a, _b, _c, _d, _e;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradeSpotService = exports.MINERAL_INITIAL_RATES = exports.CORE_BOT_PAIRS = exports.SPREAD_PCT = exports.FEE_PCT = exports.DEFAULT_PAIR = exports.isItemBase = void 0;
 const common_1 = require("@nestjs/common");
@@ -1470,14 +1471,9 @@ exports.TradeSpotService = TradeSpotService = TradeSpotService_1 = __decorate([
     __param(2, (0, mongoose_1.InjectModel)(open_order_schema_1.OpenOrder.name)),
     __param(3, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(8, (0, mongoose_1.InjectModel)(pending_tp_sl_schema_1.PendingTpSl.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        asset_registry_service_1.AssetRegistryService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object, asset_registry_service_1.AssetRegistryService,
         buff_item_collections_service_1.BuffItemCollectionsService,
         sse_service_1.SseService,
-        item_trade_service_1.ItemTradeService,
-        mongoose_2.Model])
+        item_trade_service_1.ItemTradeService, typeof (_e = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _e : Object])
 ], TradeSpotService);
 //# sourceMappingURL=trade-spot.service.js.map

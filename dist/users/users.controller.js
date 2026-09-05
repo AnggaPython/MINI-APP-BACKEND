@@ -30,7 +30,8 @@ let UsersController = UsersController_1 = class UsersController {
         }
         const referredBy = userData.start_param;
         const result = await this.usersService.syncTelegramUser(userData, referredBy);
-        return { success: true, user: result };
+        const notifications = await this.usersService.getPendingNotifications(telegramId);
+        return { success: true, user: result, notifications };
     }
     async monetagPostback(userid, eventLegacy, rewardLegacy, payoutLegacy, ymid, eventType, rewardEventType, estimatedPrice, telegramId) {
         const resolvedUserId = telegramId ?? userid ?? ymid;
@@ -91,6 +92,19 @@ let UsersController = UsersController_1 = class UsersController {
             user: result.user,
             claimedAmount: result.claimedAmount,
         };
+    }
+    async claimInvite(telegramId, code) {
+        if (!code)
+            return { success: false, error: "Missing invite code" };
+        const result = await this.usersService.claimInvite(telegramId, code);
+        if (result.error)
+            return { success: false, error: result.error };
+        const notifications = await this.usersService.getPendingNotifications(telegramId);
+        return { success: true, user: result.user, notifications };
+    }
+    async ackNotifications(telegramId, ids, via) {
+        const result = await this.usersService.ackNotifications(telegramId, ids, via);
+        return { success: true, acked: result.acked };
     }
     async claimDaily(telegramId) {
         const result = await this.usersService.claimDailyLogin(telegramId);
@@ -252,6 +266,23 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "claimReferral", null);
+__decorate([
+    (0, common_1.Post)("claim-invite"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)("code")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "claimInvite", null);
+__decorate([
+    (0, common_1.Post)("ack-notifications"),
+    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
+    __param(1, (0, common_1.Body)("ids")),
+    __param(2, (0, common_1.Body)("via")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Array, String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "ackNotifications", null);
 __decorate([
     (0, common_1.Post)("claim-daily"),
     __param(0, (0, telegram_user_decorator_1.User)("telegramId")),

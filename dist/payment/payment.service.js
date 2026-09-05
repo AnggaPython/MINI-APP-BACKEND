@@ -48,6 +48,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 var PaymentService_1;
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const common_1 = require("@nestjs/common");
@@ -755,10 +756,7 @@ exports.PaymentService = PaymentService = PaymentService_1 = __decorate([
     __param(2, (0, mongoose_1.InjectModel)(transaction_schema_1.Transaction.name)),
     __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => admin_service_1.AdminService))),
     __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => circular_casino_service_1.CircularCasinoService))),
-    __metadata("design:paramtypes", [config_1.ConfigService,
-        users_service_1.UsersService,
-        mongoose_2.Model,
-        admin_service_1.AdminService,
+    __metadata("design:paramtypes", [typeof (_a = typeof config_1.ConfigService !== "undefined" && config_1.ConfigService) === "function" ? _a : Object, users_service_1.UsersService, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, admin_service_1.AdminService,
         circular_casino_service_1.CircularCasinoService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map

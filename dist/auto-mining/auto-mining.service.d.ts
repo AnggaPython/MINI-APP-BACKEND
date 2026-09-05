@@ -83,9 +83,9 @@ export declare class AutoMiningService {
         };
         today: {
             date: string;
-            usedStone: number;
-            usedCase: number;
-            used: number;
+            usedStone: any;
+            usedCase: any;
+            used: any;
             left: number;
             quota: number;
         };

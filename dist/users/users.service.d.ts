@@ -1,7 +1,8 @@
 import { Model } from "mongoose";
 import { User, UserDocument } from "./schemas/user.schema";
-import { ReferralLog, ReferralLogDocument } from "./schemas/referral-log.schema";
-import { HiLoBet, HiLoBetDocument } from "./schemas/hilo-bet.schema";
+import { ReferralLogDocument } from "./schemas/referral-log.schema";
+import { ReferralNotificationDocument } from "./schemas/referral-notification.schema";
+import { HiLoBetDocument } from "./schemas/hilo-bet.schema";
 import { AchievementsService } from "../achievements/achievements.service";
 import { AdminService } from "../admin/admin.service";
 import { CircularCasinoService } from "../admin/circular-casino.service";
@@ -24,15 +25,22 @@ export declare function getUserVipRank(exp: number): {
 export declare class UsersService {
     private userModel;
     private referralLogModel;
+    private referralNotifModel;
     private hiloBetModel;
     private achievementsService;
     private adminService;
     private circularCasino;
     private readonly logger;
-    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService, adminService: AdminService, circularCasino: CircularCasinoService);
+    constructor(userModel: Model<UserDocument>, referralLogModel: Model<ReferralLogDocument>, referralNotifModel: Model<ReferralNotificationDocument>, hiloBetModel: Model<HiLoBetDocument>, achievementsService: AchievementsService, adminService: AdminService, circularCasino: CircularCasinoService);
     cleanupOldCodeDrops(): Promise<void>;
     notifyFullMining(): Promise<void>;
     syncTelegramUser(userData: Record<string, unknown>, referredBy?: string): Promise<User>;
+    private readonly VAULT_MIN_CLAIM;
+    private grantReferralReward;
+    claimInvite(telegramId: string, code: string): Promise<{
+        user?: User;
+        error?: string;
+    }>;
     startMining(telegramId: string): Promise<{
         user: User | null;
         error?: string;
@@ -57,12 +65,12 @@ export declare class UsersService {
     } | {
         success: boolean;
         token: string;
-        tokenExpiresAt: string;
+        tokenExpiresAt: any;
         user: {
-            telegramId: string;
-            firstName: string;
-            lastName: string;
-            username: string;
+            telegramId: any;
+            firstName: any;
+            lastName: any;
+            username: any;
         };
         error?: undefined;
     }>;
@@ -71,14 +79,14 @@ export declare class UsersService {
     creditCrypto(telegramId: string, coin: string, amount: number): Promise<boolean>;
     creditRewardAndLogTask(telegramId: string, reward: number, campaignId: string): Promise<boolean>;
     creditReferralBonus(uplineTelegramId: string, margin: number, downlineUsername: string, actionHash: string): Promise<boolean>;
+    getPendingNotifications(telegramId: string): Promise<any>;
+    ackNotifications(telegramId: string, ids: string[], via?: string): Promise<{
+        acked: number;
+    }>;
     getReferralStats(telegramId: string): Promise<{
-        referralBalance: number;
-        totalReferrals: number;
-        history: (ReferralLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        referralBalance: any;
+        totalReferrals: any;
+        history: any;
     }>;
     claimReferralVault(telegramId: string): Promise<{
         error: string;
@@ -87,14 +95,8 @@ export declare class UsersService {
         claimedAmount?: undefined;
     } | {
         success: boolean;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
-        claimedAmount: number;
+        user: any;
+        claimedAmount: any;
         error?: undefined;
     }>;
     claimDailyLogin(telegramId: string): Promise<{
@@ -105,13 +107,7 @@ export declare class UsersService {
     } | {
         success: boolean;
         reward: number;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         error?: undefined;
     }>;
     claimVipRank(telegramId: string, rankName: string): Promise<{
@@ -121,13 +117,7 @@ export declare class UsersService {
         reward?: undefined;
     } | {
         success: boolean;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         reward: number;
         error?: undefined;
     }>;
@@ -142,13 +132,7 @@ export declare class UsersService {
         success: boolean;
         finalNum: number;
         reward: number;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         error?: undefined;
     }>;
     claimCodeDrop(telegramId: string, code: string): Promise<{
@@ -158,13 +142,7 @@ export declare class UsersService {
         reward?: undefined;
     } | {
         success: boolean;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         reward: number;
         error?: undefined;
     }>;
@@ -177,42 +155,30 @@ export declare class UsersService {
     } | {
         success: boolean;
         reward: number;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         mock: boolean;
         error?: undefined;
     } | {
         success: boolean;
         reward: number;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         error?: undefined;
         mock?: undefined;
     }>;
     getBalance(telegramId: string): Promise<{
-        elixirBalance: number;
-        cryptoBalances: Record<string, number>;
+        elixirBalance: any;
+        cryptoBalances: any;
         materials: Record<string, number>;
-        ownedPickaxes: string[];
-        cwalletUid: string | null;
-        solanaAddress: string | null;
+        ownedPickaxes: any;
+        cwalletUid: any;
+        solanaAddress: any;
         withdrawLimits: Record<string, number>;
-        lifetimeElixir: number;
-        lastFaucetRoll: Date | null;
-        totalReferrals: number;
-        exp: number;
+        lifetimeElixir: any;
+        lastFaucetRoll: any;
+        totalReferrals: any;
+        exp: any;
         vipExp: number;
-        gameExp: number;
+        gameExp: any;
         isBanned: boolean;
     }>;
     bindCwalletUid(telegramId: string, uid: string): Promise<{
@@ -221,13 +187,7 @@ export declare class UsersService {
         user?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | null;
+        user: any;
         error?: undefined;
     }>;
     bindSolanaAddress(telegramId: string, address: string): Promise<{
@@ -236,13 +196,7 @@ export declare class UsersService {
         user?: undefined;
     } | {
         success: boolean;
-        user: (import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        }) | null;
+        user: any;
         error?: undefined;
     }>;
     private priceCache;
@@ -256,13 +210,7 @@ export declare class UsersService {
         spread?: undefined;
     } | {
         success: boolean;
-        user: import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        } & {
-            id: string;
-        };
+        user: any;
         received: number;
         gross: number;
         spread: number;
@@ -277,8 +225,8 @@ export declare class UsersService {
     } | {
         success: boolean;
         elixirGained: number;
-        newElixirBalance: number;
-        cryptoBalances: Record<string, number>;
+        newElixirBalance: any;
+        cryptoBalances: any;
         error?: undefined;
     }>;
     executeHiLoBet(telegramId: string, betAmount: number, multiplier: number, type: "hi" | "lo"): Promise<{
@@ -300,7 +248,7 @@ export declare class UsersService {
         thresholdLO: number;
         isWin: boolean;
         profit: number;
-        newBalance: number;
+        newBalance: any;
         vestingLocked: number;
         vestingTurnoverRequired: number;
         circularMeta: Record<string, unknown>;
@@ -312,41 +260,29 @@ export declare class UsersService {
         thresholdLO: number;
         isWin: boolean;
         profit: number;
-        newBalance: number;
+        newBalance: any;
         error: string;
         vestingLocked?: undefined;
         vestingTurnoverRequired?: undefined;
         circularMeta?: undefined;
     }>;
-    getHiLoHistory(telegramId: string): Promise<(HiLoBet & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-        _id: import("mongoose").Types.ObjectId;
-    }> & {
-        __v: number;
-    })[]>;
+    getHiLoHistory(telegramId: string): Promise<any>;
     searchUserForAdmin(query: string): Promise<User | null>;
     updateUserBalanceAdmin(telegramId: string, elixirBalance?: number, cryptoBalances?: Record<string, number>): Promise<User | null>;
     setUserBanStatus(telegramId: string, isBanned: boolean): Promise<User | null>;
     getDashboardStatsAdmin(): Promise<{
-        totalUsers: number;
+        totalUsers: any;
         totalElixir: any;
         totalAdRevenueUSD: any;
-        recentUsers: (User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        recentUsers: any;
     }>;
     getTopUsersPaginated(page?: number, perPage?: number): Promise<{
-        users: (User & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
+        users: any;
         page: number;
         perPage: number;
-        totalUsers: number;
+        totalUsers: any;
         hasMore: boolean;
-        loadedCount: number;
+        loadedCount: any;
     }>;
     lockUserForWithdrawal(telegramId: string): Promise<boolean>;
     unlockUserWithdrawal(telegramId: string): Promise<void>;

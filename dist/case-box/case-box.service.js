@@ -44,6 +44,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CaseBoxService = exports.CASE_MATERIALS = exports.CASE_DURABILITY_COST = exports.CASE_HP_BANDS = exports.MATERIAL_AMOUNTS = exports.ELIXCOIN_BANDS = exports.BUFF_RARITY_WEIGHTS = exports.LOOT_RARITY_WEIGHTS = exports.OUTCOME_WEIGHTS = exports.CASE_TIER_WEIGHTS = void 0;
 const common_1 = require("@nestjs/common");
@@ -595,9 +596,7 @@ exports.CaseBoxService = CaseBoxService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(case_box_schema_1.CaseBox.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        users_service_1.UsersService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, users_service_1.UsersService,
         buff_item_collections_service_1.BuffItemCollectionsService,
         leveling_service_1.LevelingService])
 ], CaseBoxService);

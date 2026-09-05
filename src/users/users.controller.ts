@@ -24,7 +24,10 @@ export class UsersController {
       userData,
       referredBy,
     );
-    return { success: true, user: result };
+    // Piggyback pending referral modals (zero extra connections).
+    const notifications =
+      await this.usersService.getPendingNotifications(telegramId);
+    return { success: true, user: result, notifications };
   }
 
   // --- PUBLIC: Monetag S2S postback — no Telegram auth available in S2S context ---
@@ -141,7 +144,26 @@ export class UsersController {
     if (!code) return { success: false, error: "Missing invite code" };
     const result = await this.usersService.claimInvite(telegramId, code);
     if (result.error) return { success: false, error: result.error };
-    return { success: true, user: result.user };
+    // Return the fresh welcome modal immediately (no waiting for next sync).
+    const notifications =
+      await this.usersService.getPendingNotifications(telegramId);
+    return { success: true, user: result.user, notifications };
+  }
+
+  // Explicit modal acknowledgement (X dismissed / CLAIM NOW tapped).
+  // Acked events never resurface; only brand-new events trigger modals.
+  @Post("ack-notifications")
+  async ackNotifications(
+    @User("telegramId") telegramId: string,
+    @Body("ids") ids: string[],
+    @Body("via") via: string,
+  ) {
+    const result = await this.usersService.ackNotifications(
+      telegramId,
+      ids,
+      via,
+    );
+    return { success: true, acked: result.acked };
   }
 
   @Post("claim-daily")

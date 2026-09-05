@@ -12,6 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var AutoMiningService_1;
+var _a, _b, _c, _d, _e;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AutoMiningService = exports.AUTO_DAILY_QUOTA = exports.AUTO_PLAN_DAYS = exports.AUTO_PLAN_FEE_ELIXIR = void 0;
 const common_1 = require("@nestjs/common");
@@ -629,12 +630,7 @@ exports.AutoMiningService = AutoMiningService = AutoMiningService_1 = __decorate
     __param(2, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(3, (0, mongoose_1.InjectModel)(mining_stone_schema_1.MiningStone.name)),
     __param(4, (0, mongoose_1.InjectModel)(case_box_schema_1.CaseBox.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        mongoose_2.Model,
-        miner_stone_service_1.MinerStoneService,
+    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object, typeof (_e = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _e : Object, miner_stone_service_1.MinerStoneService,
         case_box_service_1.CaseBoxService,
         buff_item_collections_service_1.BuffItemCollectionsService])
 ], AutoMiningService);

@@ -12,9 +12,9 @@ export declare class CaseBoxController {
         success: boolean;
         durabilityCost: number;
         box: {
-            caseId: string;
-            tier: import("./schemas/case-box.schema").CaseTier;
-            maxHp: number;
+            caseId: any;
+            tier: any;
+            maxHp: any;
         };
         error?: undefined;
         cooldownLeft?: undefined;
@@ -31,17 +31,17 @@ export declare class CaseBoxController {
     } | {
         success: boolean;
         exists: boolean;
-        status: string;
-        tier: import("./schemas/case-box.schema").CaseTier;
-        maxHp: number;
+        status: any;
+        tier: any;
+        maxHp: any;
     } | {
         success: boolean;
         error: string;
     }>;
     destroyCase(telegramId: string, caseId: string): Promise<{
         success: boolean;
-        caseId: string;
-        tier: import("./schemas/case-box.schema").CaseTier;
+        caseId: any;
+        tier: any;
         outcome: import("./schemas/case-box.schema").CaseOutcome;
         rarity: import("./schemas/case-box.schema").CaseTier | null;
         loot: Record<string, number> | null;
@@ -76,15 +76,7 @@ export declare class CaseBoxController {
     }>;
     history(telegramId: string): Promise<{
         success: boolean;
-        history: {
-            caseId: string;
-            tier: import("./schemas/case-box.schema").CaseTier;
-            maxHp: number;
-            outcome: import("./schemas/case-box.schema").CaseOutcome | null;
-            rarity: import("./schemas/case-box.schema").CaseTier | null;
-            loot: Record<string, number>;
-            openedAt: Date | null;
-        }[];
+        history: any;
     } | {
         success: boolean;
         error: string;
