@@ -1056,6 +1056,16 @@ export class UsersService {
         if (!coinsToConvert || coinsToConvert.length === 0)
             return { error: "No coins selected" };
 
+        // Convert is for NATIVE tokens/coins only — game economy coins
+        // (ELIXIR, ELIXCOIN, minerals) are never convertible here.
+        const GAME_COINS = new Set([
+            "ELIXIR", "ELIXCOIN",
+            "IRON", "COPPER", "SILVER", "GOLD", "DIAMOND",
+        ]);
+        const blocked = coinsToConvert.map((c) => c.toUpperCase()).find((sym) => GAME_COINS.has(sym));
+        if (blocked)
+            return { error: `${blocked} cannot be converted. Only native tokens/coins are convertible to ELIXIR.` };
+
         const locked = await this.lockUserForWithdrawal(telegramId);
         if (!locked)
             return { error: "A transaction is currently processing, please wait." };
