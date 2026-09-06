@@ -49,6 +49,16 @@ export class TradeSpotController {
     return this.tradeSpotService.getTrades(Number(limit) || 30, pair);
   }
 
+  /** OHLCV candles from the real trade tape — powers the price chart. */
+  @Get("candles")
+  async candles(
+    @Query("pair") pair?: string,
+    @Query("interval") interval?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.tradeSpotService.getCandles(pair, interval, Number(limit) || 120);
+  }
+
   /** Market-maker + platform pool stats (legacy Bots-tab payload). */
   @Get("stats")
   async stats(@Query("pair") pair?: string) {

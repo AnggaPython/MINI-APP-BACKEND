@@ -451,23 +451,10 @@ export class TradeSpotService {
       .lean();
     const close = lastTrade?.price || anchorMid;
 
-    // ── Cosmetic change% — refresh every hour with random value
-    // Real change% is always 0 for fixed-rate pairs, so we use a
-    // cosmetic random value (-1.56% to +2.27%) for realistic UI.
-    let cosmeticPct = pool.cosmeticChangePct || 0;
-    const cosmeticAge = pool.cosmeticPctUpdatedAt
-      ? now - pool.cosmeticPctUpdatedAt.getTime()
-      : Infinity;
-    if (cosmeticAge > 3600_000) {
-      // Refresh: random between -1.56 and +2.27
-      cosmeticPct = -1.56 + Math.random() * (2.27 - (-1.56)); // -1.56 to +2.27
-      await this.poolModel.updateOne(
-        { pair },
-        { $set: { cosmeticChangePct: cosmeticPct, cosmeticPctUpdatedAt: new Date() } },
-      );
-      pool.cosmeticChangePct = cosmeticPct;
-      pool.cosmeticPctUpdatedAt = new Date();
-    }
+    // ── REAL 24h change% — last vs daily open. No more cosmetic random
+    // values: every % shown anywhere (pair header, dropdown, marketplace
+    // cards, trade widget) now traces to real prints, matching the chart.
+    const changePct = open > 0 ? round4(((close - open) / open) * 100) : 0;
 
     const result = {
       success: true,
@@ -475,7 +462,7 @@ export class TradeSpotService {
       base,
       quote,
       last: round8(close),
-      changePct: round4(cosmeticPct),
+      changePct,
       high: round8(high),
       low: round8(low),
       volume: round2(volume),
@@ -716,6 +703,61 @@ export class TradeSpotService {
   }
 
   // ── Trade history feed (cached 5s, shared across users) ────────────────
+  /**
+   * OHLCV candles aggregated from the REAL trade tape (bot + user fills —
+   * every print lands here, so the chart can never diverge from the tape).
+   * Buckets are UTC-aligned; time is unix seconds (lightweight-charts UTCTimestamp).
+   */
+  async getCandles(pair = DEFAULT_PAIR, interval = "15m", limit = 120) {
+    const INTERVALS: Record<string, { unit: string; binSize: number; seconds: number }> = {
+      "1m": { unit: "minute", binSize: 1, seconds: 60 },
+      "5m": { unit: "minute", binSize: 5, seconds: 300 },
+      "15m": { unit: "minute", binSize: 15, seconds: 900 },
+      "1H": { unit: "hour", binSize: 1, seconds: 3600 },
+      "4H": { unit: "hour", binSize: 4, seconds: 14400 },
+      "1D": { unit: "day", binSize: 1, seconds: 86400 },
+    };
+    const cfg = INTERVALS[interval] || INTERVALS["15m"];
+    const resolvedInterval = INTERVALS[interval] ? interval : "15m";
+    const n = Math.max(5, Math.min(500, Math.floor(limit || 120)));
+    const since = new Date(Date.now() - cfg.seconds * n * 1000);
+
+    const rows = await this.tradeModel
+      .aggregate([
+        { $match: { pair, createdAt: { $gte: since } } },
+        { $sort: { createdAt: 1 } },
+        {
+          $group: {
+            _id: { $dateTrunc: { date: "$createdAt", unit: cfg.unit, binSize: cfg.binSize } },
+            open: { $first: "$price" },
+            high: { $max: "$price" },
+            low: { $min: "$price" },
+            close: { $last: "$price" },
+            volume: { $sum: "$amount" },
+            trades: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+        { $limit: n },
+      ])
+      .exec();
+
+    return {
+      success: true,
+      pair,
+      interval: resolvedInterval,
+      candles: rows.map((r) => ({
+        time: Math.floor(new Date(r._id).getTime() / 1000),
+        open: round8(r.open),
+        high: round8(r.high),
+        low: round8(r.low),
+        close: round8(r.close),
+        volume: round2(r.volume || 0),
+        trades: r.trades || 0,
+      })),
+    };
+  }
+
   async getTrades(limit = 30, pair = DEFAULT_PAIR) {
     const now = Date.now();
     const n = Math.max(1, Math.min(100, Math.floor(limit || 30)));
