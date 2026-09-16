@@ -528,6 +528,43 @@ export class TradeSpotService {
     // Refills always land near the touch (levelStep 0.12%), never far away.
     const dayNum = Math.floor(now / 86400000);
     const pairSeed = hashStr(pair);
+
+    // [HONESTY CLAMP EDGES]
+    // Non-matchable visuals (synthetic ladder, admin walls) must never print
+    // INSIDE the pool spread. The engine only fills at pool ask/bid.
+    const poolAskEdge = round8(pool.lastMid * (1 + pool.spreadPct / 2));
+    const poolBidEdge = round8(pool.lastMid * (1 - pool.spreadPct / 2));
+
+    // [TRADE IMPACT] Asymmetric orderbook — lagging opposite side after user trade.
+    const impact = this.lastUserTradeImpact.get(pair);
+    const savedMid = this.previousMid.get(pair) ?? mid;
+    let askLagMid = mid;
+    let bidLagMid = mid;
+    if (impact) {
+      const elapsed = Date.now() - impact.time;
+      const DECAY_MS = 60_000;
+      if (elapsed < DECAY_MS) {
+        const decay = 1 - elapsed / DECAY_MS; // 1.0 → 0.0
+        const intensity = Math.min(1, impact.impact / 0.015);
+        const lag = decay * intensity; // how much the opposite side lags (1.0 = full lag)
+
+        if (impact.side === "BUY") {
+          // Whale bought → asks swept → bid side uses LAGGING mid
+          bidLagMid = mid - (mid - savedMid) * lag;
+        } else {
+          // Whale sold → bids swept → ask side uses LAGGING mid
+          askLagMid = mid + (savedMid - mid) * lag;
+        }
+      } else {
+        this.lastUserTradeImpact.delete(pair);
+        this.previousMid.delete(pair);
+      }
+    }
+
+    // Anchor synthetic ladder starting points to pool edges so each level is guaranteed distinct
+    const baseAskPrice = Math.max(poolAskEdge, round8(askLagMid + halfSpreadRaw));
+    const baseBidPrice = Math.min(poolBidEdge, round8(bidLagMid - halfSpreadRaw));
+
     for (let i = 0; i < safeDepth; i++) {
       const rngDepthAsks = mulberry32((pairSeed + dayNum * 1000003 + i * 5123) >>> 0);
       const rngDepthBids = mulberry32((pairSeed + dayNum * 1000033 + i * 7919) >>> 0);
@@ -542,59 +579,15 @@ export class TradeSpotService {
           ? 2_000_000 + rngDepthBids() * 1_500_000
           : 150_000 + rngDepthBids() * 600_000;
 
-      // Ascending asks, descending bids — guaranteed distinct and never negative
-      const askPrice = round8(mid + halfSpreadRaw + levelStep * i);
+      // Ascending asks starting from baseAskPrice, descending bids starting from baseBidPrice
+      const askPrice = round8(baseAskPrice + levelStep * i);
       asks.push({ price: askPrice, amount: round2(askBase) });
 
-      const bidPrice = round8(mid - halfSpreadRaw - levelStep * i);
-      bids.push({ price: bidPrice, amount: round2(bidBase) });
-    }
-
-    // [TRADE IMPACT] Asymmetric orderbook — lagging opposite side after user trade.
-    // After a BUY sweep: bids lag behind (user can't instant sellback at new prices).
-    // After a SELL sweep: asks lag behind (user can't instant buyback at new prices).
-    // Lag gradually catches up over 60 seconds.
-    const impact = this.lastUserTradeImpact.get(pair);
-    const savedMid = this.previousMid.get(pair) ?? mid;
-    if (impact) {
-      const elapsed = Date.now() - impact.time;
-      const DECAY_MS = 60_000;
-      if (elapsed < DECAY_MS) {
-        const decay = 1 - elapsed / DECAY_MS; // 1.0 → 0.0
-        const intensity = Math.min(1, impact.impact / 0.015);
-        const lag = decay * intensity; // how much the opposite side lags (1.0 = full lag)
-
-        if (impact.side === "BUY") {
-          // Whale bought → asks swept → bid side uses LAGGING mid
-          // bidMid = mid - (mid - savedMid) * lag → starts at savedMid, catches up to mid
-          const bidLagMid = mid - (mid - savedMid) * lag;
-          for (let i = 0; i < bids.length; i++) {
-            bids[i].price = round8(bidLagMid - halfSpreadRaw - levelStep * i);
-          }
-        } else {
-          // Whale sold → bids swept → ask side uses LAGGING mid
-          // askMid = mid + (savedMid - mid) * lag → starts at savedMid, catches up to mid
-          const askLagMid = mid + (savedMid - mid) * lag;
-          for (let i = 0; i < asks.length; i++) {
-            asks[i].price = round8(askLagMid + halfSpreadRaw + levelStep * i);
-          }
-        }
-      } else {
-        this.lastUserTradeImpact.delete(pair);
-        this.previousMid.delete(pair);
+      const bidPrice = round8(baseBidPrice - levelStep * i);
+      if (bidPrice > 0) {
+        bids.push({ price: bidPrice, amount: round2(bidBase) });
       }
     }
-
-    // [HONESTY CLAMP] Non-matchable visuals (synthetic ladder incl. whale
-    // lag, admin walls) must never print INSIDE the pool spread. The engine
-    // only fills at pool ask/bid, so a printed price inside the spread
-    // promises a fill that can never happen (the "crossed book" confusion:
-    // "my buy above the red ask didn't fill"). Real resting user orders
-    // are NOT clamped — since user-vs-user matching, they truly fill.
-    const poolAskEdge = round8(pool.lastMid * (1 + pool.spreadPct / 2));
-    const poolBidEdge = round8(pool.lastMid * (1 - pool.spreadPct / 2));
-    for (const a of asks) a.price = round8(Math.max(a.price, poolAskEdge));
-    for (const b of bids) b.price = round8(Math.min(b.price, poolBidEdge));
 
     // [NEW] Merge active user Limit Orders into the AMM visual depth
     // Tag isMine=true for orders belonging to the current user so the
@@ -604,10 +597,19 @@ export class TradeSpotService {
       .limit(200)
       .lean()
       .exec();
+    const [baseAsset] = pair.split("/");
+    const minOrderLimit = TRADE_LIMITS[baseAsset]?.min ?? 1;
     for (const o of openOrders) {
       if (!isFinite(o.price) || o.price <= 0) continue;
       const remaining = (o.amount || 0) - (o.filledAmount || 0);
-      if (remaining <= 0) continue;
+      if (remaining < minOrderLimit * 0.9) {
+        // Purge dust/micro orders below minimum trade limit from DB & orderbook
+        this.orderModel
+          .updateOne({ _id: o._id, status: "OPEN" }, { $set: { status: "FILLED" } })
+          .exec()
+          .catch(() => {});
+        continue;
+      }
 
       const isMine = !!telegramId && o.telegramId === telegramId;
       const targetList = o.side === "SELL" ? asks : bids;
@@ -653,22 +655,23 @@ export class TradeSpotService {
     asks.sort((a, b) => a.price - b.price);
     bids.sort((a, b) => b.price - a.price);
 
-    // [DEDUP] The honesty clamp can squeeze several levels onto the same
-    // pool-edge price (plus users/walls landing exactly on a synthetic
-    // level). Consolidate by price so each row is unique — duplicate
-    // prices break React keys downstream and double-count depth bars.
+    // [DEDUP & CONSOLIDATE] Consolidate by price so each row is unique.
+    // Filter out zero/dust amounts to prevent "0 AMOUNT" rows.
     const consolidate = (levels: { price: number; amount: number; isMine?: boolean }[]) => {
       const map = new Map<number, { price: number; amount: number; isMine?: boolean }>();
       for (const l of levels) {
+        if (!isFinite(l.amount) || l.amount <= 0.000001) continue;
         const hit = map.get(l.price);
         if (hit) {
-          hit.amount = round2(hit.amount + l.amount);
+          hit.amount = hit.amount + l.amount;
           if (l.isMine) hit.isMine = true;
         } else {
           map.set(l.price, { price: l.price, amount: l.amount, ...(l.isMine ? { isMine: true } : {}) });
         }
       }
-      return [...map.values()];
+      return [...map.values()]
+        .map((x) => ({ ...x, amount: round2(x.amount) }))
+        .filter((x) => x.amount > 0.000001);
     };
 
     // Clamp to requested depth after injected users + admin walls
@@ -1642,7 +1645,9 @@ export class TradeSpotService {
         continue; // stale maker → skip to next
       }
       const newFilled = round2((m.filledAmount || 0) + (res.filledBase || 0));
-      const done = newFilled >= round2(m.amount || 0) - 1e-9;
+      const [baseAsset] = pair.split("/");
+      const minOrderLimit = TRADE_LIMITS[baseAsset]?.min ?? 1;
+      const done = (m.amount || 0) - newFilled < minOrderLimit * 0.9;
       await this.orderModel
         .updateOne({ _id: m._id, status: "OPEN" }, { $set: { filledAmount: newFilled, status: done ? "FILLED" : "OPEN" } })
         .exec();

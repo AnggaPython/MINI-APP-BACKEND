@@ -29,9 +29,9 @@ export declare class AutoMiningController {
         };
         today: {
             date: string;
-            usedStone: any;
-            usedCase: any;
-            used: any;
+            usedStone: number;
+            usedCase: number;
+            used: number;
             left: number;
             quota: number;
         };

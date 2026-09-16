@@ -45,7 +45,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var FragmentService_1;
-var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FragmentService = void 0;
 const common_1 = require("@nestjs/common");
@@ -427,6 +426,7 @@ exports.FragmentService = FragmentService = FragmentService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(1, (0, mongoose_1.InjectModel)(mine_swipe_session_schema_1.MineSwipeSession.name)),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model])
 ], FragmentService);
 //# sourceMappingURL=fragment.service.js.map

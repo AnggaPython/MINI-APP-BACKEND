@@ -5,9 +5,13 @@ export declare class BuffItemCollectionsController {
     constructor(service: BuffItemCollectionsService);
     getAll(): Promise<{
         success: boolean;
-        items: any;
+        items: (import("./schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         meta: {
-            total: any;
+            total: number;
             buffTypes: string[];
             rarities: string[];
             buffTypeMeta: Record<BuffType, {
@@ -21,7 +25,11 @@ export declare class BuffItemCollectionsController {
     }>;
     getByType(type: string): Promise<{
         success: boolean;
-        items: any;
+        items: (import("./schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         meta: {
             label: string;
             description: string;
@@ -34,10 +42,32 @@ export declare class BuffItemCollectionsController {
     }>;
     getMyCollection(telegramId: string): Promise<{
         success: boolean;
-        inventory: any;
-        activeInstanceIds: any;
-        ownedItems: any;
-        activeItems: any;
+        inventory: import("./schemas/user-buff-collection.schema").ItemInstance[];
+        activeInstanceIds: string[];
+        ownedItems: {
+            instanceId: string;
+            baseItemId: string;
+            acquiredAt: Date;
+            buffType: BuffType | undefined;
+            rarity: import("./schemas/buff-item.schema").BuffRarity | undefined;
+            buffValue: number | undefined;
+            buffUnit: "flat" | "percent" | undefined;
+            name: string | undefined;
+            description: string | undefined;
+            icon: string | undefined;
+        }[];
+        activeItems: {
+            instanceId: string;
+            baseItemId: string;
+            acquiredAt: Date;
+            buffType: BuffType | undefined;
+            rarity: import("./schemas/buff-item.schema").BuffRarity | undefined;
+            buffValue: number | undefined;
+            buffUnit: "flat" | "percent" | undefined;
+            name: string | undefined;
+            description: string | undefined;
+            icon: string | undefined;
+        }[];
         totals: Record<BuffType, number>;
     } | {
         success: boolean;
@@ -57,7 +87,7 @@ export declare class BuffItemCollectionsController {
     }>;
     activate(telegramId: string, buffId: string): Promise<{
         success: boolean;
-        activeInstanceIds: any;
+        activeInstanceIds: string[];
         error?: undefined;
     } | {
         success: boolean;
@@ -65,7 +95,7 @@ export declare class BuffItemCollectionsController {
     }>;
     deactivate(telegramId: string, buffId: string): Promise<{
         success: boolean;
-        activeInstanceIds: any;
+        activeInstanceIds: string[];
         error?: undefined;
     } | {
         success: boolean;
@@ -73,8 +103,8 @@ export declare class BuffItemCollectionsController {
     }>;
     activateAllByType(telegramId: string, type: string): Promise<{
         success: boolean;
-        activated: any;
-        activeInstanceIds: any;
+        activated: number;
+        activeInstanceIds: string[];
         error?: undefined;
     } | {
         success: boolean;
@@ -88,7 +118,11 @@ export declare class BuffItemCollectionsController {
         message?: undefined;
     } | {
         success: boolean;
-        buffItem: any;
+        buffItem: import("./schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        };
         instanceId: `${string}-${string}-${string}-${string}-${string}`;
         message: string;
         error?: undefined;
@@ -101,7 +135,11 @@ export declare class BuffItemCollectionsController {
         message?: undefined;
     } | {
         success: boolean;
-        buffItem: any;
+        buffItem: import("./schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        };
         instanceId: `${string}-${string}-${string}-${string}-${string}`;
         message: string;
         error?: undefined;

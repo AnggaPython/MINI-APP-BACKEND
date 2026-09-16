@@ -2,7 +2,7 @@ import { Model } from "mongoose";
 import { AuctionDocument } from "./schemas/auction.schema";
 import { UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
-import { BuffItemDocument, BuffType, BuffRarity } from "../buff-item-collections/schemas/buff-item.schema";
+import { BuffItem, BuffItemDocument, BuffType, BuffRarity } from "../buff-item-collections/schemas/buff-item.schema";
 import { UserBuffCollectionDocument } from "../buff-item-collections/schemas/user-buff-collection.schema";
 declare const COLLATERAL_DEPOSIT = 10000;
 declare const LISTING_DURATION_MS: number;
@@ -27,7 +27,7 @@ export declare class AuctionHouseService {
         collateralDeposit: number;
         listingDurationDays: number;
         auction: {
-            id: any;
+            id: string;
             itemCategory: "buff" | "material";
             instanceId: string | undefined;
             baseItemId: string | undefined;
@@ -37,8 +37,8 @@ export declare class AuctionHouseService {
             price: number;
             tax: number;
             netAmount: number;
-            sellerName: any;
-            listedAt: any;
+            sellerName: string;
+            listedAt: Date;
         };
         error?: undefined;
     }>;
@@ -49,13 +49,13 @@ export declare class AuctionHouseService {
     } | {
         success: boolean;
         purchased: {
-            instanceId: any;
-            baseItemId: any;
-            buffType: any;
-            rarity: any;
-            price: any;
-            tax: any;
-            seller: any;
+            instanceId: string | undefined;
+            baseItemId: string;
+            buffType: string;
+            rarity: string;
+            price: number;
+            tax: number;
+            seller: string;
         };
         error?: undefined;
     }>;
@@ -68,8 +68,8 @@ export declare class AuctionHouseService {
         returnedDeposit?: undefined;
     } | {
         success: boolean;
-        instanceId: any;
-        collateralDeposit: any;
+        instanceId: string | undefined;
+        collateralDeposit: number;
         penalty: number;
         returnedDeposit: number;
         error?: undefined;
@@ -91,18 +91,55 @@ export declare class AuctionHouseService {
     }>;
     browseItemListings(baseItemId: string): Promise<{
         success: boolean;
-        buffItem: any;
-        listings: any;
+        buffItem: (BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        }) | null;
+        listings: {
+            id: string;
+            instanceId: string | undefined;
+            baseItemId: string;
+            sellerId: string;
+            sellerName: string;
+            price: number;
+            tax: number;
+            netAmount: number;
+            listedAt: Date;
+            expiresAt: Date;
+        }[];
     }>;
     myListings(telegramId: string): Promise<{
         success: boolean;
-        listings: any;
+        listings: {
+            id: string;
+            instanceId: string | undefined;
+            baseItemId: string;
+            buffType: string;
+            rarity: string;
+            price: number;
+            tax: number;
+            netAmount: number;
+            status: import("./schemas/auction.schema").AuctionStatus;
+            sellerName: string;
+            buyerId: string | null;
+            listedAt: Date;
+            expiresAt: Date;
+            resolvedAt: Date;
+            collateralDeposit: number;
+            collateralReturned: boolean;
+            name: string;
+            description: string;
+            icon: string;
+            buffValue: number;
+            buffUnit: "flat" | "percent";
+        }[];
     }>;
     getStats(): Promise<{
         success: boolean;
         stats: {
-            totalActive: any;
-            totalSold: any;
+            totalActive: number;
+            totalSold: number;
             totalVolume: any;
             totalTaxCollected: any;
             avgByRarity: any;

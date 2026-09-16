@@ -1,6 +1,6 @@
 import { OnModuleInit } from "@nestjs/common";
 import { Model } from "mongoose";
-import { BuffItemDocument, BuffType, BuffRarity } from "./schemas/buff-item.schema";
+import { BuffItem, BuffItemDocument, BuffType, BuffRarity } from "./schemas/buff-item.schema";
 import { UserBuffCollectionDocument } from "./schemas/user-buff-collection.schema";
 import { UserDocument } from "../users/schemas/user.schema";
 export declare class BuffItemCollectionsService implements OnModuleInit {
@@ -13,9 +13,13 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
     private seedBuffItems;
     getAllBuffItems(): Promise<{
         success: boolean;
-        items: any;
+        items: (BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         meta: {
-            total: any;
+            total: number;
             buffTypes: string[];
             rarities: string[];
             buffTypeMeta: Record<BuffType, {
@@ -29,7 +33,11 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
     }>;
     getBuffItemsByType(buffType: BuffType): Promise<{
         success: boolean;
-        items: any;
+        items: (BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
         meta: {
             label: string;
             description: string;
@@ -43,15 +51,41 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         item?: undefined;
     } | {
         success: boolean;
-        item: any;
+        item: BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        };
         error?: undefined;
     }>;
     getUserCollection(telegramId: string): Promise<{
         success: boolean;
-        inventory: any;
-        activeInstanceIds: any;
-        ownedItems: any;
-        activeItems: any;
+        inventory: import("./schemas/user-buff-collection.schema").ItemInstance[];
+        activeInstanceIds: string[];
+        ownedItems: {
+            instanceId: string;
+            baseItemId: string;
+            acquiredAt: Date;
+            buffType: BuffType | undefined;
+            rarity: BuffRarity | undefined;
+            buffValue: number | undefined;
+            buffUnit: "flat" | "percent" | undefined;
+            name: string | undefined;
+            description: string | undefined;
+            icon: string | undefined;
+        }[];
+        activeItems: {
+            instanceId: string;
+            baseItemId: string;
+            acquiredAt: Date;
+            buffType: BuffType | undefined;
+            rarity: BuffRarity | undefined;
+            buffValue: number | undefined;
+            buffUnit: "flat" | "percent" | undefined;
+            name: string | undefined;
+            description: string | undefined;
+            icon: string | undefined;
+        }[];
         totals: Record<BuffType, number>;
     }>;
     grantBuffItem(telegramId: string, buffId: string): Promise<{
@@ -62,7 +96,11 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         message?: undefined;
     } | {
         success: boolean;
-        buffItem: any;
+        buffItem: BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        };
         instanceId: `${string}-${string}-${string}-${string}-${string}`;
         message: string;
         error?: undefined;
@@ -77,7 +115,7 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         activeInstanceIds?: undefined;
     } | {
         success: boolean;
-        activeInstanceIds: any;
+        activeInstanceIds: string[];
         error?: undefined;
     }>;
     deactivateBuff(telegramId: string, buffId: string): Promise<{
@@ -86,7 +124,7 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         activeInstanceIds?: undefined;
     } | {
         success: boolean;
-        activeInstanceIds: any;
+        activeInstanceIds: string[];
         error?: undefined;
     }>;
     activateAllByType(telegramId: string, buffType: BuffType): Promise<{
@@ -96,8 +134,8 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         activeInstanceIds?: undefined;
     } | {
         success: boolean;
-        activated: any;
-        activeInstanceIds: any;
+        activated: number;
+        activeInstanceIds: string[];
         error?: undefined;
     }>;
     calculateBuffTotals(activeItems: any[]): Record<BuffType, number>;
@@ -120,7 +158,11 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         message?: undefined;
     } | {
         success: boolean;
-        buffItem: any;
+        buffItem: BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        };
         instanceId: `${string}-${string}-${string}-${string}-${string}`;
         message: string;
         error?: undefined;

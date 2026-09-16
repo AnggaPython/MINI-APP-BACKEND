@@ -34,7 +34,8 @@
     "node-fetch": "^2.7.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "undici": "^8.10.0"
+    "undici": "^8.10.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -84,12 +85,23 @@
     "testEnvironment": "node"
   },
   "lint-staged": {
-    "*.ts": ["eslint --max-warnings 0 --fix", "bash -c 'npx tsc --noEmit --incremental false'"]
+    "*.ts": [
+      "eslint --max-warnings 0 --fix",
+      "bash -c 'npx tsc --noEmit --incremental false'"
+    ]
   },
   "knip": {
-    "entry": ["src/main.ts"],
-    "project": ["src/**/*.ts"],
-    "ignore": ["src/**/*.spec.ts"],
-    "ignoreDependencies": ["@nestjs/schematics"]
+    "entry": [
+      "src/main.ts"
+    ],
+    "project": [
+      "src/**/*.ts"
+    ],
+    "ignore": [
+      "src/**/*.spec.ts"
+    ],
+    "ignoreDependencies": [
+      "@nestjs/schematics"
+    ]
   }
 }

@@ -4,6 +4,7 @@ import { TradeSpotService } from "./trade-spot.service";
 import { MINERAL_INITIAL_RATES } from "./trade-pairs";
 import { SseService } from "./sse.service";
 import { User } from "../auth/telegram-user.decorator";
+import { PlaceOrderSchema } from "./dto/place-order.dto";
 
 @Controller("trade-spot")
 export class TradeSpotController {
@@ -119,10 +120,15 @@ export class TradeSpotController {
   @Post("order")
   async placeOrder(
     @User("telegramId") telegramId: string,
-    @Body() body: { side?: string; type?: string; amount?: number; price?: number },
+    @Body() body: unknown,
   ) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
-    return this.tradeSpotService.placeOrder(telegramId, body || {});
+    const parseRes = PlaceOrderSchema.safeParse(body);
+    if (!parseRes.success) {
+      const issue = parseRes.error.issues[0];
+      return { success: false, error: issue?.message || "Invalid order payload" };
+    }
+    return this.tradeSpotService.placeOrder(telegramId, parseRes.data);
   }
 
   /** Cancel one of the caller's resting limit orders. */

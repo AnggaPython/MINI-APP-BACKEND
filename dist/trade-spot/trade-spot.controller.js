@@ -18,6 +18,7 @@ const trade_spot_service_1 = require("./trade-spot.service");
 const trade_pairs_1 = require("./trade-pairs");
 const sse_service_1 = require("./sse.service");
 const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
+const place_order_dto_1 = require("./dto/place-order.dto");
 let TradeSpotController = class TradeSpotController {
     tradeSpotService;
     sseService;
@@ -43,6 +44,9 @@ let TradeSpotController = class TradeSpotController {
     }
     async trades(limit, pair) {
         return this.tradeSpotService.getTrades(Number(limit) || 30, pair);
+    }
+    async candles(pair, interval, limit) {
+        return this.tradeSpotService.getCandles(pair, interval, Number(limit) || 120);
     }
     async stats(pair) {
         return this.tradeSpotService.getStats(pair);
@@ -73,7 +77,12 @@ let TradeSpotController = class TradeSpotController {
     async placeOrder(telegramId, body) {
         if (!telegramId)
             return { success: false, error: "Missing telegramId" };
-        return this.tradeSpotService.placeOrder(telegramId, body || {});
+        const parseRes = place_order_dto_1.PlaceOrderSchema.safeParse(body);
+        if (!parseRes.success) {
+            const issue = parseRes.error.issues[0];
+            return { success: false, error: issue?.message || "Invalid order payload" };
+        }
+        return this.tradeSpotService.placeOrder(telegramId, parseRes.data);
     }
     async cancelOrder(telegramId, body) {
         if (!telegramId || !body?.orderId) {
@@ -130,6 +139,15 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], TradeSpotController.prototype, "trades", null);
+__decorate([
+    (0, common_1.Get)("candles"),
+    __param(0, (0, common_1.Query)("pair")),
+    __param(1, (0, common_1.Query)("interval")),
+    __param(2, (0, common_1.Query)("limit")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], TradeSpotController.prototype, "candles", null);
 __decorate([
     (0, common_1.Get)("stats"),
     __param(0, (0, common_1.Query)("pair")),

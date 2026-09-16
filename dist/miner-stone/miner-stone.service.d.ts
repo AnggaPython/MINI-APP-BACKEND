@@ -1,5 +1,5 @@
 import { Model } from "mongoose";
-import { MiningStoneDocument } from "./schemas/mining-stone.schema";
+import { MiningStoneDocument, StoneTier } from "./schemas/mining-stone.schema";
 import { UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
@@ -29,20 +29,20 @@ export declare class MinerStoneService {
     } | {
         success: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
-            zonk: any;
+            stoneId: string;
+            tier: StoneTier;
+            maxHp: number;
+            zonk: boolean;
         };
         error?: undefined;
     }>;
     rotate(telegramId: string): Promise<{
         success: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
-            zonk: any;
+            stoneId: string;
+            tier: StoneTier;
+            maxHp: number;
+            zonk: boolean;
         };
     } | {
         success: boolean;
@@ -65,7 +65,7 @@ export declare class MinerStoneService {
         repairedAt: Date;
         balances: Record<string, number>;
         durability: number;
-        ownedPickaxes: any;
+        ownedPickaxes: string[];
         error?: undefined;
     }>;
     private durabilityMaxFor;
@@ -107,9 +107,9 @@ export declare class MinerStoneService {
         zonk: boolean;
         adRequired: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
+            stoneId: string;
+            tier: StoneTier;
+            maxHp: number;
         };
         rewards: {};
         starCount: number;
@@ -131,9 +131,9 @@ export declare class MinerStoneService {
         zonk: boolean;
         adRequired: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
+            stoneId: string;
+            tier: StoneTier;
+            maxHp: number;
         };
         rewards: Record<string, number>;
         starCount: number;
@@ -178,7 +178,7 @@ export declare class MinerStoneService {
     } | {
         success: boolean;
         action: string;
-        stoneId: any;
+        stoneId: string;
         credited: Record<string, number>;
         elixir: number;
         cryptoBalances: Record<string, number>;
@@ -189,6 +189,12 @@ export declare class MinerStoneService {
     }>;
     history(telegramId: string): Promise<{
         success: boolean;
-        history: any;
+        history: {
+            stoneId: string;
+            tier: StoneTier;
+            maxHp: number;
+            rewards: Record<string, number>;
+            claimedAt: Date | null;
+        }[];
     }>;
 }

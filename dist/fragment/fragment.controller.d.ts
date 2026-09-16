@@ -18,7 +18,7 @@ export declare class FragmentController {
     spinWheel(telegramId: string): Promise<{
         success: boolean;
         reward: import("./fragment.service").SpinWheelReward;
-        fragmentsRemaining: any;
+        fragmentsRemaining: number;
         holdingBalance: {
             spinWheels: number;
             mineSwipe: number;
@@ -56,7 +56,7 @@ export declare class FragmentController {
     }>;
     mineSwipeStart(telegramId: string): Promise<{
         success: boolean;
-        sessionId: any;
+        sessionId: string;
         boardSize: number;
         mineCount: number;
         rewardPerTile: number;
@@ -75,8 +75,8 @@ export declare class FragmentController {
         hitMine: boolean;
         gameOver: boolean;
         accumulatedReward: number;
-        minePositions: any;
-        revealed: any;
+        minePositions: string[];
+        revealed: string[];
         error?: undefined;
         won?: undefined;
         holdingBalance?: undefined;
@@ -87,8 +87,8 @@ export declare class FragmentController {
         hitMine: boolean;
         gameOver: boolean;
         won: boolean;
-        accumulatedReward: any;
-        revealed: any;
+        accumulatedReward: number;
+        revealed: string[];
         holdingBalance: {
             spinWheels: number;
             mineSwipe: number;
@@ -101,8 +101,8 @@ export declare class FragmentController {
         success: boolean;
         hitMine: boolean;
         gameOver: boolean;
-        accumulatedReward: any;
-        tilesRevealed: any;
+        accumulatedReward: number;
+        tilesRevealed: number;
         tilesRemaining: number;
         error?: undefined;
         minePositions?: undefined;
@@ -117,8 +117,8 @@ export declare class FragmentController {
         sessionId?: string;
     }): Promise<{
         success: boolean;
-        reward: any;
-        tilesRevealed: any;
+        reward: number;
+        tilesRevealed: number;
         holdingBalance: {
             spinWheels: number;
             mineSwipe: number;
@@ -141,13 +141,13 @@ export declare class FragmentController {
     } | {
         success: boolean;
         active: boolean;
-        sessionId: any;
-        boardSize: any;
-        mineCount: any;
-        revealed: any;
-        accumulatedReward: any;
-        rewardPerTile: any;
-        status: any;
+        sessionId: string;
+        boardSize: number;
+        mineCount: number;
+        revealed: string[];
+        accumulatedReward: number;
+        rewardPerTile: number;
+        status: string;
     } | {
         success: boolean;
         error: string;

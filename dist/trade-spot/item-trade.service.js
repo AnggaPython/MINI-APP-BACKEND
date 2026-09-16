@@ -12,7 +12,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var ItemTradeService_1;
-var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ItemTradeService = void 0;
 const common_1 = require("@nestjs/common");
@@ -88,6 +87,7 @@ exports.ItemTradeService = ItemTradeService;
 exports.ItemTradeService = ItemTradeService = ItemTradeService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, buff_item_collections_service_1.BuffItemCollectionsService])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        buff_item_collections_service_1.BuffItemCollectionsService])
 ], ItemTradeService);
 //# sourceMappingURL=item-trade.service.js.map

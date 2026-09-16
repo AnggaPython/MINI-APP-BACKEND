@@ -1,6 +1,6 @@
 import { Model } from "mongoose";
-import { StakeDocument } from "./schemas/stake.schema";
-import { BankLogDocument } from "./schemas/bank-log.schema";
+import { Stake, StakeDocument } from "./schemas/stake.schema";
+import { BankLog, BankLogDocument } from "./schemas/bank-log.schema";
 import { UsersService } from "../users/users.service";
 import { AchievementsService } from "../achievements/achievements.service";
 import { AdminService } from "../admin/admin.service";
@@ -18,12 +18,28 @@ export declare class BankService {
     handleAutoClaim(): Promise<void>;
     calculateYield(stake: StakeDocument): number;
     getStats(telegramId: string): Promise<{
-        activeStakes: any;
-        history: any;
+        activeStakes: {
+            id: import("mongoose").Types.ObjectId;
+            amount: number;
+            aprLabel: string;
+            rate: number;
+            stakeDate: Date;
+            maturityDate: Date;
+            pendingYield: number;
+            autoClaim: boolean;
+            autoReinvest: boolean;
+        }[];
+        history: (import("mongoose").Document<unknown, {}, BankLogDocument, {}, import("mongoose").DefaultSchemaOptions> & BankLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        })[];
         totalUnclaimedEarning: number;
         totalLiquidityPool: number;
         networkStaked: number;
-        personalStaked: any;
+        personalStaked: number;
     }>;
     createStake(telegramId: string, amount: number, durationDays: number, rate: number, autoClaim?: boolean): Promise<{
         error: string;
@@ -31,7 +47,13 @@ export declare class BankService {
         stake?: undefined;
     } | {
         success: boolean;
-        stake: any;
+        stake: import("mongoose").Document<unknown, {}, StakeDocument, {}, import("mongoose").DefaultSchemaOptions> & Stake & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
         error?: undefined;
     }>;
     claimEarnings(telegramId: string): Promise<{
@@ -67,7 +89,13 @@ export declare class BankService {
         stake?: undefined;
     } | {
         success: boolean;
-        stake: any;
+        stake: import("mongoose").Document<unknown, {}, StakeDocument, {}, import("mongoose").DefaultSchemaOptions> & Stake & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        } & {
+            id: string;
+        };
         error?: undefined;
     }>;
 }

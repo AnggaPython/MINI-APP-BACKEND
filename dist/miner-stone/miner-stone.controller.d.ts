@@ -5,10 +5,10 @@ export declare class MinerStoneController {
     spawn(telegramId: string): Promise<{
         success: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
-            zonk: any;
+            stoneId: string;
+            tier: import("./schemas/mining-stone.schema").StoneTier;
+            maxHp: number;
+            zonk: boolean;
         };
         error?: undefined;
     } | {
@@ -18,10 +18,10 @@ export declare class MinerStoneController {
     rotate(telegramId: string): Promise<{
         success: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
-            zonk: any;
+            stoneId: string;
+            tier: import("./schemas/mining-stone.schema").StoneTier;
+            maxHp: number;
+            zonk: boolean;
         };
     } | {
         success: boolean;
@@ -29,7 +29,13 @@ export declare class MinerStoneController {
     }>;
     history(telegramId: string): Promise<{
         success: boolean;
-        history: any;
+        history: {
+            stoneId: string;
+            tier: import("./schemas/mining-stone.schema").StoneTier;
+            maxHp: number;
+            rewards: Record<string, number>;
+            claimedAt: Date | null;
+        }[];
     } | {
         success: boolean;
         error: string;
@@ -43,7 +49,7 @@ export declare class MinerStoneController {
         repairedAt: Date;
         balances: Record<string, number>;
         durability: number;
-        ownedPickaxes: any;
+        ownedPickaxes: string[];
         error?: undefined;
     } | {
         success: boolean;
@@ -73,9 +79,9 @@ export declare class MinerStoneController {
         zonk: boolean;
         adRequired: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
+            stoneId: string;
+            tier: import("./schemas/mining-stone.schema").StoneTier;
+            maxHp: number;
         };
         rewards: {};
         starCount: number;
@@ -97,9 +103,9 @@ export declare class MinerStoneController {
         zonk: boolean;
         adRequired: boolean;
         stone: {
-            stoneId: any;
-            tier: any;
-            maxHp: any;
+            stoneId: string;
+            tier: import("./schemas/mining-stone.schema").StoneTier;
+            maxHp: number;
         };
         rewards: Record<string, number>;
         starCount: number;
@@ -137,7 +143,7 @@ export declare class MinerStoneController {
     } | {
         success: boolean;
         action: string;
-        stoneId: any;
+        stoneId: string;
         credited: Record<string, number>;
         elixir: number;
         cryptoBalances: Record<string, number>;

@@ -8,4 +8,67 @@ export declare class ProfitLog {
     createdAt?: Date;
     updatedAt?: Date;
 }
-export declare const ProfitLogSchema: any;
+export declare const ProfitLogSchema: import("mongoose").Schema<ProfitLog, import("mongoose").Model<ProfitLog, any, any, any, any, any, ProfitLog>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, ProfitLog, Document<unknown, {}, ProfitLog, {
+    id: string;
+}, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+    _id: import("mongoose").Types.ObjectId;
+} & {
+    __v: number;
+}, "id"> & import("mongoose").HydratedDocumentOverrides<{
+    id: string;
+}>, {
+    coin?: import("mongoose").SchemaDefinitionProperty<string, ProfitLog, Document<unknown, {}, ProfitLog, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    amount?: import("mongoose").SchemaDefinitionProperty<number, ProfitLog, Document<unknown, {}, ProfitLog, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    source?: import("mongoose").SchemaDefinitionProperty<string, ProfitLog, Document<unknown, {}, ProfitLog, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    telegramId?: import("mongoose").SchemaDefinitionProperty<string, ProfitLog, Document<unknown, {}, ProfitLog, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    createdAt?: import("mongoose").SchemaDefinitionProperty<Date | undefined, ProfitLog, Document<unknown, {}, ProfitLog, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    updatedAt?: import("mongoose").SchemaDefinitionProperty<Date | undefined, ProfitLog, Document<unknown, {}, ProfitLog, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<ProfitLog & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+}, ProfitLog>;

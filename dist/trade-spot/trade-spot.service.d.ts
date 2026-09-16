@@ -82,28 +82,51 @@ export declare class TradeSpotService {
         prevMid: number;
         spread: number;
         asks: {
-            price: number;
             amount: number;
+            price: number;
             isMine?: boolean;
         }[];
         bids: {
-            price: number;
             amount: number;
+            price: number;
             isMine?: boolean;
         }[];
         bidShare: number;
     }>;
+    getCandles(pair?: string, interval?: string, limit?: number): Promise<{
+        success: boolean;
+        pair: string;
+        interval: string;
+        candles: {
+            time: number;
+            open: number;
+            high: number;
+            low: number;
+            close: number;
+            volume: number;
+            trades: any;
+        }[];
+    }>;
     getTrades(limit?: number, pair?: string): Promise<Record<string, unknown> | {
         success: boolean;
-        trades: any;
+        trades: {
+            id: string;
+            side: "BUY" | "SELL";
+            price: number;
+            amount: number;
+            total: number;
+            fee: number;
+            source: "BOT" | "USER";
+            time: Date;
+        }[];
     }>;
     getStats(pair?: string): Promise<{
         success: boolean;
         lastBotRunAt: Date;
         botRunCount: number;
-        botTrades: any;
-        userTrades: any;
-        totalTrades: any;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -130,9 +153,9 @@ export declare class TradeSpotService {
             userVolume: number;
         };
         lifetime: {
-            trades: any;
-            botTrades: any;
-            userTrades: any;
+            trades: number;
+            botTrades: number;
+            userTrades: number;
             volume: number;
             fees: number;
             spreadProfit: number;
@@ -160,9 +183,9 @@ export declare class TradeSpotService {
         nextBotRunAt: Date;
         success: boolean;
         botRunCount: number;
-        botTrades: any;
-        userTrades: any;
-        totalTrades: any;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -189,9 +212,9 @@ export declare class TradeSpotService {
         lastBotRunAt: Date;
         nextBotRunAt: Date;
         botRunCount: number;
-        botTrades: any;
-        userTrades: any;
-        totalTrades: any;
+        botTrades: number;
+        userTrades: number;
+        totalTrades: number;
         lifetimeVolume: number;
         platformFeesAccumulated: number;
         spreadProfitAccumulated: number;
@@ -241,6 +264,18 @@ export declare class TradeSpotService {
     }): Promise<{
         success: boolean;
         resting: boolean;
+        trade: {};
+        trades: {}[];
+        userFilledBase: number;
+        balances: {
+            quoteBalance: number;
+            elixir: number;
+            elixcoin: number;
+        };
+        message: string;
+    } | {
+        success: boolean;
+        resting: boolean;
         trade: {
             id: string;
             side: "BUY";
@@ -249,7 +284,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             quoteBalance: number;
@@ -269,7 +304,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "USER" | "BOT";
+            source: "BOT" | "USER";
         };
         balances: {
             quoteBalance: number;
@@ -281,17 +316,39 @@ export declare class TradeSpotService {
     } | {
         success: boolean;
         error: string;
+        userFilledBase?: undefined;
+        trades?: undefined;
+        resting?: undefined;
+        order?: undefined;
+        message?: undefined;
+    } | {
+        success: boolean;
+        error: string | undefined;
+        userFilledBase: number;
+        trades: {
+            tradeId: string;
+            makerTradeId: string;
+            price: number;
+            qty: number;
+        }[];
         resting?: undefined;
         order?: undefined;
         message?: undefined;
     } | {
         success: boolean;
         resting: boolean;
+        trades: {
+            tradeId: string;
+            makerTradeId: string;
+            price: number;
+            qty: number;
+        }[] | undefined;
+        userFilledBase: number | undefined;
         order: {
             id: string;
             side: string;
-            price: any;
-            amount: any;
+            price: number;
+            amount: number;
             status: string;
             iceberg: boolean;
             icebergTotal: number | undefined;
@@ -302,10 +359,20 @@ export declare class TradeSpotService {
     }>;
     private createTpSlOrder;
     private checkTpSlOrders;
+    private checkMinMax;
+    private fillUserVsUser;
+    private matchCounterpartyOrders;
     private executeFill;
     getOpenOrders(telegramId: string, pair?: string): Promise<{
         success: boolean;
-        orders: any;
+        orders: {
+            id: string;
+            side: "BUY" | "SELL";
+            price: number;
+            amount: number;
+            status: "OPEN" | "FILLED" | "CANCELLED";
+            createdAt: Date;
+        }[];
     }>;
     cancelOrder(telegramId: string, orderId: string): Promise<{
         success: boolean;
@@ -313,16 +380,32 @@ export declare class TradeSpotService {
         order?: undefined;
     } | {
         success: boolean;
-        order: any;
+        order: import("mongoose").Document<unknown, {}, OpenOrder, {}, import("mongoose").DefaultSchemaOptions> & OpenOrder & {
+            _id: import("mongoose").Types.ObjectId;
+        } & {
+            __v: number;
+        } & {
+            id: string;
+        };
         error?: undefined;
     }>;
     getUserTrades(telegramId: string, page?: number, limit?: number, pair?: string): Promise<{
         success: boolean;
-        trades: any;
+        trades: {
+            id: string;
+            side: "BUY" | "SELL";
+            price: number;
+            amount: number;
+            total: number;
+            fee: number;
+            feeCurrency: string;
+            source: "BOT" | "USER";
+            time: Date;
+        }[];
         page: number;
         limit: number;
         hasMore: boolean;
-        total: any;
+        total: number;
     }>;
     matchOpenOrders(pair?: string): Promise<{
         orderId: string;

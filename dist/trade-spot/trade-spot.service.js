@@ -12,7 +12,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var TradeSpotService_1;
-var _a, _b, _c, _d, _e;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradeSpotService = exports.MINERAL_INITIAL_RATES = exports.CORE_BOT_PAIRS = exports.SPREAD_PCT = exports.FEE_PCT = exports.DEFAULT_PAIR = exports.isItemBase = void 0;
 const common_1 = require("@nestjs/common");
@@ -40,6 +39,16 @@ Object.defineProperty(exports, "MINERAL_INITIAL_RATES", { enumerable: true, get:
 const round8 = (n) => Math.round(n * 1e8) / 1e8;
 const round2 = (n) => Math.round(n * 100) / 100;
 const round4 = (n) => Math.round(n * 1e4) / 1e4;
+const MIN_TOLERANCE = 0.98;
+const INT_BASES = ["ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"];
+function hashStr(s) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
 function mulberry32(seed) {
     let a = seed >>> 0;
     return () => {
@@ -366,23 +375,14 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             .sort({ createdAt: -1 })
             .lean();
         const close = lastTrade?.price || anchorMid;
-        let cosmeticPct = pool.cosmeticChangePct || 0;
-        const cosmeticAge = pool.cosmeticPctUpdatedAt
-            ? now - pool.cosmeticPctUpdatedAt.getTime()
-            : Infinity;
-        if (cosmeticAge > 3600_000) {
-            cosmeticPct = -1.56 + Math.random() * (2.27 - (-1.56));
-            await this.poolModel.updateOne({ pair }, { $set: { cosmeticChangePct: cosmeticPct, cosmeticPctUpdatedAt: new Date() } });
-            pool.cosmeticChangePct = cosmeticPct;
-            pool.cosmeticPctUpdatedAt = new Date();
-        }
+        const changePct = open > 0 ? round4(((close - open) / open) * 100) : 0;
         const result = {
             success: true,
             pair,
             base,
             quote,
             last: round8(close),
-            changePct: round4(cosmeticPct),
+            changePct,
             high: round8(high),
             low: round8(low),
             volume: round2(volume),
@@ -422,22 +422,14 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
         const halfSpreadRaw = Math.max(mid * half, minVisibleTick);
         const maxSafeDepth = Math.max(1, Math.floor((mid - halfSpreadRaw) / levelStep));
         const safeDepth = Math.min(clamped, maxSafeDepth);
-        for (let i = 0; i < safeDepth; i++) {
-            const rngDepthAsks = mulberry32(Math.round(mid * 1e8) + i * 5123);
-            const rngDepthBids = mulberry32(Math.round(mid * 1e8) + i * 7919);
-            const askBase = rngDepthAsks() > 0.8
-                ? 2_000_000 + rngDepthAsks() * 1_500_000
-                : 150_000 + rngDepthAsks() * 600_000;
-            const bidBase = rngDepthBids() > 0.8
-                ? 2_000_000 + rngDepthBids() * 1_500_000
-                : 150_000 + rngDepthBids() * 600_000;
-            const askPrice = round8(mid + halfSpreadRaw + levelStep * i);
-            asks.push({ price: askPrice, amount: round2(askBase) });
-            const bidPrice = round8(mid - halfSpreadRaw - levelStep * i);
-            bids.push({ price: bidPrice, amount: round2(bidBase) });
-        }
+        const dayNum = Math.floor(now / 86400000);
+        const pairSeed = hashStr(pair);
+        const poolAskEdge = round8(pool.lastMid * (1 + pool.spreadPct / 2));
+        const poolBidEdge = round8(pool.lastMid * (1 - pool.spreadPct / 2));
         const impact = this.lastUserTradeImpact.get(pair);
         const savedMid = this.previousMid.get(pair) ?? mid;
+        let askLagMid = mid;
+        let bidLagMid = mid;
         if (impact) {
             const elapsed = Date.now() - impact.time;
             const DECAY_MS = 60_000;
@@ -446,16 +438,10 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
                 const intensity = Math.min(1, impact.impact / 0.015);
                 const lag = decay * intensity;
                 if (impact.side === "BUY") {
-                    const bidLagMid = mid - (mid - savedMid) * lag;
-                    for (let i = 0; i < bids.length; i++) {
-                        bids[i].price = round8(bidLagMid - halfSpreadRaw - levelStep * i);
-                    }
+                    bidLagMid = mid - (mid - savedMid) * lag;
                 }
                 else {
-                    const askLagMid = mid + (savedMid - mid) * lag;
-                    for (let i = 0; i < asks.length; i++) {
-                        asks[i].price = round8(askLagMid + halfSpreadRaw + levelStep * i);
-                    }
+                    askLagMid = mid + (savedMid - mid) * lag;
                 }
             }
             else {
@@ -463,17 +449,42 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
                 this.previousMid.delete(pair);
             }
         }
+        const baseAskPrice = Math.max(poolAskEdge, round8(askLagMid + halfSpreadRaw));
+        const baseBidPrice = Math.min(poolBidEdge, round8(bidLagMid - halfSpreadRaw));
+        for (let i = 0; i < safeDepth; i++) {
+            const rngDepthAsks = mulberry32((pairSeed + dayNum * 1000003 + i * 5123) >>> 0);
+            const rngDepthBids = mulberry32((pairSeed + dayNum * 1000033 + i * 7919) >>> 0);
+            const askBase = rngDepthAsks() > 0.8
+                ? 2_000_000 + rngDepthAsks() * 1_500_000
+                : 150_000 + rngDepthAsks() * 600_000;
+            const bidBase = rngDepthBids() > 0.8
+                ? 2_000_000 + rngDepthBids() * 1_500_000
+                : 150_000 + rngDepthBids() * 600_000;
+            const askPrice = round8(baseAskPrice + levelStep * i);
+            asks.push({ price: askPrice, amount: round2(askBase) });
+            const bidPrice = round8(baseBidPrice - levelStep * i);
+            if (bidPrice > 0) {
+                bids.push({ price: bidPrice, amount: round2(bidBase) });
+            }
+        }
         const openOrders = await this.orderModel
             .find({ pair, status: "OPEN" })
             .limit(200)
             .lean()
             .exec();
+        const [baseAsset] = pair.split("/");
+        const minOrderLimit = trade_pairs_1.TRADE_LIMITS[baseAsset]?.min ?? 1;
         for (const o of openOrders) {
             if (!isFinite(o.price) || o.price <= 0)
                 continue;
             const remaining = (o.amount || 0) - (o.filledAmount || 0);
-            if (remaining <= 0)
+            if (remaining < minOrderLimit * 0.9) {
+                this.orderModel
+                    .updateOne({ _id: o._id, status: "OPEN" }, { $set: { status: "FILLED" } })
+                    .exec()
+                    .catch(() => { });
                 continue;
+            }
             const isMine = !!telegramId && o.telegramId === telegramId;
             const targetList = o.side === "SELL" ? asks : bids;
             const match = targetList.find((x) => x.price === o.price);
@@ -490,12 +501,13 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             for (const w of pool.adminSellWalls) {
                 if (!w.price || !w.amount || w.amount <= 0)
                     continue;
-                const match = asks.find((x) => x.price === w.price);
+                const wp = round8(Math.max(w.price, poolAskEdge));
+                const match = asks.find((x) => x.price === wp);
                 if (match) {
                     match.amount += w.amount;
                 }
                 else {
-                    asks.push({ price: w.price, amount: w.amount });
+                    asks.push({ price: wp, amount: w.amount });
                 }
             }
         }
@@ -503,19 +515,39 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             for (const w of pool.adminBuyWalls) {
                 if (!w.price || !w.amount || w.amount <= 0)
                     continue;
-                const match = bids.find((x) => x.price === w.price);
+                const wp = round8(Math.min(w.price, poolBidEdge));
+                const match = bids.find((x) => x.price === wp);
                 if (match) {
                     match.amount += w.amount;
                 }
                 else {
-                    bids.push({ price: w.price, amount: w.amount });
+                    bids.push({ price: wp, amount: w.amount });
                 }
             }
         }
         asks.sort((a, b) => a.price - b.price);
         bids.sort((a, b) => b.price - a.price);
-        const finAsks = asks.slice(0, clamped);
-        const finBids = bids.slice(0, clamped);
+        const consolidate = (levels) => {
+            const map = new Map();
+            for (const l of levels) {
+                if (!isFinite(l.amount) || l.amount <= 0.000001)
+                    continue;
+                const hit = map.get(l.price);
+                if (hit) {
+                    hit.amount = hit.amount + l.amount;
+                    if (l.isMine)
+                        hit.isMine = true;
+                }
+                else {
+                    map.set(l.price, { price: l.price, amount: l.amount, ...(l.isMine ? { isMine: true } : {}) });
+                }
+            }
+            return [...map.values()]
+                .map((x) => ({ ...x, amount: round2(x.amount) }))
+                .filter((x) => x.amount > 0.000001);
+        };
+        const finAsks = consolidate(asks).slice(0, clamped);
+        const finBids = consolidate(bids).slice(0, clamped);
         const totalAsk = finAsks.reduce((acc, l) => acc + l.amount, 0);
         const totalBid = finBids.reduce((acc, l) => acc + l.amount, 0);
         const bidShare = totalAsk + totalBid > 0 ? (totalBid / (totalAsk + totalBid)) * 100 : 50;
@@ -537,6 +569,53 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
         };
         this.bookCache.set(pair, { data: result, ts: now, depth: clamped });
         return result;
+    }
+    async getCandles(pair = trade_pairs_1.DEFAULT_PAIR, interval = "15m", limit = 120) {
+        const INTERVALS = {
+            "1m": { unit: "minute", binSize: 1, seconds: 60 },
+            "5m": { unit: "minute", binSize: 5, seconds: 300 },
+            "15m": { unit: "minute", binSize: 15, seconds: 900 },
+            "1H": { unit: "hour", binSize: 1, seconds: 3600 },
+            "4H": { unit: "hour", binSize: 4, seconds: 14400 },
+            "1D": { unit: "day", binSize: 1, seconds: 86400 },
+        };
+        const cfg = INTERVALS[interval] || INTERVALS["15m"];
+        const resolvedInterval = INTERVALS[interval] ? interval : "15m";
+        const n = Math.max(5, Math.min(500, Math.floor(limit || 120)));
+        const since = new Date(Date.now() - cfg.seconds * n * 1000);
+        const rows = await this.tradeModel
+            .aggregate([
+            { $match: { pair, createdAt: { $gte: since } } },
+            { $sort: { createdAt: 1 } },
+            {
+                $group: {
+                    _id: { $dateTrunc: { date: "$createdAt", unit: cfg.unit, binSize: cfg.binSize } },
+                    open: { $first: "$price" },
+                    high: { $max: "$price" },
+                    low: { $min: "$price" },
+                    close: { $last: "$price" },
+                    volume: { $sum: "$amount" },
+                    trades: { $sum: 1 },
+                },
+            },
+            { $sort: { _id: 1 } },
+            { $limit: n },
+        ])
+            .exec();
+        return {
+            success: true,
+            pair,
+            interval: resolvedInterval,
+            candles: rows.map((r) => ({
+                time: Math.floor(new Date(r._id).getTime() / 1000),
+                open: round8(r.open),
+                high: round8(r.high),
+                low: round8(r.low),
+                close: round8(r.close),
+                volume: round2(r.volume || 0),
+                trades: r.trades || 0,
+            })),
+        };
     }
     async getTrades(limit = 30, pair = trade_pairs_1.DEFAULT_PAIR) {
         const now = Date.now();
@@ -844,24 +923,85 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
         const half = pool.spreadPct / 2;
         const ask = mid * (1 + half);
         const bid = mid * (1 - half);
+        const finishUserFills = async (poolTrade, crossFills, crossBase) => {
+            const taker = await this.userModel.findOne({ telegramId }).exec();
+            const crypto = taker?.cryptoBalances;
+            const allTrades = poolTrade ? [...(crossFills || []), poolTrade] : (crossFills || []);
+            const filledBase = poolTrade
+                ? round2((crossBase || 0) + (poolTrade.amount || 0))
+                : (crossBase || 0);
+            return {
+                success: true,
+                resting: false,
+                trade: allTrades[0],
+                trades: allTrades,
+                userFilledBase: filledBase,
+                balances: {
+                    quoteBalance: round4(crypto?.[pair.split("/")[1]] ?? taker?.elixirBalance ?? 0),
+                    elixir: round4(taker?.elixirBalance ?? 0),
+                    elixcoin: round4(crypto?.["ELIXCOIN"] ?? 0),
+                },
+                message: `Filled ${filledBase} ${pair.split("/")[0]} via orderbook.`,
+            };
+        };
         if (type === "market") {
             const execPrice = side === "BUY" ? ask : bid;
-            const result = await this.executeFill(pair, telegramId, side, round2(amount), round8(execPrice), "USER");
+            const cross = await this.matchCounterpartyOrders({
+                pair, takerId: telegramId, takerSide: side,
+                limit: round8(execPrice), amount: round2(amount), market: true,
+            });
+            if (cross.error)
+                return { success: false, error: cross.error };
+            const remaining = round2(round2(amount) - cross.filledBase);
+            if (remaining <= 0)
+                return finishUserFills(undefined, cross.fills, cross.filledBase);
+            const result = await this.executeFill(pair, telegramId, side, round2(remaining), round8(execPrice), "USER");
             if (result.success && ((body.tpPrice ?? 0) > 0 || (body.slPrice ?? 0) > 0)) {
-                await this.createTpSlOrder(telegramId, pair, side, round2(amount), body.tpPrice ?? 0, body.slPrice ?? 0);
+                await this.createTpSlOrder(telegramId, pair, side, round2(remaining), body.tpPrice ?? 0, body.slPrice ?? 0);
             }
+            if (!result.success) {
+                if (cross.filledBase > 0) {
+                    return { success: false, error: result.error, userFilledBase: cross.filledBase, trades: cross.fills };
+                }
+                return result;
+            }
+            if (cross.filledBase > 0)
+                return finishUserFills(result.trade, cross.fills, cross.filledBase);
             return result;
         }
         const limit = Number(body.price);
         if (!isFinite(limit) || limit <= 0)
             return { success: false, error: "Invalid limit price" };
-        if (side === "BUY" && limit >= ask)
-            return this.executeFill(pair, telegramId, "BUY", round2(amount), round8(ask), "USER");
-        if (side === "SELL" && limit <= bid)
-            return this.executeFill(pair, telegramId, "SELL", round2(amount), round8(bid), "USER");
         const useIceberg = body.iceberg === true && body.icebergChunkSize > 0;
-        const chunkSize = useIceberg ? Math.min(round2(body.icebergChunkSize), round2(amount)) : round2(amount);
-        const totalChunks = useIceberg ? Math.ceil(amount / chunkSize) : 1;
+        let crossFilled = 0;
+        let crossTrades = [];
+        if (!useIceberg) {
+            const cross = await this.matchCounterpartyOrders({
+                pair, takerId: telegramId, takerSide: side,
+                limit: round8(limit), amount: round2(amount),
+            });
+            if (cross.error)
+                return { success: false, error: cross.error };
+            crossFilled = cross.filledBase;
+            crossTrades = cross.fills;
+        }
+        const remaining = round2(round2(amount) - crossFilled);
+        if (remaining <= 0)
+            return finishUserFills(undefined, crossTrades, crossFilled);
+        if (side === "BUY" && limit >= ask) {
+            const poolRes = await this.executeFill(pair, telegramId, "BUY", round2(remaining), round8(ask), "USER");
+            if (!poolRes.success)
+                return poolRes;
+            return finishUserFills(poolRes.trade, crossTrades, crossFilled);
+        }
+        if (side === "SELL" && limit <= bid) {
+            const poolRes = await this.executeFill(pair, telegramId, "SELL", round2(remaining), round8(bid), "USER");
+            if (!poolRes.success)
+                return poolRes;
+            return finishUserFills(poolRes.trade, crossTrades, crossFilled);
+        }
+        const chunkSize = useIceberg ? Math.min(round2(body.icebergChunkSize), round2(remaining)) : round2(remaining);
+        const totalChunks = useIceberg ? Math.ceil(remaining / chunkSize) : 1;
         const order = await this.orderModel.create({
             pair,
             telegramId,
@@ -870,13 +1010,20 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             amount: round2(chunkSize),
             status: "OPEN",
             iceberg: useIceberg,
-            icebergTotal: round2(amount),
+            icebergTotal: round2(remaining),
             icebergChunkSize: round2(chunkSize),
             icebergChunksFilled: 0,
         });
+        const restedMsg = crossFilled > 0
+            ? `Partially filled ${round2(crossFilled)} via orderbook — remainder resting @ ${round8(limit)}`
+            : useIceberg
+                ? `Iceberg order placed — ${totalChunks} chunks of ${round2(chunkSize)} @ ${round8(limit)}`
+                : `Limit order placed — fills when the market crosses ${round8(limit)}`;
         return {
             success: true,
             resting: true,
+            trades: crossTrades.length > 0 ? crossTrades : undefined,
+            userFilledBase: crossFilled > 0 ? crossFilled : undefined,
             order: {
                 id: String(order._id),
                 side,
@@ -884,12 +1031,10 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
                 amount: order.amount,
                 status: "OPEN",
                 iceberg: useIceberg,
-                icebergTotal: useIceberg ? round2(amount) : undefined,
+                icebergTotal: useIceberg ? round2(remaining) : undefined,
                 icebergChunkSize: useIceberg ? round2(chunkSize) : undefined,
             },
-            message: useIceberg
-                ? `Iceberg order placed — ${totalChunks} chunks of ${round2(chunkSize)} @ ${round8(limit)}`
-                : `Limit order placed — fills when the market crosses ${round8(limit)}`,
+            message: restedMsg,
         };
     }
     async createTpSlOrder(telegramId, pair, originalSide, amount, tpPrice, slPrice) {
@@ -939,28 +1084,256 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
         catch {
         }
     }
+    checkMinMax(pair, side, amount, price) {
+        const [baseAsset] = pair.split("/");
+        const limitsKey = side === "BUY" ? pair.split("/")[1] : baseAsset;
+        const limits = trade_pairs_1.TRADE_LIMITS[limitsKey];
+        if (!limits)
+            return null;
+        if (side === "BUY") {
+            const spendQuote = round4(amount * price);
+            if (spendQuote < limits.min * MIN_TOLERANCE)
+                return `Minimum trade is ${limits.min} ${limitsKey}`;
+            if (spendQuote > limits.max)
+                return `Maximum trade is ${limits.max} ${limitsKey}`;
+        }
+        else {
+            if (amount < limits.min * MIN_TOLERANCE)
+                return `Minimum trade is ${limits.min} ${limitsKey}`;
+            if (amount > limits.max)
+                return `Maximum trade is ${limits.max} ${limitsKey}`;
+        }
+        return null;
+    }
+    async fillUserVsUser(opts) {
+        const { pair, buyerId, sellerId, takerId, takerSide } = opts;
+        const [base, quote] = pair.split("/");
+        const baseKey = base === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${base}`;
+        const quoteKey = quote === "ELIXIR" ? "elixirBalance" : `cryptoBalances.${quote}`;
+        const itemBase = (0, item_sync_1.isItemBase)(base);
+        const intBase = INT_BASES.includes(base) || itemBase;
+        const qty = intBase ? Math.floor(opts.baseQty) : round8(opts.baseQty);
+        if (!(qty > 0))
+            return { success: false, error: "dust" };
+        const price = round8(opts.price);
+        const grossQuote = round4(qty * price);
+        if (!(grossQuote > 0))
+            return { success: false, error: "dust" };
+        let takerFee = 0;
+        let takerFeeCurrency = quote;
+        if (takerSide === "BUY") {
+            if (itemBase) {
+                takerFee = round4(grossQuote * trade_pairs_1.FEE_PCT);
+                takerFeeCurrency = quote;
+            }
+            else {
+                takerFee = round4(qty * trade_pairs_1.FEE_PCT);
+                takerFeeCurrency = base;
+            }
+        }
+        else {
+            takerFee = round4(grossQuote * trade_pairs_1.FEE_PCT);
+            takerFeeCurrency = quote;
+        }
+        const buyerPaysQuote = itemBase && takerSide === "BUY" ? round4(grossQuote + takerFee) : grossQuote;
+        let buyerGetsBase = qty;
+        if (takerSide === "BUY" && !itemBase) {
+            buyerGetsBase = round4(qty - takerFee);
+            if (["COPPER", "IRON", "SILVER", "GOLD"].includes(base))
+                buyerGetsBase = Math.floor(buyerGetsBase);
+        }
+        if (itemBase)
+            buyerGetsBase = Math.floor(qty);
+        const sellerProceeds = takerSide === "SELL" ? round4(grossQuote - takerFee) : grossQuote;
+        if (takerSide === "BUY") {
+            const ok = await this.userModel
+                .findOneAndUpdate({ telegramId: takerId, [quoteKey]: { $gte: Math.max(0, buyerPaysQuote - 0.0001) } }, { $inc: { [quoteKey]: -buyerPaysQuote } }, { returnDocument: "after" })
+                .exec();
+            if (!ok)
+                return { success: false, takerShort: true, error: `Insufficient ${quote} balance` };
+        }
+        else if (itemBase) {
+            const have = await this.itemTradeService.getItemBalance(takerId, base);
+            if (have < Math.floor(qty))
+                return { success: false, takerShort: true, error: `Insufficient ${base} balance` };
+            const taken = await this.itemTradeService.deductItem(takerId, base, Math.floor(qty));
+            if (!taken)
+                return { success: false, takerShort: true, error: `Insufficient ${base} balance` };
+        }
+        else {
+            const ok = await this.userModel
+                .findOneAndUpdate({ telegramId: takerId, [baseKey]: { $gte: Math.max(0, qty - 0.0001) } }, { $inc: { [baseKey]: -qty } }, { returnDocument: "after" })
+                .exec();
+            if (!ok)
+                return { success: false, takerShort: true, error: `Insufficient ${base} balance` };
+        }
+        const refundTaker = async () => {
+            try {
+                if (takerSide === "BUY") {
+                    await this.userModel.updateOne({ telegramId: takerId }, { $inc: { [quoteKey]: buyerPaysQuote } }).exec();
+                }
+                else if (itemBase) {
+                    await this.itemTradeService.grantItem(takerId, base, Math.floor(qty));
+                }
+                else {
+                    await this.userModel.updateOne({ telegramId: takerId }, { $inc: { [baseKey]: qty } }).exec();
+                }
+            }
+            catch (e) {
+                this.logger.error(`[UserMatch] taker refund failed ${takerId} ${pair}: ${e?.message}`);
+            }
+        };
+        const makerId = takerSide === "BUY" ? sellerId : buyerId;
+        if (takerSide === "BUY") {
+            if (itemBase) {
+                const have = await this.itemTradeService.getItemBalance(makerId, base);
+                if (have < Math.floor(qty)) {
+                    await refundTaker();
+                    return { success: false, error: "maker-stale" };
+                }
+                const taken = await this.itemTradeService.deductItem(makerId, base, Math.floor(qty));
+                if (!taken) {
+                    await refundTaker();
+                    return { success: false, error: "maker-stale" };
+                }
+            }
+            else {
+                const ok = await this.userModel
+                    .findOneAndUpdate({ telegramId: makerId, [baseKey]: { $gte: Math.max(0, qty - 0.0001) } }, { $inc: { [baseKey]: -qty } }, { returnDocument: "after" })
+                    .exec();
+                if (!ok) {
+                    await refundTaker();
+                    return { success: false, error: "maker-stale" };
+                }
+            }
+        }
+        else {
+            const ok = await this.userModel
+                .findOneAndUpdate({ telegramId: makerId, [quoteKey]: { $gte: Math.max(0, grossQuote - 0.0001) } }, { $inc: { [quoteKey]: -grossQuote } }, { returnDocument: "after" })
+                .exec();
+            if (!ok) {
+                await refundTaker();
+                return { success: false, error: "maker-stale" };
+            }
+        }
+        if (takerSide === "BUY") {
+            if (itemBase) {
+                if (buyerGetsBase > 0)
+                    await this.itemTradeService.grantItem(buyerId, base, Math.floor(buyerGetsBase));
+                await this.userModel.updateOne({ telegramId: sellerId }, { $inc: { [quoteKey]: grossQuote } }).exec();
+            }
+            else {
+                await this.userModel.updateOne({ telegramId: buyerId }, { $inc: { [baseKey]: buyerGetsBase } }).exec();
+                await this.userModel.updateOne({ telegramId: sellerId }, { $inc: { [quoteKey]: grossQuote } }).exec();
+            }
+        }
+        else {
+            if (itemBase) {
+                if (Math.floor(qty) > 0)
+                    await this.itemTradeService.grantItem(buyerId, base, Math.floor(qty));
+                await this.userModel.updateOne({ telegramId: sellerId }, { $inc: { [quoteKey]: sellerProceeds } }).exec();
+            }
+            else {
+                await this.userModel.updateOne({ telegramId: buyerId }, { $inc: { [baseKey]: qty } }).exec();
+                await this.userModel.updateOne({ telegramId: sellerId }, { $inc: { [quoteKey]: sellerProceeds } }).exec();
+            }
+        }
+        await this.poolModel
+            .updateOne({ pair }, {
+            $inc: { platformFeesAccumulated: takerFee, lifetimeVolume: qty, volume24h: qty, quoteVolume24h: grossQuote },
+            $max: { high24h: price },
+            $min: { low24h: price },
+        })
+            .exec();
+        const takerTrade = await this.tradeModel.create({
+            pair, side: takerSide, price, amount: qty, total: grossQuote,
+            fee: takerFee, feeCurrency: takerFeeCurrency, source: "USER", telegramId: takerId,
+        });
+        const makerSide = takerSide === "BUY" ? "SELL" : "BUY";
+        const makerTrade = await this.tradeModel.create({
+            pair, side: makerSide, price, amount: qty, total: grossQuote,
+            fee: 0, feeCurrency: quote, source: "USER", telegramId: makerId,
+        });
+        this.tickerCache.delete(pair);
+        this.bookCache.delete(pair);
+        this.tradesCache.delete(pair);
+        this.sseService.broadcast(pair, "trade", {
+            side: takerSide, price, amount: qty, total: grossQuote,
+            fee: takerFee, feeCurrency: takerFeeCurrency, source: "USER", pair,
+            time: Date.now(),
+        });
+        this.sseService.broadcast(pair, "ticker", await this.getTicker(pair));
+        this.checkTpSlOrders(pair, price).catch(() => { });
+        return {
+            success: true, filledBase: qty, grossQuote, takerFee,
+            takerTradeId: String(takerTrade._id), makerTradeId: String(makerTrade._id),
+        };
+    }
+    async matchCounterpartyOrders(opts) {
+        const { pair, takerId, takerSide, limit, market } = opts;
+        const oppSide = takerSide === "BUY" ? "SELL" : "BUY";
+        const gateError = this.checkMinMax(pair, takerSide, round2(opts.amount), round8(limit));
+        if (gateError)
+            return { filledBase: 0, fills: [], error: gateError };
+        const priceCond = market
+            ? {}
+            : takerSide === "BUY" ? { price: { $lte: round8(limit) } } : { price: { $gte: round8(limit) } };
+        const sortSpec = takerSide === "BUY" ? { price: 1, createdAt: 1 } : { price: -1, createdAt: 1 };
+        const makers = await this.orderModel
+            .find({ pair, status: "OPEN", side: oppSide, iceberg: { $ne: true }, telegramId: { $ne: takerId }, ...priceCond })
+            .sort(sortSpec)
+            .limit(50)
+            .lean()
+            .exec();
+        let remaining = round2(opts.amount);
+        const fills = [];
+        const levelsUsed = new Set();
+        for (const m of makers) {
+            if (!(remaining > 0))
+                break;
+            const makerRemaining = round2((m.amount || 0) - (m.filledAmount || 0));
+            if (!(makerRemaining > 0))
+                continue;
+            if (!levelsUsed.has(m.price) && levelsUsed.size >= 3)
+                break;
+            const fillQty = Math.min(remaining, makerRemaining);
+            const res = await this.fillUserVsUser({
+                pair,
+                buyerId: takerSide === "BUY" ? takerId : String(m.telegramId),
+                sellerId: takerSide === "BUY" ? String(m.telegramId) : takerId,
+                baseQty: fillQty,
+                price: m.price,
+                takerId,
+                takerSide,
+            });
+            if (!res.success) {
+                if (res.takerShort)
+                    break;
+                continue;
+            }
+            const newFilled = round2((m.filledAmount || 0) + (res.filledBase || 0));
+            const [baseAsset] = pair.split("/");
+            const minOrderLimit = trade_pairs_1.TRADE_LIMITS[baseAsset]?.min ?? 1;
+            const done = (m.amount || 0) - newFilled < minOrderLimit * 0.9;
+            await this.orderModel
+                .updateOne({ _id: m._id, status: "OPEN" }, { $set: { filledAmount: newFilled, status: done ? "FILLED" : "OPEN" } })
+                .exec();
+            remaining = round2(remaining - (res.filledBase || 0));
+            if ((res.filledBase || 0) > 0)
+                levelsUsed.add(m.price);
+            fills.push({ tradeId: res.takerTradeId, makerTradeId: res.makerTradeId, price: m.price, qty: res.filledBase });
+            if (!(remaining > 0))
+                break;
+        }
+        return { filledBase: round2(opts.amount - remaining), fills };
+    }
     async executeFill(pair, telegramId, side, amount, basePrice, source) {
         if (source === "USER" && !telegramId)
             return { success: false, error: "Missing account" };
         if (source === "USER") {
-            const [baseAsset] = pair.split("/");
-            const limitsKey = side === "BUY" ? pair.split("/")[1] : baseAsset;
-            const limits = trade_pairs_1.TRADE_LIMITS[limitsKey];
-            if (limits) {
-                if (side === "BUY") {
-                    const spendQuote = round4(amount * basePrice);
-                    if (spendQuote < limits.min)
-                        return { success: false, error: `Minimum trade is ${limits.min} ${limitsKey}` };
-                    if (spendQuote > limits.max)
-                        return { success: false, error: `Maximum trade is ${limits.max} ${limitsKey}` };
-                }
-                else {
-                    if (amount < limits.min)
-                        return { success: false, error: `Minimum trade is ${limits.min} ${limitsKey}` };
-                    if (amount > limits.max)
-                        return { success: false, error: `Maximum trade is ${limits.max} ${limitsKey}` };
-                }
-            }
+            const limitError = this.checkMinMax(pair, side, amount, basePrice);
+            if (limitError)
+                return { success: false, error: limitError };
         }
         const pool = await this.getPool(pair);
         let price = basePrice;
@@ -1016,9 +1389,16 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             if (source === "USER") {
                 this.previousMid.set(pair, pool.lastMid);
             }
-            const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
+            const whaleThreshold = side === "BUY" ? (pool.quoteReserve || 0) * 0.03 : (pool.baseReserve || 0) * 0.03;
+            const whaleSize = side === "BUY" ? round4(amount * basePrice) : amount;
+            const isWhale = source === "USER" && whaleThreshold > 0 && whaleSize > whaleThreshold;
+            if (isWhale) {
+                this.logger.warn(`[WHALE-GUARD] ${side} ${amount} ${pair.split("/")[0]} by ${telegramId} ` +
+                    `(size ${whaleSize} > 3% reserve ${round4(whaleThreshold)}) — instant fill, impact suppressed.`);
+            }
+            const midNudge = source === "USER" && !isWhale ? shiftPct * 0.5 : 0;
             const newMid = round8(pool.lastMid * (1 + midNudge));
-            if (source === "USER") {
+            if (source === "USER" && !isWhale) {
                 this.lastUserTradeImpact.set(pair, {
                     side: "BUY",
                     time: Date.now(),
@@ -1111,9 +1491,15 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             if (source === "USER") {
                 this.previousMid.set(pair, pool.lastMid);
             }
-            const midNudge = source === "USER" ? shiftPct * 0.5 : 0;
+            const sellWhaleThreshold = (pool.baseReserve || 0) * 0.03;
+            const isSellWhale = source === "USER" && sellWhaleThreshold > 0 && amount > sellWhaleThreshold;
+            if (isSellWhale) {
+                this.logger.warn(`[WHALE-GUARD] SELL ${amount} ${pair.split("/")[0]} by ${telegramId} ` +
+                    `(> 3% reserve ${round4(sellWhaleThreshold)}) — instant fill, impact suppressed.`);
+            }
+            const midNudge = source === "USER" && !isSellWhale ? shiftPct * 0.5 : 0;
             const newMid = round8(pool.lastMid * (1 - midNudge));
-            if (source === "USER") {
+            if (source === "USER" && !isSellWhale) {
                 this.lastUserTradeImpact.set(pair, {
                     side: "SELL",
                     time: Date.now(),
@@ -1331,7 +1717,7 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
         }
         const baseAsset = await this.assetRegistry.getAsset(base);
         if (!this.driftedThisCycle.has(base)) {
-            const baseVolatility = (Math.random() - 0.5) * 0.006;
+            const baseVolatility = (Math.random() - 0.5) * 0.002;
             let baseGravity = 0;
             if (baseAsset.anchorUsdPrice > 0) {
                 const baseDiffPct = (baseAsset.usdPrice - baseAsset.anchorUsdPrice) / baseAsset.anchorUsdPrice;
@@ -1371,19 +1757,19 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             let price;
             if (hasAdminRange) {
                 if (side === "BUY") {
-                    price = priceRound(adminFloor + Math.random() * (mid - adminFloor));
+                    price = priceRound(mid + Math.random() * (adminCeiling - mid));
                 }
                 else {
-                    price = priceRound(mid + Math.random() * (adminCeiling - mid));
+                    price = priceRound(adminFloor + Math.random() * (mid - adminFloor));
                 }
             }
             else {
-                const spreadFactor = pool.spreadPct || 0.004;
+                const half = (pool.spreadPct || 0.004) / 2;
                 if (side === "BUY") {
-                    price = priceRound(mid * (1 - Math.random() * spreadFactor));
+                    price = priceRound(mid * (1 + half));
                 }
                 else {
-                    price = priceRound(mid * (1 + Math.random() * spreadFactor));
+                    price = priceRound(mid * (1 - half));
                 }
             }
             const total = round4(amount * price);
@@ -1471,9 +1857,14 @@ exports.TradeSpotService = TradeSpotService = TradeSpotService_1 = __decorate([
     __param(2, (0, mongoose_1.InjectModel)(open_order_schema_1.OpenOrder.name)),
     __param(3, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(8, (0, mongoose_1.InjectModel)(pending_tp_sl_schema_1.PendingTpSl.name)),
-    __metadata("design:paramtypes", [typeof (_a = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _a : Object, typeof (_b = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _b : Object, typeof (_c = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _c : Object, typeof (_d = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _d : Object, asset_registry_service_1.AssetRegistryService,
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model,
+        mongoose_2.Model,
+        mongoose_2.Model,
+        asset_registry_service_1.AssetRegistryService,
         buff_item_collections_service_1.BuffItemCollectionsService,
         sse_service_1.SseService,
-        item_trade_service_1.ItemTradeService, typeof (_e = typeof mongoose_2.Model !== "undefined" && mongoose_2.Model) === "function" ? _e : Object])
+        item_trade_service_1.ItemTradeService,
+        mongoose_2.Model])
 ], TradeSpotService);
 //# sourceMappingURL=trade-spot.service.js.map
