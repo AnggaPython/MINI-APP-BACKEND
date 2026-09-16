@@ -20,7 +20,7 @@ export declare class UsersController {
         }[];
         error?: undefined;
     }>;
-    monetagPostback(userid?: string, eventLegacy?: string, rewardLegacy?: string, payoutLegacy?: string, ymid?: string, eventType?: string, rewardEventType?: string, estimatedPrice?: string, telegramId?: string): Promise<{
+    monetagPostback(s2sSecret?: string, userid?: string, eventLegacy?: string, rewardLegacy?: string, payoutLegacy?: string, ymid?: string, eventType?: string, rewardEventType?: string, estimatedPrice?: string, telegramId?: string): Promise<{
         status: string;
         reason: string;
         user?: undefined;

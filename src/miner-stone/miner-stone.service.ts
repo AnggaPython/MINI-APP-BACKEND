@@ -83,8 +83,12 @@ const HISTORY_LIMIT = 50;
 // so we compute the absolute fastest a legitimate client could destroy:
 //   minHits = ceil(maxHp / MAX_PLAYER_ATK)
 //   minTime = minHits * HIT_INTERVAL_MS
-// MAX_PLAYER_ATK covers Mythic (60) + generous ATK buff ceiling.
-const MAX_PLAYER_ATK = 120;
+// MAX_PLAYER_ATK must cover the highest LEGITIMATE per-hit damage, or real
+// players get rejected as cheaters (measured ceiling: Mythic pickaxe 60 +
+// max ATK buff ≈ 271 → ~331 per hit; the old value of 120 sat BELOW the
+// legitimate maximum). 350 adds headroom above that ceiling; anything faster
+// than minHits at 350 ATK is still impossible for a human-followable client.
+const MAX_PLAYER_ATK = 350;
 const HIT_INTERVAL_MS = 1500;
 
 // NOTE: Server-side cooldown removed — the frontend's 3-minute timer
@@ -193,7 +197,7 @@ export class MinerStoneService {
 
 
   // ─────────────────────────────────────────────────────────────
-  // Provably-fair HMAC-SHA256 RNG (same pattern as the Hi-Lo casino engine)
+  // Server-side HMAC-SHA256 RNG (same pattern as the Hi-Lo casino engine). Not externally verifiable — no commit-reveal, so the "provably fair" label was dropped (audit finding rng.provably-fair-claim-without-commitment).
   // ─────────────────────────────────────────────────────────────
   private roll01(clientSeed: string, purpose: string): number {
     const serverSeed = crypto.randomBytes(16).toString("hex");
@@ -459,7 +463,37 @@ export class MinerStoneService {
       set[`pickaxeDurability.${t}`] = Math.max(0, Math.min(v, this.durabilityMaxFor(t, levels[t] ?? 0)));
     }
     if (Object.keys(set).length === 0) return { success: false, error: "Nothing to sync" };
-    await this.userModel.updateOne({ telegramId }, { $set: set }).exec();
+
+    // ── One-way report ──────────────────────────────────────────────────────
+    // Durability is server state: this endpoint may only LOWER it. A plain
+    // $set wrote the client's number through, so a player could refill every
+    // pickaxe for free (measured: a 0-durability pickaxe restored to full with
+    // zero materials spent) and the whole repair economy was optional.
+    // The pipeline initialises a missing tier to the incoming value and then
+    // applies $min, which is race-free without a read-modify-write.
+    const pipeline: Record<string, unknown>[] = [
+      {
+        $set: Object.fromEntries(
+          Object.keys(set).map((path) => [path, { $ifNull: [`$${path}`, set[path]] }]),
+        ),
+      },
+      {
+        $set: Object.fromEntries(
+          Object.entries(set).map(([path, value]) => [path, { $min: [`$${path}`, value] }]),
+        ),
+      },
+    ];
+
+    await this.userModel
+      .updateOne(
+        { telegramId },
+        pipeline as unknown as Record<string, unknown>,
+        // Mongoose refuses array updates unless this flag marks them as an
+        // aggregation pipeline (also skips document casting, which is what we
+        // want for raw $ifNull/$min field math).
+        { updatePipeline: true } as never,
+      )
+      .exec();
     return { success: true };
   }
 
@@ -747,6 +781,17 @@ export class MinerStoneService {
           )
           .exec();
         if (adRequired && !saved) {
+          // Release the one-shot lock before returning, otherwise the retry the
+          // message advertises is impossible: the stone stays finalized with the
+          // loot destroyed and never credited (measured: a Rare stone holding
+          // GOLD 5 + DIAMOND 2 lost everything, and the retry answered
+          // "Rewards already claimed or stone not found.").
+          await this.miningStoneModel
+            .updateOne(
+              { _id: stoneId, telegramId, claimAction: action },
+              { $set: { claimAction: null }, $unset: { finalizedAt: "" } },
+            )
+            .exec();
           return {
             success: false,
             adRequired: true,
@@ -780,6 +825,13 @@ export class MinerStoneService {
             )
             .exec();
           if (adRequired && !sold) {
+            // Same rollback as the SAVE branch: make the advertised retry possible.
+            await this.miningStoneModel
+              .updateOne(
+                { _id: stoneId, telegramId, claimAction: action },
+                { $set: { claimAction: null }, $unset: { finalizedAt: "" } },
+              )
+              .exec();
             return {
               success: false,
               adRequired: true,

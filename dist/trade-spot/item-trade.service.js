@@ -70,12 +70,11 @@ let ItemTradeService = ItemTradeService_1 = class ItemTradeService {
         try {
             if ((0, item_sync_1.isMaterialBase)(base)) {
                 const displayName = (0, item_sync_1.slugToMaterialName)(base);
-                await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
+                const removed = await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
+                return removed >= qty;
             }
-            else {
-                await this.buffCollectionsService.removeBuffItem(telegramId, base.toLowerCase(), qty);
-            }
-            return true;
+            const removed = await this.buffCollectionsService.removeBuffItem(telegramId, base.toLowerCase(), qty);
+            return removed >= qty;
         }
         catch (err) {
             this.logger.warn(`[ItemTrade] deductItem ${base}: ${err?.message}`);

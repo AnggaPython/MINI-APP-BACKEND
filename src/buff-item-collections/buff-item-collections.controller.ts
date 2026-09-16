@@ -79,29 +79,17 @@ export class BuffItemCollectionsController {
     return this.service.activateAllByType(telegramId, buffType);
   }
 
-  // ── Grant (for loot system integration) ──────────────────────────────────
-
-  /** POST /buff-collections/grant — grant a specific buff item to user */
-  @Post("grant")
-  async grant(
-    @User("telegramId") telegramId: string,
-    @Body("buffId") buffId: string,
-  ) {
-    if (!telegramId) return { success: false, error: "Missing telegramId" };
-    if (!buffId) return { success: false, error: "Missing buffId" };
-    return this.service.grantBuffItem(telegramId, buffId);
-  }
-
-  /** POST /buff-collections/grant-random — grant a random buff based on drop weights */
-  @Post("grant-random")
-  async grantRandom(
-    @User("telegramId") telegramId: string,
-    @Body("preferredRarity") preferredRarity?: string,
-  ) {
-    if (!telegramId) return { success: false, error: "Missing telegramId" };
-    return this.service.grantRandomBuff(
-      telegramId,
-      preferredRarity as any,
-    );
-  }
+  // ── Grants ───────────────────────────────────────────────────────────────
+  //
+  // POST /buff-collections/grant and /grant-random were REMOVED. Item creation
+  // is a server-side privilege: case-box, miner-stone and auction-house call
+  // BuffItemCollectionsService directly, and no frontend file ever called these
+  // two routes. Exposing them let any authenticated player mint any buff item
+  // (grant-random even honoured a client-chosen `preferredRarity`), which also
+  // defeated the mining anti-cheat damage ceiling.
+  //
+  // If a client-triggered grant is ever required (e.g. a promo code), implement
+  // it as POST /buff-collections/claim-grant { voucherId } where the voucher
+  // document is created server-side, is single-use, and is marked consumed in
+  // the same atomic update that pushes the item into the collection.
 }

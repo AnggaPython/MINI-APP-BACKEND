@@ -29,7 +29,7 @@ export class MiningStone {
   @Prop({ required: true })
   maxHp: number;
 
-  // Rolled at spawn by the provably-fair RNG — a ZONK stone has no loot at all
+  // Rolled at spawn by the server-side HMAC RNG — a ZONK stone has no loot at all
   @Prop({ type: Boolean, default: false })
   zonk: boolean;
 

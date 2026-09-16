@@ -226,10 +226,13 @@ let CampaignsService = class CampaignsService {
         await this.achievementsService.incrementProgress(telegramId, [2, 3, 4], 1);
         return { success: true, reward: userCut };
     }
-    async updateCampaign(campaignId, data) {
+    async updateCampaign(campaignId, callerTelegramId, data) {
         const existing = await this.campaignModel.findById(campaignId);
         if (!existing)
             return { success: false, error: "Campaign not found" };
+        if (String(existing.creatorTelegramId) !== String(callerTelegramId)) {
+            return { success: false, error: "Campaign not found" };
+        }
         if (data.url) {
             try {
                 this.validateCampaignUrl(data.url, existing.category);
@@ -238,14 +241,32 @@ let CampaignsService = class CampaignsService {
                 return { success: false, error: e.message };
             }
         }
-        const updated = await this.campaignModel.findByIdAndUpdate(campaignId, { $set: data }, { returnDocument: "after" });
+        const patch = {};
+        if (typeof data.title === "string")
+            patch.title = data.title;
+        if (typeof data.description === "string")
+            patch.description = data.description;
+        if (typeof data.url === "string")
+            patch.url = data.url;
+        if (Object.keys(patch).length === 0) {
+            return { success: false, error: "Nothing to update" };
+        }
+        const updated = await this.campaignModel.findOneAndUpdate({ _id: campaignId, creatorTelegramId: callerTelegramId }, { $set: patch }, { returnDocument: "after" });
         if (!updated)
             return { success: false, error: "Campaign not found" };
         return { success: true, campaign: updated };
     }
     async addBudget(campaignId, amount, telegramId) {
-        if (amount < 10000)
+        if (!Number.isFinite(amount) || amount < 10000)
             return { success: false, error: "Minimum top-up is 10,000 ELIXIR" };
+        if (amount > 1_000_000)
+            return { success: false, error: "Maximum top-up is 1,000,000 ELIXIR" };
+        const owned = await this.campaignModel.exists({
+            _id: campaignId,
+            creatorTelegramId: telegramId,
+        });
+        if (!owned)
+            return { success: false, error: "Campaign not found" };
         const deducted = await this.usersService.debitElixir(telegramId, amount);
         if (!deducted)
             return { success: false, error: "Insufficient Elixir balance" };

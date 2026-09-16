@@ -28,10 +28,10 @@ let BankController = class BankController {
         return { success: true, stats };
     }
     async stake(telegramId, body) {
-        if (!telegramId || !body.amount || !body.durationDays || !body.rate) {
+        if (!telegramId || !body.amount || !body.durationDays) {
             return { error: "Incomplete parameters" };
         }
-        return await this.bankService.createStake(telegramId, Number(body.amount), Number(body.durationDays), Number(body.rate), body.autoClaim || false);
+        return await this.bankService.createStake(telegramId, Number(body.amount), Number(body.durationDays), undefined, body.autoClaim || false);
     }
     async claimYield(telegramId) {
         if (!telegramId)

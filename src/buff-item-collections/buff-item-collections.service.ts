@@ -489,7 +489,10 @@ export class BuffItemCollectionsService implements OnModuleInit {
     const collection = await this.userBuffModel.findOne({ telegramId });
     if (!collection) return 0;
 
-    // Find instances of this buff that are NOT active (can't sell equipped items)
+    // Find instances of this buff that are NOT active (equipped items cannot be
+    // sold). NOTE: this filter is what makes an equipped item unsellable — which
+    // is why any caller that ignores the returned count paid for items that never
+    // left the collection.
     const removableInstances = collection.inventory.filter(
       i => i.baseItemId === buffId && !collection.activeInstanceIds.includes(i.instanceId)
     );
@@ -513,7 +516,13 @@ export class BuffItemCollectionsService implements OnModuleInit {
     const col = await this.userBuffModel.findOne({ telegramId }).lean();
     if (!col) return 0;
     const inventory = col.inventory || [];
-    return inventory.filter(i => i.baseItemId === buffId).length;
+    const active = col.activeInstanceIds || [];
+    // Count only what can actually be removed. Counting equipped instances made
+    // the pre-read balance overstate the sellable amount, so a sale could be
+    // priced, paid, and then remove nothing.
+    return inventory.filter(
+      (i) => i.baseItemId === buffId && !active.includes(i.instanceId),
+    ).length;
   }
 
   // ── Material Tools Sync ────────────────────────────────────────────────
@@ -538,16 +547,22 @@ export class BuffItemCollectionsService implements OnModuleInit {
    */
   async removeMaterial(telegramId: string, displayName: string, count: number = 1): Promise<number> {
     if (count <= 0) return 0;
-    const user = await this.userModel.findOne({ telegramId }).lean().exec();
-    if (!user) return 0;
-    const current = (user as any).materials?.[displayName] ?? 0;
-    const toRemove = Math.min(count, current);
-    if (toRemove <= 0) return 0;
-    await this.userModel.updateOne(
-      { telegramId },
-      { $inc: { [`materials.${displayName}`]: -toRemove } },
-    ).exec();
-    return toRemove;
+
+    // Atomic guarded decrement: the guard lives INSIDE the update so MongoDB
+    // arbitrates. The previous read-then-$inc let two concurrent sales read the
+    // same balance and both decrement it (measured: 5 -> -5 with two sales of 5,
+    // both paid), because the caller discarded this function's result.
+    const updated = await this.userModel
+      .findOneAndUpdate(
+        { telegramId, [`materials.${displayName}`]: { $gte: count } },
+        { $inc: { [`materials.${displayName}`]: -count } },
+        { returnDocument: "after" },
+      )
+      .exec();
+    if (updated) return count;
+
+    // Nothing removed: either the user does not exist or the balance is short.
+    return 0;
   }
 
   /**
@@ -734,5 +749,56 @@ export class BuffItemCollectionsService implements OnModuleInit {
 
     const picked = available[Math.floor(Math.random() * available.length)];
     return this.grantBuffItem(telegramId, picked.buffId);
+  }
+
+  /**
+   * Select (but do NOT grant) a random buff of the wanted rarity that the user
+   * does not own yet.
+   *
+   * Used by the case-box destroy path so the rolled item can be shown to the
+   * player before the S2S ad gate, while the actual grant happens at claim time
+   * (otherwise a MEDIUM/RARE case handed out the item before any ad ticket was
+   * verified). Returns null when the collection is complete for every rarity
+   * at or below the requested one.
+   */
+  async selectRandomBuff(
+    telegramId: string,
+    preferredRarity?: BuffRarity,
+  ): Promise<{ buffItem: Record<string, unknown> } | null> {
+    const rarityWeights = BuffItemCollectionsService.BUFF_RARITY_WEIGHTS;
+    let roll = Math.random() * 100;
+    let selectedRarity: BuffRarity = "COMMON";
+
+    if (preferredRarity) {
+      selectedRarity = preferredRarity;
+    } else {
+      for (const [rarity, weight] of Object.entries(rarityWeights) as [
+        BuffRarity,
+        number,
+      ][]) {
+        roll -= weight;
+        if (roll <= 0) {
+          selectedRarity = rarity;
+          break;
+        }
+      }
+    }
+
+    const collection = await this.userBuffModel.findOne({ telegramId }).lean();
+    const ownedIds = collection?.inventory?.map((i) => i.baseItemId) || [];
+    const fallbackOrder: BuffRarity[] = ["COMMON", "MEDIUM", "RARE", "ULTRA_RARE"];
+    const startIdx = Math.max(0, fallbackOrder.indexOf(selectedRarity));
+
+    for (let i = startIdx; i >= 0; i--) {
+      const candidates = await this.buffItemModel
+        .find({ rarity: fallbackOrder[i], buffId: { $nin: ownedIds } })
+        .lean();
+      if (candidates.length > 0) {
+        const picked = candidates[Math.floor(Math.random() * candidates.length)];
+        // Same shape grantBuffItem returns, so callers keep one contract.
+        return { buffItem: picked as unknown as Record<string, unknown> };
+      }
+    }
+    return null;
   }
 }

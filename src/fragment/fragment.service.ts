@@ -66,7 +66,7 @@ const MINE_SWIPE_MINE_COUNT = 5; // 5 mines in 25 tiles = 80% safe
 const MINE_SWIPE_BASE_REWARD_PER_TILE = 2; // base GOLD per safe tile
 const MINE_SWIPE_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-// ── Helper: provably-fair RNG 0-1 ────────────────────────────────────────
+// ── Helper: server-side HMAC RNG 0-1 (not externally verifiable — no commit-reveal) ──
 function roll01(purpose: string): number {
   const serverSeed = crypto.randomBytes(16).toString("hex");
   const hash = crypto
@@ -269,27 +269,51 @@ export class FragmentService {
     const levelBonus = 1 + (userLevel - 1) * 0.02; // +2% per level
     const rewardPerTile = Math.round(MINE_SWIPE_BASE_REWARD_PER_TILE * levelBonus * 100) / 100;
 
-    // Atomic: deduct fragments + create session
-    const now = Date.now();
-    const session = await new this.mineSwipeModel({
-      telegramId,
-      boardSize: MINE_SWIPE_BOARD_SIZE,
-      mineCount: MINE_SWIPE_MINE_COUNT,
-      mines: Array.from(minePositions),
-      revealed: [],
-      status: "active",
-      accumulatedReward: 0,
-      rewardPerTile,
-      expireAt: new Date(now + MINE_SWIPE_SESSION_TTL_MS),
-    }).save();
-
-    // Deduct fragments
-    await this.userModel
+    // ── Charge first, then create the board ─────────────────────────────────
+    // The debit result was previously discarded and it ran AFTER the session was
+    // persisted, so any interleaving in which the guarded debit matched nothing
+    // left a board that was never paid for. The charge is now the guard: no debit,
+    // no board.
+    const charged = await this.userModel
       .findOneAndUpdate(
         { telegramId, mineSwipeFragments: { $gte: MINE_SWIPE_COST } },
         { $inc: { mineSwipeFragments: -MINE_SWIPE_COST } },
+        { returnDocument: "after" },
       )
       .exec();
+
+    if (!charged) {
+      return {
+        success: false,
+        error: `Need ${MINE_SWIPE_COST} Mine Swipe fragments (balance changed, try again)`,
+      };
+    }
+
+    const now = Date.now();
+    let session: MineSwipeSessionDocument;
+    try {
+      session = await new this.mineSwipeModel({
+        telegramId,
+        boardSize: MINE_SWIPE_BOARD_SIZE,
+        mineCount: MINE_SWIPE_MINE_COUNT,
+        mines: Array.from(minePositions),
+        revealed: [],
+        status: "active",
+        accumulatedReward: 0,
+        rewardPerTile,
+        expireAt: new Date(now + MINE_SWIPE_SESSION_TTL_MS),
+      }).save();
+    } catch (err) {
+      // Board could not be created: refund the entry fee so the player is not
+      // charged for a game that does not exist.
+      await this.userModel
+        .findOneAndUpdate(
+          { telegramId },
+          { $inc: { mineSwipeFragments: MINE_SWIPE_COST } },
+        )
+        .exec();
+      throw err;
+    }
 
     return {
       success: true,
@@ -329,7 +353,24 @@ export class FragmentService {
       // GAME OVER — hit a mine
       session.status = "lost";
       session.accumulatedReward = 0;
-      await session.save();
+      // Conditional write: a claim that landed while this reveal was in flight
+      // must not be overwritten back to an active state.
+      const written = await this.mineSwipeModel
+        .findOneAndUpdate(
+          { _id: session._id, telegramId, status: "active" },
+          {
+            $set: {
+              status: "lost",
+              accumulatedReward: 0,
+              revealed: session.revealed,
+            },
+          },
+          { returnDocument: "after" },
+        )
+        .exec();
+      if (!written) {
+        return { success: false, error: "Session not found or already finished" };
+      }
 
       return {
         success: true,
@@ -356,7 +397,25 @@ export class FragmentService {
       const winReward = session.accumulatedReward;
       session.status = "claimed";
       session.finalReward = winReward;
-      await session.save();
+      // Conditional write, and the credit below only runs if THIS request is the
+      // one that completed the board (otherwise a concurrent claim already paid).
+      const completed = await this.mineSwipeModel
+        .findOneAndUpdate(
+          { _id: session._id, telegramId, status: "active" },
+          {
+            $set: {
+              status: "claimed",
+              finalReward: winReward,
+              revealed: session.revealed,
+              accumulatedReward: winReward,
+            },
+          },
+          { returnDocument: "after" },
+        )
+        .exec();
+      if (!completed) {
+        return { success: false, error: "Session not found or already finished" };
+      }
 
       if (winReward > 0) {
         await this.userModel
@@ -384,7 +443,22 @@ export class FragmentService {
       };
     }
 
-    await session.save();
+    // Conditional write: never resurrect a session that a claim already settled.
+    const written = await this.mineSwipeModel
+      .findOneAndUpdate(
+        { _id: session._id, telegramId, status: "active" },
+        {
+          $set: {
+            revealed: session.revealed,
+            accumulatedReward: session.accumulatedReward,
+          },
+        },
+        { returnDocument: "after" },
+      )
+      .exec();
+    if (!written) {
+      return { success: false, error: "Session not found or already finished" };
+    }
 
     return {
       success: true,
@@ -398,26 +472,45 @@ export class FragmentService {
 
   /** Cash out accumulated reward from Mine Swipe. */
   async mineSwipeClaim(telegramId: string, sessionId: string) {
-    const session = await this.mineSwipeModel
+    // Read first only to give precise errors; the money decision is the atomic
+    // claim below.
+    const pre = await this.mineSwipeModel
       .findOne({ _id: sessionId, telegramId, status: { $in: ["active", "won"] } })
+      .lean()
+      .exec();
+
+    if (!pre) {
+      return { success: false, error: "Session not found or already claimed" };
+    }
+
+    if (!pre.revealed || pre.revealed.length === 0) {
+      return { success: false, error: "No tiles revealed yet" };
+    }
+
+    // ── Atomic claim ────────────────────────────────────────────────────────
+    // Only the request that flips the session out of active/won may credit.
+    // findOne + save() let N parallel claims all credit (measured: 3 parallel
+    // claims credited 6 GOLD for a session whose fair value was 2).
+    const session = await this.mineSwipeModel
+      .findOneAndUpdate(
+        { _id: sessionId, telegramId, status: { $in: ["active", "won"] } },
+        { $set: { status: "claimed", claimedAt: new Date() } },
+        { returnDocument: "after" },
+      )
       .exec();
 
     if (!session) {
       return { success: false, error: "Session not found or already claimed" };
     }
 
-    if (session.revealed.length === 0) {
-      return { success: false, error: "No tiles revealed yet" };
-    }
-
-    const reward = session.status === "won"
-      ? session.accumulatedReward
-      : session.accumulatedReward;
-
-    // Mark as claimed
-    session.status = "claimed";
+    const reward = session.accumulatedReward;
     session.finalReward = reward;
-    await session.save();
+    await this.mineSwipeModel
+      .updateOne(
+        { _id: session._id, status: "claimed" },
+        { $set: { finalReward: reward } },
+      )
+      .exec();
 
     // Credit GOLD into HOLDING balance (mineSwipe slot)
     if (reward > 0) {

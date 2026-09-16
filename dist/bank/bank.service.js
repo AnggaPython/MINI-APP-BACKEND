@@ -23,7 +23,8 @@ const bank_log_schema_1 = require("./schemas/bank-log.schema");
 const users_service_1 = require("../users/users.service");
 const achievements_service_1 = require("../achievements/achievements.service");
 const admin_service_1 = require("../admin/admin.service");
-let BankService = BankService_1 = class BankService {
+let BankService = class BankService {
+    static { BankService_1 = this; }
     stakeModel;
     bankLogModel;
     usersService;
@@ -38,6 +39,12 @@ let BankService = BankService_1 = class BankService {
         this.adminService = adminService;
     }
     PLATFORM_TAX = 0.05;
+    static STAKE_RATES = {
+        30: 0.06,
+        60: 0.12,
+        90: 0.18,
+        360: 0.72,
+    };
     tvlCache = null;
     TVL_CACHE_MS = 30_000;
     async handleAutoClaim() {
@@ -158,9 +165,18 @@ let BankService = BankService_1 = class BankService {
             personalStaked,
         };
     }
-    async createStake(telegramId, amount, durationDays, rate, autoClaim = false) {
+    async createStake(telegramId, amount, durationDays, _clientSuppliedRate, autoClaim = false) {
         if (amount < 1000)
             return { error: "Minimum stake is 1,000 ELIXIR" };
+        const rate = BankService_1.STAKE_RATES[Number(durationDays)];
+        if (rate === undefined) {
+            return {
+                error: `Invalid duration. Allowed: ${Object.keys(BankService_1.STAKE_RATES).join(", ")} days`,
+            };
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return { error: "Invalid amount" };
+        }
         const existingStakes = await this.stakeModel
             .find({ telegramId, status: "active" })
             .exec();

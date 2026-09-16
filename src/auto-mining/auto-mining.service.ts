@@ -139,6 +139,49 @@ export class AutoMiningService {
       };
     }
 
+    // ── Reserve the plan slot atomically ────────────────────────────────────
+    // The check above is a read, so two parallel subscribes both passed it and
+    // both charged the fee (measured: 500,000 ELIXIR debited for a single
+    // 250,000 ELIXIR plan, one stored plan, no refund path). `telegramId` is
+    // unique on this schema, so a second concurrent request cannot take the
+    // slot: it fails the filter, the upsert hits the unique index and the loser
+    // is rejected before any money moves.
+    let reserved = false;
+    try {
+      const reservation = await this.subModel
+        .findOneAndUpdate(
+          {
+            telegramId,
+            $or: [
+              { status: { $in: ["cancelled", "expired"] } },
+              { endDate: { $lte: new Date(now) } },
+              // A reservation abandoned by a crashed request may be reclaimed.
+              { status: "reserving", reservedAt: { $lte: new Date(now - 60_000) } },
+              { status: { $exists: false } },
+            ],
+          },
+          { $set: { status: "reserving", reservedAt: new Date(now), feePaid: 0 } },
+          { upsert: true, returnDocument: "after" },
+        )
+        .exec();
+      reserved = Boolean(reservation);
+    } catch (err: any) {
+      // Duplicate key on telegramId: somebody else holds an active reservation.
+      if (err?.code === 11000) {
+        return {
+          success: false,
+          error: "Plan already active — cancel it first to start a new one",
+        };
+      }
+      throw err;
+    }
+    if (!reserved) {
+      return {
+        success: false,
+        error: "Plan already active — cancel it first to start a new one",
+      };
+    }
+
     // ── Loadout validation ─────────────────────────────────────────────
     const wantBuffs = Array.isArray(opts.buffIds)
       ? [...new Set(opts.buffIds.map(String))].slice(0, 6)
@@ -215,6 +258,13 @@ export class AutoMiningService {
       )
       .exec();
     if (!charged) {
+      // Release the reservation so the user can retry once funded.
+      await this.subModel
+        .updateOne(
+          { telegramId, status: "reserving" },
+          { $set: { status: "cancelled" } },
+        )
+        .exec();
       return {
         success: false,
         error: `Need ${AUTO_PLAN_FEE_ELIXIR.toLocaleString()} ELIXIR to start`,

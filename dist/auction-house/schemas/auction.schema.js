@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuctionSchema = exports.Auction = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
+const mongoose_2 = require("mongoose");
 let Auction = class Auction {
     sellerId;
     sellerName;
@@ -28,6 +29,7 @@ let Auction = class Auction {
     expiresAt;
     collateralDeposit;
     collateralReturned;
+    claimExpiresAt;
     resolvedAt;
     buyerId;
 };
@@ -77,7 +79,7 @@ __decorate([
     __metadata("design:type", Number)
 ], Auction.prototype, "netAmount", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, enum: ["active", "sold", "cancelled"], default: "active" }),
+    (0, mongoose_1.Prop)({ required: true, enum: ["active", "settling", "sold", "cancelled"], default: "active" }),
     __metadata("design:type", String)
 ], Auction.prototype, "status", void 0);
 __decorate([
@@ -97,6 +99,10 @@ __decorate([
     __metadata("design:type", Boolean)
 ], Auction.prototype, "collateralReturned", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ type: mongoose_2.Schema.Types.Mixed, default: null }),
+    __metadata("design:type", Object)
+], Auction.prototype, "claimExpiresAt", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: null }),
     __metadata("design:type", Date)
 ], Auction.prototype, "resolvedAt", void 0);
@@ -112,4 +118,9 @@ exports.AuctionSchema.index({ status: 1, buffType: 1, rarity: 1 });
 exports.AuctionSchema.index({ status: 1, price: 1 });
 exports.AuctionSchema.index({ sellerId: 1, status: 1 });
 exports.AuctionSchema.index({ listedAt: -1 });
+exports.AuctionSchema.index({ sellerId: 1, instanceId: 1 }, {
+    unique: true,
+    partialFilterExpression: { status: "active" },
+    name: "one_active_listing_per_instance",
+});
 //# sourceMappingURL=auction.schema.js.map

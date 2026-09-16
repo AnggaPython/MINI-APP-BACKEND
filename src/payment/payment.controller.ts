@@ -10,6 +10,7 @@ import {
   Param,
 } from "@nestjs/common";
 import { PaymentService } from "./payment.service";
+import { User } from "../auth/telegram-user.decorator";
 import type { Request, Response } from "express";
 
 @Controller("payment")
@@ -17,32 +18,36 @@ export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
   @Post("deposit")
-  async depositToken(@Body() body: { telegramId: string; amount: number }) {
-    if (!body.telegramId || !body.amount) {
+  async depositToken(
+    @Body() body: { amount: number; telegramId?: string },
+    @User("telegramId") telegramId: string,
+  ) {
+    // The actor is the session, never the body. `telegramId` stays in the type
+    // only so an older client does not fail validation; it is ignored.
+    if (!telegramId || !body.amount) {
       return { success: false, error: "Missing parameters" };
     }
-    return await this.paymentService.createDepositCharge(
-      body.telegramId,
-      body.amount,
-    );
+    return await this.paymentService.createDepositCharge(telegramId, body.amount);
   }
 
   @Post("withdraw")
   async withdrawToken(
     @Body()
     body: {
-      telegramId: string;
       amount: number;
       coin: string;
       wallet: string;
+      /** Legacy: accepted and ignored, the account is taken from the session. */
+      telegramId?: string;
       tier?: string;
     },
+    @User("telegramId") telegramId: string,
   ) {
-    if (!body.telegramId || !body.amount || !body.coin || !body.wallet) {
+    if (!telegramId || !body.amount || !body.coin || !body.wallet) {
       return { success: false, error: "Missing parameters" };
     }
     return await this.paymentService.createWithdrawRequest(
-      body.telegramId,
+      telegramId,
       body.coin,
       body.amount,
       body.wallet,
@@ -56,14 +61,14 @@ export class PaymentController {
   }
 
   @Post("sync-deposit")
-  async syncDeposit(@Body() body: { telegramId: string; orderId: string }) {
-    if (!body.telegramId || !body.orderId) {
+  async syncDeposit(
+    @Body() body: { orderId: string; telegramId?: string },
+    @User("telegramId") telegramId: string,
+  ) {
+    if (!telegramId || !body.orderId) {
       return { success: false, error: "Missing parameters" };
     }
-    return await this.paymentService.syncPendingDeposit(
-      body.orderId,
-      body.telegramId,
-    );
+    return await this.paymentService.syncPendingDeposit(body.orderId, telegramId);
   }
 
   @Post("webhook")

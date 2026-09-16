@@ -2,11 +2,17 @@ import { CampaignsService } from "./campaigns.service";
 export declare class CampaignsController {
     private readonly campaignsService;
     constructor(campaignsService: CampaignsService);
-    createCampaign(data: any): Promise<{
-        success: boolean;
-        error: string;
-        campaign?: undefined;
-    } | {
+    createCampaign(data: {
+        title: string;
+        description: string;
+        category: string;
+        rewardPerClick: number;
+        totalBudget: number;
+        url?: string;
+        oneUserLifetime?: boolean;
+        autoRenew?: boolean;
+        creatorTelegramId?: string;
+    }, telegramId: string): Promise<{
         success: boolean;
         campaign: import("mongoose").Document<unknown, {}, import("./schemas/campaign.schema").CampaignDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/campaign.schema").Campaign & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
             _id: import("mongoose").Types.ObjectId;
@@ -16,6 +22,9 @@ export declare class CampaignsController {
             id: string;
         };
         error?: undefined;
+    } | {
+        success: boolean;
+        error: string;
     }>;
     getActiveCampaigns(telegramId: string): Promise<(import("mongoose").Document<unknown, {}, import("./schemas/campaign.schema").CampaignDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/campaign.schema").Campaign & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
         _id: import("mongoose").Types.ObjectId;
@@ -33,13 +42,13 @@ export declare class CampaignsController {
     } & {
         id: string;
     })[]>;
-    startTask(telegramId: string, campaignId: string): Promise<{
+    startTask(campaignId: string, telegramId: string): Promise<{
         success: boolean;
     } | {
         success: boolean;
         error: string;
     }>;
-    completeTask(telegramId: string, campaignId: string): Promise<{
+    completeTask(campaignId: string, telegramId: string): Promise<{
         success: boolean;
         error: string;
         message: string;
@@ -53,7 +62,11 @@ export declare class CampaignsController {
         success: boolean;
         error: string;
     }>;
-    updateCampaign(id: string, data: any): Promise<{
+    updateCampaign(id: string, data: {
+        title?: string;
+        description?: string;
+        url?: string;
+    }, telegramId: string): Promise<{
         success: boolean;
         error: any;
         campaign?: undefined;
@@ -68,7 +81,7 @@ export declare class CampaignsController {
         };
         error?: undefined;
     }>;
-    addBudget(id: string, telegramId: string, amount: number): Promise<{
+    addBudget(id: string, amount: number, telegramId: string): Promise<{
         success: boolean;
         campaign: import("mongoose").Document<unknown, {}, import("./schemas/campaign.schema").CampaignDocument, {}, import("mongoose").DefaultSchemaOptions> & import("./schemas/campaign.schema").Campaign & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
             _id: import("mongoose").Types.ObjectId;

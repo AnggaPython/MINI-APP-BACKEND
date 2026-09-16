@@ -70,7 +70,7 @@ export declare class CampaignsService {
         error?: undefined;
         message?: undefined;
     }>;
-    updateCampaign(campaignId: string, data: {
+    updateCampaign(campaignId: string, callerTelegramId: string, data: {
         title?: string;
         description?: string;
         url?: string;

@@ -15,13 +15,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CampaignsController = void 0;
 const common_1 = require("@nestjs/common");
 const campaigns_service_1 = require("./campaigns.service");
+const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let CampaignsController = class CampaignsController {
     campaignsService;
     constructor(campaignsService) {
         this.campaignsService = campaignsService;
     }
-    async createCampaign(data) {
-        return this.campaignsService.createCampaign(data);
+    async createCampaign(data, telegramId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.campaignsService.createCampaign({
+            ...data,
+            creatorTelegramId: telegramId,
+        });
     }
     async getActiveCampaigns(telegramId) {
         if (!telegramId)
@@ -31,20 +37,22 @@ let CampaignsController = class CampaignsController {
     async getMyCampaigns(telegramId) {
         return this.campaignsService.getMyCampaigns(telegramId);
     }
-    async startTask(telegramId, campaignId) {
+    async startTask(campaignId, telegramId) {
         if (!telegramId || !campaignId)
             return { success: false, error: "Missing params" };
         return this.campaignsService.startTask(telegramId, campaignId);
     }
-    async completeTask(telegramId, campaignId) {
+    async completeTask(campaignId, telegramId) {
         if (!telegramId || !campaignId)
             return { success: false, error: "Missing params" };
         return this.campaignsService.completeTask(telegramId, campaignId);
     }
-    async updateCampaign(id, data) {
-        return this.campaignsService.updateCampaign(id, data);
+    async updateCampaign(id, data, telegramId) {
+        if (!telegramId)
+            return { success: false, error: "Missing telegramId" };
+        return this.campaignsService.updateCampaign(id, telegramId, data);
     }
-    async addBudget(id, telegramId, amount) {
+    async addBudget(id, amount, telegramId) {
         if (!telegramId || !amount)
             return { success: false, error: "Missing parameters" };
         return this.campaignsService.addBudget(id, Number(amount), telegramId);
@@ -54,8 +62,9 @@ exports.CampaignsController = CampaignsController;
 __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "createCampaign", null);
 __decorate([
@@ -74,16 +83,16 @@ __decorate([
 ], CampaignsController.prototype, "getMyCampaigns", null);
 __decorate([
     (0, common_1.Post)("start-task"),
-    __param(0, (0, common_1.Body)("telegramId")),
-    __param(1, (0, common_1.Body)("campaignId")),
+    __param(0, (0, common_1.Body)("campaignId")),
+    __param(1, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "startTask", null);
 __decorate([
     (0, common_1.Post)("complete-task"),
-    __param(0, (0, common_1.Body)("telegramId")),
-    __param(1, (0, common_1.Body)("campaignId")),
+    __param(0, (0, common_1.Body)("campaignId")),
+    __param(1, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
@@ -92,17 +101,18 @@ __decorate([
     (0, common_1.Post)(":id"),
     __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:paramtypes", [String, Object, String]),
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "updateCampaign", null);
 __decorate([
     (0, common_1.Post)("add-budget/:id"),
     __param(0, (0, common_1.Param)("id")),
-    __param(1, (0, common_1.Body)("telegramId")),
-    __param(2, (0, common_1.Body)("amount")),
+    __param(1, (0, common_1.Body)("amount")),
+    __param(2, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, Number]),
+    __metadata("design:paramtypes", [String, Number, String]),
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "addBudget", null);
 exports.CampaignsController = CampaignsController = __decorate([

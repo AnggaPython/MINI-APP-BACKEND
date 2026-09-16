@@ -56,6 +56,7 @@ const bcrypt = __importStar(require("bcrypt"));
 const schedule_1 = require("@nestjs/schedule");
 const messages_constant_1 = require("../bot/messages.constant");
 const user_schema_1 = require("./schemas/user.schema");
+const daily_code_util_1 = require("./daily-code.util");
 const referral_log_schema_1 = require("./schemas/referral-log.schema");
 const referral_notification_schema_1 = require("./schemas/referral-notification.schema");
 const hilo_bet_schema_1 = require("./schemas/hilo-bet.schema");
@@ -163,8 +164,7 @@ let UsersService = UsersService_1 = class UsersService {
         const now = new Date();
         for (let i = 7; i <= 30; i++) {
             const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-            const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
-            expiredCodes.push(`ELIX-${dateStr}`);
+            expiredCodes.push((0, daily_code_util_1.deriveDailyCode)(date));
         }
         try {
             const result = await this.userModel
@@ -702,8 +702,7 @@ let UsersService = UsersService_1 = class UsersService {
         if (utcHours < 12) {
             return { error: "⚠️ CODE EXPIRED OR FULL CLAIMED!" };
         }
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-        const todayCode = `ELIX-${dateStr}`;
+        const todayCode = (0, daily_code_util_1.deriveDailyCode)(now);
         if (code.toUpperCase() !== todayCode) {
             return { error: "⚠️ CODE EXPIRED OR FULL CLAIMED!" };
         }
@@ -1016,9 +1015,6 @@ let UsersService = UsersService_1 = class UsersService {
             .exec();
         const dailyNetProfitUser = dailyStats[0]?.totalProfit || 0;
         if (dailyNetProfitUser >= 30000) {
-            await this.userModel
-                .updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } })
-                .exec();
             return {
                 error: "⚠️ Daily win limit reached. Come back tomorrow for more action!",
             };
@@ -1044,9 +1040,19 @@ let UsersService = UsersService_1 = class UsersService {
             .createHmac("sha256", serverSeed)
             .update(clientSeed)
             .digest("hex");
-        const hexSub = hash.substring(0, 5);
-        const parsedHex = parseInt(hexSub, 16);
-        const rolledNumber = parsedHex % 10001;
+        const TILE_SPAN = 10001;
+        const maxAcceptable = Math.floor(0xffffffff / TILE_SPAN) * TILE_SPAN;
+        let rolledNumber = -1;
+        for (let i = 0; i + 8 <= hash.length; i += 8) {
+            const chunk = parseInt(hash.substring(i, i + 8), 16);
+            if (chunk < maxAcceptable) {
+                rolledNumber = chunk % TILE_SPAN;
+                break;
+            }
+        }
+        if (rolledNumber < 0) {
+            rolledNumber = parseInt(hash.substring(0, 8), 16) % TILE_SPAN;
+        }
         let isWin = false;
         if (type === "hi" && rolledNumber >= thresholdHI)
             isWin = true;

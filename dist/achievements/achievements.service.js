@@ -63,16 +63,23 @@ let AchievementsService = class AchievementsService {
         const achDef = achievements_data_1.ACHIEVEMENTS_DATA.find((a) => a.id === achievementId);
         if (!achDef)
             return { error: "Achievement not found" };
-        const progress = await this.achievementModel
-            .findOne({ telegramId, achievementId })
+        const claimed = await this.achievementModel
+            .findOneAndUpdate({
+            telegramId,
+            achievementId,
+            claimed: { $ne: true },
+            progress: { $gte: achDef.max },
+        }, { $set: { claimed: true, claimedAt: new Date() } }, { returnDocument: "after" })
             .exec();
-        if (!progress || progress.progress < achDef.max)
-            return { error: "Requirement not met" };
-        if (progress.claimed)
+        if (!claimed) {
+            const progress = await this.achievementModel
+                .findOne({ telegramId, achievementId })
+                .exec();
+            if (!progress || progress.progress < achDef.max)
+                return { error: "Requirement not met" };
             return { error: "Already claimed" };
-        progress.claimed = true;
-        await progress.save();
-        await this.usersService.creditRewardAndLogTask(telegramId, achDef.reward, "Achievement Bonus");
+        }
+        await this.usersService.creditRewardAndLogTask(telegramId, achDef.reward, `ACHIEVEMENT_${achievementId}`);
         return { success: true, reward: achDef.reward };
     }
 };

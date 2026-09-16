@@ -27,7 +27,7 @@ export declare class AuctionHouseService {
         collateralDeposit: number;
         listingDurationDays: number;
         auction: {
-            id: string;
+            id: any;
             itemCategory: "buff" | "material";
             instanceId: string | undefined;
             baseItemId: string | undefined;
@@ -38,7 +38,7 @@ export declare class AuctionHouseService {
             tax: number;
             netAmount: number;
             sellerName: string;
-            listedAt: Date;
+            listedAt: any;
         };
         error?: undefined;
     }>;
@@ -75,6 +75,7 @@ export declare class AuctionHouseService {
         error?: undefined;
     }>;
     expireOldListings(): Promise<number>;
+    reportStuckClaims(): Promise<number>;
     browse(params: {
         search?: string;
         buffType?: string;

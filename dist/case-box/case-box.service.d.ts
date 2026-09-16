@@ -19,6 +19,7 @@ export declare class CaseBoxService {
     private readonly usersService;
     private readonly buffCollectionsService;
     private readonly levelingService;
+    private readonly logger;
     private readonly lastSpawnAt;
     private readonly destroyTimestamps;
     private readonly lastClaimAt;

@@ -33,8 +33,13 @@ let UsersController = UsersController_1 = class UsersController {
         const notifications = await this.usersService.getPendingNotifications(telegramId);
         return { success: true, user: result, notifications };
     }
-    async monetagPostback(userid, eventLegacy, rewardLegacy, payoutLegacy, ymid, eventType, rewardEventType, estimatedPrice, telegramId) {
+    async monetagPostback(s2sSecret, userid, eventLegacy, rewardLegacy, payoutLegacy, ymid, eventType, rewardEventType, estimatedPrice, telegramId) {
         const resolvedUserId = telegramId ?? userid ?? ymid;
+        const requiredSecret = process.env.MONETAG_S2S_SECRET;
+        if (requiredSecret && s2sSecret !== requiredSecret) {
+            this.logger.warn(`[Monetag S2S] REJECTED: missing/invalid s2s_secret for user=${resolvedUserId ?? "?"}`);
+            return { status: "rejected", reason: "invalid_secret" };
+        }
         const resolvedReward = rewardEventType ?? rewardLegacy;
         const resolvedPayout = estimatedPrice ?? payoutLegacy;
         const resolvedEvent = eventType ?? eventLegacy;
@@ -209,17 +214,18 @@ __decorate([
 __decorate([
     (0, telegram_user_decorator_1.Public)(),
     (0, common_1.Get)("public/monetag-postback"),
-    __param(0, (0, common_1.Query)("userid")),
-    __param(1, (0, common_1.Query)("event")),
-    __param(2, (0, common_1.Query)("reward")),
-    __param(3, (0, common_1.Query)("payout")),
-    __param(4, (0, common_1.Query)("ymid")),
-    __param(5, (0, common_1.Query)("event_type")),
-    __param(6, (0, common_1.Query)("reward_event_type")),
-    __param(7, (0, common_1.Query)("estimated_price")),
-    __param(8, (0, common_1.Query)("telegram_id")),
+    __param(0, (0, common_1.Query)("s2s_secret")),
+    __param(1, (0, common_1.Query)("userid")),
+    __param(2, (0, common_1.Query)("event")),
+    __param(3, (0, common_1.Query)("reward")),
+    __param(4, (0, common_1.Query)("payout")),
+    __param(5, (0, common_1.Query)("ymid")),
+    __param(6, (0, common_1.Query)("event_type")),
+    __param(7, (0, common_1.Query)("reward_event_type")),
+    __param(8, (0, common_1.Query)("estimated_price")),
+    __param(9, (0, common_1.Query)("telegram_id")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "monetagPostback", null);
 __decorate([

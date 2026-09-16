@@ -37,7 +37,7 @@ export declare class BankController {
     stake(telegramId: string, body: {
         amount: number;
         durationDays: number;
-        rate: number;
+        rate?: number;
         autoClaim?: boolean;
     }): Promise<{
         success: boolean;

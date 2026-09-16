@@ -64,18 +64,6 @@ let BuffItemCollectionsController = class BuffItemCollectionsController {
         }
         return this.service.activateAllByType(telegramId, buffType);
     }
-    async grant(telegramId, buffId) {
-        if (!telegramId)
-            return { success: false, error: "Missing telegramId" };
-        if (!buffId)
-            return { success: false, error: "Missing buffId" };
-        return this.service.grantBuffItem(telegramId, buffId);
-    }
-    async grantRandom(telegramId, preferredRarity) {
-        if (!telegramId)
-            return { success: false, error: "Missing telegramId" };
-        return this.service.grantRandomBuff(telegramId, preferredRarity);
-    }
 };
 exports.BuffItemCollectionsController = BuffItemCollectionsController;
 __decorate([
@@ -129,22 +117,6 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], BuffItemCollectionsController.prototype, "activateAllByType", null);
-__decorate([
-    (0, common_1.Post)("grant"),
-    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
-    __param(1, (0, common_1.Body)("buffId")),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", Promise)
-], BuffItemCollectionsController.prototype, "grant", null);
-__decorate([
-    (0, common_1.Post)("grant-random"),
-    __param(0, (0, telegram_user_decorator_1.User)("telegramId")),
-    __param(1, (0, common_1.Body)("preferredRarity")),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", Promise)
-], BuffItemCollectionsController.prototype, "grantRandom", null);
 exports.BuffItemCollectionsController = BuffItemCollectionsController = __decorate([
     (0, common_1.Controller)("buff-collections"),
     __metadata("design:paramtypes", [buff_item_collections_service_1.BuffItemCollectionsService])

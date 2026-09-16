@@ -9,6 +9,7 @@ import {
     MINING_FULL_ANIMATIONS,
 } from "../bot/messages.constant";
 import { User, UserDocument } from "./schemas/user.schema";
+import { deriveDailyCode } from "./daily-code.util";
 import {
     ReferralLog,
     ReferralLogDocument,
@@ -125,8 +126,7 @@ export class UsersService {
         // Loop to generate deterministic codes from 7 Days ago up to 30 Days ago
         for (let i = 7; i <= 30; i++) {
             const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-            const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
-            expiredCodes.push(`ELIX-${dateStr}`);
+            expiredCodes.push(deriveDailyCode(date));
         }
 
         try {
@@ -941,8 +941,10 @@ export class UsersService {
             return { error: "⚠️ CODE EXPIRED OR FULL CLAIMED!" };
         }
 
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ""); // e.g. 20260807
-        const todayCode = `ELIX-${dateStr}`;
+        // Shared derivation (see daily-code.util.ts): HMAC of the date when
+        // DROP_CODE_SECRET is configured, legacy date-only otherwise. The code is
+        // no longer a public function of the calendar once the secret is set.
+        const todayCode = deriveDailyCode(now);
 
         if (code.toUpperCase() !== todayCode) {
             return { error: "⚠️ CODE EXPIRED OR FULL CLAIMED!" };
@@ -1358,9 +1360,10 @@ export class UsersService {
         const dailyNetProfitUser = dailyStats[0]?.totalProfit || 0;
 
         if (dailyNetProfitUser >= 30000) {
-            await this.userModel
-                .updateOne({ telegramId }, { $inc: { elixirBalance: betAmount } })
-                .exec();
+            // Do NOT credit anything here. This branch used to add `betAmount` to
+            // the balance before any debit existed for the request (measured:
+            // 50,000 ELIXIR credited with zero debits, repeatable across the UTC
+            // day). A rejected bet must change nothing.
             return {
                 error:
                     "⚠️ Daily win limit reached. Come back tomorrow for more action!",
@@ -1396,7 +1399,7 @@ export class UsersService {
         const thresholdHI = Math.floor(10000 - baseWinChance * 100);
         const thresholdLO = Math.ceil(baseWinChance * 100);
 
-        // ── Step 2: Provably Fair RNG (SHA-256 HMAC) ─────────────────────────
+        // ── Step 2: Server-side HMAC RNG (SHA-256) — not externally verifiable (no commit-reveal)
         const serverSeed = crypto.randomBytes(16).toString("hex");
         const clientSeed = `${telegramId}-${Date.now()}`;
         const hash = crypto
@@ -1404,9 +1407,26 @@ export class UsersService {
             .update(clientSeed)
             .digest("hex");
 
-        const hexSub = hash.substring(0, 5);
-        const parsedHex = parseInt(hexSub, 16);
-        const rolledNumber = parsedHex % 10001;
+        // Uniform draw over 10,001 tiles via rejection sampling. A bare
+        // `parseInt(hash.substring(0,5),16) % 10001` is biased (20 bits onto
+        // 10,001 values), which made the two sides of the same wager carry
+        // different house margins (measured: 0.449253 for HI vs 0.450711 for LO,
+        // i.e. 10.15% vs 9.86%). Each 32-bit chunk is accepted only when it falls
+        // inside the largest multiple of 10,001; sha256 gives eight 8-hex chunks,
+        // so the probability of exhausting them is ~1e-23.
+        const TILE_SPAN = 10001;
+        const maxAcceptable = Math.floor(0xffffffff / TILE_SPAN) * TILE_SPAN;
+        let rolledNumber = -1;
+        for (let i = 0; i + 8 <= hash.length; i += 8) {
+            const chunk = parseInt(hash.substring(i, i + 8), 16);
+            if (chunk < maxAcceptable) {
+                rolledNumber = chunk % TILE_SPAN;
+                break;
+            }
+        }
+        if (rolledNumber < 0) {
+            rolledNumber = parseInt(hash.substring(0, 8), 16) % TILE_SPAN;
+        }
 
         // ── Step 3: Determine raw win/lose via transparent threshold ──────────
         let isWin = false;
@@ -1681,5 +1701,60 @@ export class UsersService {
         await this.userModel
             .updateOne({ telegramId }, { $inc: { exp: amount, gameExp: amount } })
             .exec();
+    }
+
+    // ── AUTO Repair preference (AUTO button toggle on mining pages) ─────
+    // Last-write-wins by timestamp: the client sends its own updatedAt, so a
+    // stale page that took long to flush can never overwrite a newer change.
+    // Small negative skew is tolerated so a device with a slightly slow
+    // clock can still overwrite (it would otherwise be stuck on the old value).
+    async getAutoRepairSetting(
+        telegramId: string,
+    ): Promise<{ autoRepairOn: boolean; updatedAt: number }> {
+        const user = await this.userModel
+            .findOne({ telegramId }, { autoRepairOn: 1, autoRepairAt: 1 })
+            .lean()
+            .exec();
+        return {
+            autoRepairOn: !!(user as { autoRepairOn?: boolean } | null)?.autoRepairOn,
+            updatedAt: Number(
+                (user as { autoRepairAt?: number } | null)?.autoRepairAt ?? 0,
+            ),
+        };
+    }
+
+    async setAutoRepairSetting(
+        telegramId: string,
+        autoRepairOn: boolean,
+        clientUpdatedAt: number,
+    ): Promise<{ autoRepairOn: boolean; updatedAt: number }> {
+        const now = Date.now();
+        // Ignore obviously bogus future timestamps (device clock skew).
+        const clientAt =
+            Number.isFinite(clientUpdatedAt) && clientUpdatedAt > 0 && clientUpdatedAt <= now + 5 * 60 * 1000
+                ? Math.floor(clientUpdatedAt)
+                : now;
+        const user = await this.userModel
+            .findOneAndUpdate(
+                {
+                    telegramId,
+                    $or: [
+                        { autoRepairAt: { $exists: false } },
+                        { autoRepairAt: { $lte: clientAt + 2 * 60 * 1000 } }, // 2 min clock-skew tolerance
+                    ],
+                },
+                { $set: { autoRepairOn: !!autoRepairOn, autoRepairAt: clientAt } },
+                { new: true, projection: { autoRepairOn: 1, autoRepairAt: 1 } },
+            )
+            .lean()
+            .exec();
+        if (!user) {
+            // A newer write already landed — report the stored truth back.
+            return this.getAutoRepairSetting(telegramId);
+        }
+        return {
+            autoRepairOn: !!(user as { autoRepairOn?: boolean }).autoRepairOn,
+            updatedAt: Number((user as { autoRepairAt?: number }).autoRepairAt ?? 0),
+        };
     }
 }

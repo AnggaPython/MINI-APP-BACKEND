@@ -31,9 +31,18 @@ export class UsersController {
   }
 
   // --- PUBLIC: Monetag S2S postback — no Telegram auth available in S2S context ---
+  // Anti-abuse: Monetag does not sign its postbacks, so the shared secret must be
+  // appended to the postback URL configured in the Monetag dashboard
+  // (…&s2s_secret=<MONETAG_S2S_SECRET>). With the secret set, a request without it
+  // — i.e. anyone who can guess the URL — is rejected BEFORE any ticket is minted
+  // (audit finding monetag.postback.unauthenticated-ticket-grant: adTickets for
+  // `telegram_id` of any user, repeatable). With the secret unset the legacy
+  // open behaviour is kept so an existing deployment keeps earning; set the
+  // variable and update the dashboard URL to close the finding.
   @Public()
   @Get("public/monetag-postback")
   async monetagPostback(
+    @Query("s2s_secret") s2sSecret?: string,
     @Query("userid") userid?: string,
     @Query("event") eventLegacy?: string,
     @Query("reward") rewardLegacy?: string,
@@ -45,6 +54,13 @@ export class UsersController {
     @Query("telegram_id") telegramId?: string,
   ) {
     const resolvedUserId = telegramId ?? userid ?? ymid;
+    const requiredSecret = process.env.MONETAG_S2S_SECRET;
+    if (requiredSecret && s2sSecret !== requiredSecret) {
+      this.logger.warn(
+        `[Monetag S2S] REJECTED: missing/invalid s2s_secret for user=${resolvedUserId ?? "?"}`,
+      );
+      return { status: "rejected", reason: "invalid_secret" };
+    }
     const resolvedReward = rewardEventType ?? rewardLegacy;
     const resolvedPayout = estimatedPrice ?? payoutLegacy;
     const resolvedEvent = eventType ?? eventLegacy;
@@ -303,5 +319,32 @@ export class UsersController {
   async getHiLoHistory(@User("telegramId") telegramId: string) {
     const history = await this.usersService.getHiLoHistory(telegramId);
     return { success: true, history };
+  }
+
+  // ── AUTO Repair preference (AUTO button toggle on mining pages) ─────
+  // GET returns the persisted toggle; POST writes it. Both are timestamped
+  // so the client's localStorage cache can be reconciled by recency.
+  @Get("auto-repair")
+  async getAutoRepair(@User("telegramId") telegramId: string) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    const setting = await this.usersService.getAutoRepairSetting(telegramId);
+    return { success: true, ...setting };
+  }
+
+  @Post("auto-repair")
+  async setAutoRepair(
+    @User("telegramId") telegramId: string,
+    @Body("autoRepairOn") autoRepairOn: boolean,
+    @Body("updatedAt") updatedAt: number,
+  ) {
+    if (!telegramId || typeof autoRepairOn !== "boolean") {
+      return { success: false, error: "Missing autoRepairOn" };
+    }
+    const setting = await this.usersService.setAutoRepairSetting(
+      telegramId,
+      autoRepairOn,
+      Number(updatedAt) || 0,
+    );
+    return { success: true, ...setting };
   }
 }

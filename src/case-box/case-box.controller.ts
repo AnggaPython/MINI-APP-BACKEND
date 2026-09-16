@@ -8,7 +8,7 @@ export class CaseBoxController {
 
   /**
    * Spawn a new case — the ONLY read call of the open loop.
-   * Server rolls tier + maxHp via provably-fair RNG and returns the unique
+   * Server rolls tier + maxHp via server-side HMAC RNG and returns the unique
    * database ID for this case. Called exactly once per case.
    */
   @Get("spawn")

@@ -105,9 +105,9 @@ function getMaterialRarity(materialName) {
         return "RARE";
     return null;
 }
+const MATERIAL_RARITY_ORDER = ["COMMON", "MEDIUM", "RARE"];
 function isMaterialRaritySufficient(have, need) {
-    const order = ["COMMON", "MEDIUM", "RARE"];
-    return order.indexOf(have) >= order.indexOf(need);
+    return MATERIAL_RARITY_ORDER.indexOf(have) >= MATERIAL_RARITY_ORDER.indexOf(need);
 }
 let PickaxeUpgradeService = class PickaxeUpgradeService {
     userModel;
@@ -236,13 +236,17 @@ let PickaxeUpgradeService = class PickaxeUpgradeService {
         }
         const requiredRarity = costPerLevel.materialRarity;
         let materialFound = null;
+        let bestRarityRank = Number.POSITIVE_INFINITY;
         for (const [name, count] of Object.entries(materials)) {
             if (count <= 0)
                 continue;
             const rarity = getMaterialRarity(name);
-            if (rarity && isMaterialRaritySufficient(rarity, requiredRarity)) {
+            if (!rarity || !isMaterialRaritySufficient(rarity, requiredRarity))
+                continue;
+            const rank = MATERIAL_RARITY_ORDER.indexOf(rarity);
+            if (rank < bestRarityRank) {
+                bestRarityRank = rank;
                 materialFound = name;
-                break;
             }
         }
         if (!materialFound) {

@@ -162,24 +162,70 @@ export class AuctionHouseService {
     }
 
     const now = Date.now();
-    const auction = await this.auctionModel.create({
-      sellerId: telegramId,
-      sellerName,
-      itemCategory,
-      instanceId,
-      baseItemId: actualBaseItemId,
-      amount,
-      buffType,
-      rarity,
-      price,
-      tax,
-      netAmount,
-      status: "active",
-      listedAt: new Date(),
-      expiresAt: new Date(now + LISTING_DURATION_MS),
-      collateralDeposit: COLLATERAL_DEPOSIT,
-      collateralReturned: false,
-    });
+    let auction: any;
+    try {
+      auction = await this.auctionModel.create({
+        sellerId: telegramId,
+        sellerName,
+        itemCategory,
+        instanceId,
+        baseItemId: actualBaseItemId,
+        amount,
+        buffType,
+        rarity,
+        price,
+        tax,
+        netAmount,
+        status: "active",
+        listedAt: new Date(),
+        expiresAt: new Date(now + LISTING_DURATION_MS),
+        collateralDeposit: COLLATERAL_DEPOSIT,
+        collateralReturned: false,
+      });
+    } catch (err: any) {
+      // The partial unique index ({sellerId, instanceId} on active listings) is
+      // the real guard: the findOne above is only a fast path and two parallel
+      // requests both passed it (measured: 2 active listings for one instance and
+      // 20,000 collateral locked instead of 10,000). Roll the escrow back so the
+      // loser of the race is charged nothing.
+      const duplicateKey = err?.code === 11000;
+      await this.userModel
+        .findOneAndUpdate(
+          { telegramId },
+          { $inc: { "cryptoBalances.ELIXCOIN": COLLATERAL_DEPOSIT } },
+        )
+        .exec();
+      if (itemCategory === "buff") {
+        await this.userBuffModel
+          .findOneAndUpdate(
+            { telegramId },
+            {
+              $push: {
+                inventory: {
+                  instanceId,
+                  baseItemId: actualBaseItemId,
+                  acquiredAt: new Date(),
+                },
+              },
+            },
+            { upsert: true },
+          )
+          .exec();
+      } else if (itemCategory === "material") {
+        await this.userModel
+          .findOneAndUpdate(
+            { telegramId },
+            { $inc: { [`materials.${actualBaseItemId}`]: amount } },
+          )
+          .exec();
+      }
+      return {
+        success: false,
+        error: duplicateKey
+          ? "This item instance is already listed"
+          : "Could not create the listing, your item and deposit were returned",
+      };
+    }
 
     return {
       success: true,
@@ -227,8 +273,41 @@ export class AuctionHouseService {
     const buyer = await this.userModel.findOne({ telegramId });
     if (!buyer) return { success: false, error: "User not found" };
 
+    // ── Claim first ────────────────────────────────────────────────────────
+    // Only the request that moves the listing out of "active" may move money.
+    // The previous code debited the buyer and credited the seller before the
+    // status write, so two parallel buys both settled (measured: seller credited
+    // 52,400 instead of 26,200, one instance delivered to two accounts).
+    const claimed = await this.auctionModel
+      .findOneAndUpdate(
+        { _id: listing._id, status: "active" },
+        {
+          $set: {
+            status: "settling",
+            buyerId: telegramId,
+            claimExpiresAt: new Date(Date.now() + 30_000),
+          },
+        },
+        { returnDocument: "after" },
+      )
+      .exec();
+    if (!claimed) {
+      return { success: false, error: "Listing not found or already sold" };
+    }
+
+    /** Hand the listing back when this request cannot settle it. */
+    const releaseClaim = async () => {
+      await this.auctionModel
+        .updateOne(
+          { _id: listing._id, status: "settling" },
+          { $set: { status: "active" }, $unset: { buyerId: "", claimExpiresAt: "" } },
+        )
+        .exec();
+    };
+
     const buyerBalance = (buyer.cryptoBalances as Record<string, number>)?.["ELIXCOIN"] || 0;
     if (buyerBalance < listing.price) {
+      await releaseClaim();
       return {
         success: false,
         error: `Insufficient ELIXCOIN. You need ${listing.price.toLocaleString()} but have ${buyerBalance.toFixed(2)}`,
@@ -241,7 +320,10 @@ export class AuctionHouseService {
       { returnDocument: "after" },
     ).exec();
 
-    if (!buyerUpdate) return { success: false, error: "Insufficient ELIXCOIN balance" };
+    if (!buyerUpdate) {
+      await releaseClaim();
+      return { success: false, error: "Insufficient ELIXCOIN balance" };
+    }
 
     const sellerPayout = listing.netAmount + listing.collateralDeposit;
     await this.userModel.findOneAndUpdate(
@@ -268,11 +350,22 @@ export class AuctionHouseService {
       ).exec();
     }
 
-    listing.status = "sold";
-    listing.buyerId = telegramId;
-    listing.resolvedAt = new Date();
-    listing.collateralReturned = true;
-    await listing.save();
+    // Settle the claim we own (conditional, so it can never overwrite a state
+    // another request wrote in between).
+    await this.auctionModel
+      .updateOne(
+        { _id: listing._id, status: "settling" },
+        {
+          $set: {
+            status: "sold",
+            buyerId: telegramId,
+            resolvedAt: new Date(),
+            collateralReturned: true,
+          },
+          $unset: { claimExpiresAt: "" },
+        },
+      )
+      .exec();
 
     return {
       success: true,
@@ -301,6 +394,19 @@ export class AuctionHouseService {
       status: "active",
     });
     if (!listing) return { success: false, error: "Listing not found or not yours" };
+
+    // Claim first — two parallel cancels used to return the item twice and
+    // refund the 50% collateral twice (measured: refunded 10,000 instead of 5,000).
+    const claim = await this.auctionModel
+      .findOneAndUpdate(
+        { _id: listing._id, sellerId: telegramId, status: "active" },
+        { $set: { status: "settling", claimExpiresAt: new Date(Date.now() + 30_000) } },
+        { returnDocument: "after" },
+      )
+      .exec();
+    if (!claim) {
+      return { success: false, error: "Listing not found or not yours" };
+    }
 
     if (listing.itemCategory === "buff") {
       const instanceToReturn = {
@@ -331,10 +437,19 @@ export class AuctionHouseService {
       ).exec();
     }
 
-    listing.status = "cancelled";
-    listing.resolvedAt = new Date();
-    listing.collateralReturned = true;
-    await listing.save();
+    await this.auctionModel
+      .updateOne(
+        { _id: listing._id, status: "settling" },
+        {
+          $set: {
+            status: "cancelled",
+            resolvedAt: new Date(),
+            collateralReturned: true,
+          },
+          $unset: { claimExpiresAt: "" },
+        },
+      )
+      .exec();
 
     return {
       success: true,
@@ -361,6 +476,17 @@ export class AuctionHouseService {
     if (expired.length === 0) return 0;
     let count = 0;
     for (const listing of expired) {
+      // Claim each listing before returning anything: a user canceling at the
+      // same moment as the cron must not both pay out.
+      const claim = await this.auctionModel
+        .findOneAndUpdate(
+          { _id: listing._id, status: "active" },
+          { $set: { status: "settling" } },
+          { returnDocument: "after" },
+        )
+        .exec();
+      if (!claim) continue;
+
       if (listing.itemCategory === "buff") {
         const instanceToReturn = {
           instanceId: listing.instanceId,
@@ -386,14 +512,39 @@ export class AuctionHouseService {
         ).exec();
       }
 
-      listing.status = "cancelled";
-      listing.resolvedAt = new Date();
-      listing.collateralReturned = true;
-      await listing.save();
+      await this.auctionModel
+        .updateOne(
+          { _id: listing._id, status: "settling" },
+          { $set: { status: "cancelled", resolvedAt: new Date(), collateralReturned: true } },
+        )
+        .exec();
       count++;
     }
     this.logger.log(`Expired ${count} old auction listings`);
     return count;
+  }
+
+  /**
+   * Report settle claims whose owner died mid-settlement.
+   *
+   * These are intentionally NOT auto-reactivated: the crashed request may
+   * already have debited the buyer and credited the seller, so re-listing the
+   * item would pay the seller twice. Reporting keeps the failure loud and
+   * leaves the listing locked (fail-closed) for manual reconciliation.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async reportStuckClaims() {
+    const stuck = await this.auctionModel
+      .find({ status: "settling", claimExpiresAt: { $lte: new Date() } })
+      .lean();
+    if (stuck.length === 0) return 0;
+
+    for (const listing of stuck) {
+      this.logger.error(
+        `Auction ${String(listing._id)} stuck in "settling" since claim deadline ${listing.claimExpiresAt?.toISOString?.() ?? "unknown"} — manual reconciliation required`,
+      );
+    }
+    return stuck.length;
   }
 
   // ── SEARCH / BROWSE ─────────────────────────────────────────────────────

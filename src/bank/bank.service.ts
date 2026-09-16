@@ -25,6 +25,19 @@ export class BankService {
 
   /** 5% operational platform tax applied on ALL yield payouts */
   private readonly PLATFORM_TAX = 0.05;
+
+  /**
+   * Server-owned APR table. The client sends `durationDays`; the rate is looked
+   * up here. A caller-supplied rate is ignored, because `calculateYield()` pays
+   * `amount × rate` and a body-controlled rate let a stake mint unbounded ELIXIR
+   * (measured: 1,000 ELIXIR at rate 1e6 credited 39,583,333 ELIXIR in one day).
+   */
+  static readonly STAKE_RATES: Readonly<Record<number, number>> = {
+    30: 0.06,
+    60: 0.12,
+    90: 0.18,
+    360: 0.72,
+  };
   private tvlCache: { value: number; ts: number } | null = null;
   private readonly TVL_CACHE_MS = 30_000;
 
@@ -178,10 +191,22 @@ export class BankService {
     telegramId: string,
     amount: number,
     durationDays: number,
-    rate: number,
+    /** Accepted for backward compatibility with older clients and ignored. */
+    _clientSuppliedRate?: number,
     autoClaim: boolean = false,
   ) {
     if (amount < 1000) return { error: "Minimum stake is 1,000 ELIXIR" };
+
+    // The server owns the rate: look it up from the duration table.
+    const rate = BankService.STAKE_RATES[Number(durationDays)];
+    if (rate === undefined) {
+      return {
+        error: `Invalid duration. Allowed: ${Object.keys(BankService.STAKE_RATES).join(", ")} days`,
+      };
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { error: "Invalid amount" };
+    }
 
     // Personal Quota limit: 20M
     const existingStakes = await this.stakeModel

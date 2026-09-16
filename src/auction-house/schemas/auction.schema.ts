@@ -1,9 +1,9 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Document, Schema as MongooseSchema } from "mongoose";
 
 export type AuctionDocument = Auction & Document;
 
-export type AuctionStatus = "active" | "sold" | "cancelled";
+export type AuctionStatus = "active" | "settling" | "sold" | "cancelled";
 
 /**
  * A single auction listing on the marketplace.
@@ -59,7 +59,7 @@ export class Auction {
   netAmount: number;
 
   /** Listing status. */
-  @Prop({ required: true, enum: ["active", "sold", "cancelled"], default: "active" })
+  @Prop({ required: true, enum: ["active", "settling", "sold", "cancelled"], default: "active" })
   status: AuctionStatus;
 
   /** When the item was listed. */
@@ -78,6 +78,16 @@ export class Auction {
   @Prop({ default: false })
   collateralReturned: boolean;
 
+  /**
+   * Deadline of an in-flight settle claim. A listing moved to "settling" is
+   * owned exclusively by the request that claimed it; if that request dies
+   * mid-settlement the listing stays here and is reported by the hourly
+   * recovery sweep instead of being silently re-sold (re-selling could pay a
+   * seller twice if the first request already moved money).
+   */
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  claimExpiresAt: Date | null;
+
   /** When the item was sold or cancelled. */
   @Prop({ default: null })
   resolvedAt: Date;
@@ -94,3 +104,16 @@ AuctionSchema.index({ status: 1, buffType: 1, rarity: 1 });
 AuctionSchema.index({ status: 1, price: 1 });
 AuctionSchema.index({ sellerId: 1, status: 1 });
 AuctionSchema.index({ listedAt: -1 });
+
+// One active listing per item instance, enforced by the database. The service
+// still checks first (fast path), but two concurrent creates used to both pass
+// that check and duplicate the escrow. "settling" is excluded so a claimed
+// listing in flight does not block anything else.
+AuctionSchema.index(
+  { sellerId: 1, instanceId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "active" },
+    name: "one_active_listing_per_instance",
+  },
+);

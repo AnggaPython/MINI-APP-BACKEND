@@ -320,7 +320,6 @@ export class PaymentService {
       }
     }
     const usdValue = amount * liveUsdPrice;
-    const isBonusEligible = usdValue >= 0.3;
 
     // --- NET EQUITY TRACKING + STANDARD FEE (Anti Whale Pattern di ZERO-SUM ENGINE LAYER 1, friction withdraw longgar disini) ---
   // @ts-ignore - super strict cleanup pending (auto)
@@ -395,7 +394,11 @@ export class PaymentService {
       }
       // ------------------------
 
-      // Process Advance / On-chain split fees
+      // Process Advance / On-chain split fees. Every branch may only REDUCE the
+      // payout: the debit below is always the gross `amount`, so any branch that
+      // returns more than `amount` mints value out of the platform (the old
+      // `standard` branch paid `amount * 1.03`, i.e. 3% more than was debited,
+      // with the tier chosen by the caller).
       let executionAmount = amount;
       if (tier === "advance") {
         executionAmount = amount * 0.985; // 1.5% Cut
@@ -409,9 +412,11 @@ export class PaymentService {
               "Withdrawal size too small to cover the $0.5 flat network fee",
           };
         }
-      } else if (tier === "standard" && isBonusEligible) {
-        executionAmount = amount * 1.03; // 3% Bonus Subsidy
       }
+      // Hard ceiling: a withdrawal can never pay out more than it debited.
+      // (A promotional bonus, if wanted, must be funded from a bonus ledger and
+      // credited separately — never by inflating a payout.)
+      if (executionAmount > amount) executionAmount = amount;
 
       // Apply Anti-Whale Gradient Withdraw Tax (stacked on top of tier fees)
       let whaleTaxCrypto = 0;

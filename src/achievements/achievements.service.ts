@@ -66,20 +66,37 @@ export class AchievementsService {
     const achDef = ACHIEVEMENTS_DATA.find((a) => a.id === achievementId);
     if (!achDef) return { error: "Achievement not found" };
 
-    const progress = await this.achievementModel
-      .findOne({ telegramId, achievementId })
+    // Atomic one-shot: only the request that flips claimed false -> true may pay.
+    // The previous findOne + save() pair let two parallel claims of the same
+    // achievement both reach the credit (measured: two 20 ELIXIR credits).
+    const claimed = await this.achievementModel
+      .findOneAndUpdate(
+        {
+          telegramId,
+          achievementId,
+          claimed: { $ne: true },
+          progress: { $gte: achDef.max },
+        },
+        { $set: { claimed: true, claimedAt: new Date() } },
+        { returnDocument: "after" },
+      )
       .exec();
-    if (!progress || progress.progress < achDef.max)
-      return { error: "Requirement not met" };
-    if (progress.claimed) return { error: "Already claimed" };
 
-    progress.claimed = true;
-    await progress.save();
+    if (!claimed) {
+      // Distinguish "not met / already claimed" without leaking anything else.
+      const progress = await this.achievementModel
+        .findOne({ telegramId, achievementId })
+        .exec();
+      if (!progress || progress.progress < achDef.max)
+        return { error: "Requirement not met" };
+      return { error: "Already claimed" };
+    }
 
     await this.usersService.creditRewardAndLogTask(
       telegramId,
       achDef.reward,
-      "Achievement Bonus",
+      // Per-achievement task id so one user's claim cannot collide with another's.
+      `ACHIEVEMENT_${achievementId}`,
     );
 
     return { success: true, reward: achDef.reward };

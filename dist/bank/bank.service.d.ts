@@ -13,6 +13,7 @@ export declare class BankService {
     private readonly logger;
     constructor(stakeModel: Model<StakeDocument>, bankLogModel: Model<BankLogDocument>, usersService: UsersService, achievementsService: AchievementsService, adminService: AdminService);
     private readonly PLATFORM_TAX;
+    static readonly STAKE_RATES: Readonly<Record<number, number>>;
     private tvlCache;
     private readonly TVL_CACHE_MS;
     handleAutoClaim(): Promise<void>;
@@ -41,7 +42,7 @@ export declare class BankService {
         networkStaked: number;
         personalStaked: number;
     }>;
-    createStake(telegramId: string, amount: number, durationDays: number, rate: number, autoClaim?: boolean): Promise<{
+    createStake(telegramId: string, amount: number, durationDays: number, _clientSuppliedRate?: number, autoClaim?: boolean): Promise<{
         error: string;
         success?: undefined;
         stake?: undefined;

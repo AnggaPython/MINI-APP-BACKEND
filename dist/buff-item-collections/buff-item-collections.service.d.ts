@@ -171,4 +171,7 @@ export declare class BuffItemCollectionsService implements OnModuleInit {
         granted: null;
         message: string;
     }>;
+    selectRandomBuff(telegramId: string, preferredRarity?: BuffRarity): Promise<{
+        buffItem: Record<string, unknown>;
+    } | null>;
 }

@@ -153,6 +153,17 @@ export class User {
   @Prop({ type: Date, default: null })
   tokenExpiresAt: Date | null;
 
+  // ── AUTO Repair preference (client game setting persisted server-side) ─
+  // Source of truth for the AUTO button toggle. localStorage in the Telegram
+  // WebView is not durable (evicted on app close / storage cleanup / device
+  // change) and used to silently reset the toggle to OFF. autoRepairAt (epoch
+  // ms) lets the client resolve local-cache vs server conflicts by recency.
+  @Prop({ default: false })
+  autoRepairOn: boolean;
+
+  @Prop({ type: Number, default: 0 })
+  autoRepairAt: number;
+
   // ── Fragment system (miner-stone mini-games) ─────────────────────────
   // Fragments drop randomly when destroying stones. Collect 50 to play:
   //   spin-wheel  → lucky wheel spin (stateless, instant reward)

@@ -116,7 +116,7 @@ export declare class TradeSpotService {
             amount: number;
             total: number;
             fee: number;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
             time: Date;
         }[];
     }>;
@@ -284,7 +284,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
         };
         balances: {
             quoteBalance: number;
@@ -304,7 +304,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
         };
         balances: {
             quoteBalance: number;
@@ -399,7 +399,7 @@ export declare class TradeSpotService {
             total: number;
             fee: number;
             feeCurrency: string;
-            source: "BOT" | "USER";
+            source: "USER" | "BOT";
             time: Date;
         }[];
         page: number;

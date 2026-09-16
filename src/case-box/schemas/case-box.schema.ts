@@ -32,7 +32,7 @@ export class CaseBox {
   @Prop({ required: true, enum: ["COMMON", "MEDIUM", "RARE"] })
   tier: CaseTier;
 
-  // Rolled at spawn by the provably-fair RNG — the lock takes this many hits.
+  // Rolled at spawn by the server-side HMAC RNG — the lock takes this many hits.
   @Prop({ required: true })
   maxHp: number;
 

@@ -91,7 +91,7 @@ const SPAWN_THROTTLE_MS = 800;
 const ACTIVE_STONE_TTL_MS = 2 * 60 * 60 * 1000;
 const CLAIMED_STONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 50;
-const MAX_PLAYER_ATK = 120;
+const MAX_PLAYER_ATK = 350;
 const HIT_INTERVAL_MS = 1500;
 const DESTROY_RATE_LIMIT_BASE = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
@@ -360,7 +360,17 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
         }
         if (Object.keys(set).length === 0)
             return { success: false, error: "Nothing to sync" };
-        await this.userModel.updateOne({ telegramId }, { $set: set }).exec();
+        const pipeline = [
+            {
+                $set: Object.fromEntries(Object.keys(set).map((path) => [path, { $ifNull: [`$${path}`, set[path]] }])),
+            },
+            {
+                $set: Object.fromEntries(Object.entries(set).map(([path, value]) => [path, { $min: [`$${path}`, value] }])),
+            },
+        ];
+        await this.userModel
+            .updateOne({ telegramId }, pipeline, { updatePipeline: true })
+            .exec();
         return { success: true };
     }
     async destroy(telegramId, stoneId) {
@@ -560,6 +570,9 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                     : { telegramId }, { $inc: inc })
                     .exec();
                 if (adRequired && !saved) {
+                    await this.miningStoneModel
+                        .updateOne({ _id: stoneId, telegramId, claimAction: action }, { $set: { claimAction: null }, $unset: { finalizedAt: "" } })
+                        .exec();
                     return {
                         success: false,
                         adRequired: true,
@@ -586,6 +599,9 @@ let MinerStoneService = MinerStoneService_1 = class MinerStoneService {
                         : { telegramId }, { $inc: inc })
                         .exec();
                     if (adRequired && !sold) {
+                        await this.miningStoneModel
+                            .updateOne({ _id: stoneId, telegramId, claimAction: action }, { $set: { claimAction: null }, $unset: { finalizedAt: "" } })
+                            .exec();
                         return {
                             success: false,
                             adRequired: true,

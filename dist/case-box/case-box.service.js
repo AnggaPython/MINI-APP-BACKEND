@@ -44,6 +44,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var CaseBoxService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CaseBoxService = exports.CASE_MATERIALS = exports.CASE_DURABILITY_COST = exports.CASE_HP_BANDS = exports.MATERIAL_AMOUNTS = exports.ELIXCOIN_BANDS = exports.BUFF_RARITY_WEIGHTS = exports.LOOT_RARITY_WEIGHTS = exports.OUTCOME_WEIGHTS = exports.CASE_TIER_WEIGHTS = void 0;
 const common_1 = require("@nestjs/common");
@@ -185,12 +186,13 @@ const HIT_INTERVAL_MS = 1700;
 const CASE_COOLDOWN_MS = 78_000;
 const DESTROY_RATE_LIMIT_BASE = 5;
 const DESTROY_RATE_WINDOW_MS = 60_000;
-let CaseBoxService = class CaseBoxService {
+let CaseBoxService = CaseBoxService_1 = class CaseBoxService {
     caseBoxModel;
     userModel;
     usersService;
     buffCollectionsService;
     levelingService;
+    logger = new common_1.Logger(CaseBoxService_1.name);
     lastSpawnAt = new Map();
     destroyTimestamps = new Map();
     lastClaimAt = new Map();
@@ -393,6 +395,7 @@ let CaseBoxService = class CaseBoxService {
         let rarity = null;
         let loot = null;
         let buffGranted = null;
+        let pendingBuffId = null;
         if (outcome === "ZONK") {
             loot = null;
         }
@@ -421,10 +424,11 @@ let CaseBoxService = class CaseBoxService {
         else if (outcome === "BUFF") {
             const buffRarityRoll = this.roll01(clientSeed, "case-buff-rarity");
             const buffRarity = this.weightedPick(buffRarityRoll, boostedBuffWeights);
-            const grantResult = await this.buffCollectionsService.grantRandomBuff(telegramId, buffRarity);
+            const grantResult = await this.buffCollectionsService.selectRandomBuff(telegramId, buffRarity);
             buffGranted = grantResult;
             const typedGrant = grantResult;
             if (typedGrant?.buffItem) {
+                pendingBuffId = typedGrant.buffItem.buffId;
                 rarity = typedGrant.buffItem.rarity;
                 const buffSlug = typedGrant.buffItem.buffId.toUpperCase().replace(/ /g, "-");
                 loot = { [typedGrant.buffItem.name]: 1 };
@@ -462,6 +466,7 @@ let CaseBoxService = class CaseBoxService {
                 outcome,
                 loot,
                 openedAt: new Date(),
+                lootName: pendingBuffId,
             },
         })
             .exec();
@@ -541,14 +546,14 @@ let CaseBoxService = class CaseBoxService {
                 ...exports.CASE_MATERIALS.RARE,
             ];
             const inc = {};
-            const buffSlug = loot.__buffSlug;
+            const pendingBuffIdForLoot = outcome === "BUFF" && opened.lootName ? opened.lootName : null;
             for (const [key, value] of Object.entries(loot)) {
                 if (key.startsWith("__"))
                     continue;
                 if (allMaterialNames.includes(key)) {
                     inc[`materials.${key}`] = value;
                 }
-                else if (buffSlug) {
+                else if (pendingBuffIdForLoot) {
                 }
                 else {
                     inc[`cryptoBalances.${key}`] = value;
@@ -560,11 +565,22 @@ let CaseBoxService = class CaseBoxService {
                 .findOneAndUpdate(adRequired ? { telegramId, adTickets: { $gte: 1 } } : { telegramId }, { $inc: inc })
                 .exec();
             if (adRequired && !credited) {
+                await this.caseBoxModel
+                    .updateOne({ _id: caseId, telegramId, status: "claimed" }, { $set: { status: "opened" }, $unset: { claimedAt: "" } })
+                    .exec();
                 return {
                     success: false,
                     adRequired: true,
                     error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap to claim again.",
                 };
+            }
+            if (pendingBuffIdForLoot) {
+                try {
+                    await this.buffCollectionsService.grantBuffItem(telegramId, pendingBuffIdForLoot);
+                }
+                catch (err) {
+                    this.logger.warn(`[case-box] buff grant failed for ${telegramId} (${pendingBuffIdForLoot}): ${err?.message}`);
+                }
             }
         }
         return { success: true };
@@ -591,7 +607,7 @@ let CaseBoxService = class CaseBoxService {
     }
 };
 exports.CaseBoxService = CaseBoxService;
-exports.CaseBoxService = CaseBoxService = __decorate([
+exports.CaseBoxService = CaseBoxService = CaseBoxService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(case_box_schema_1.CaseBox.name)),
     __param(1, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),

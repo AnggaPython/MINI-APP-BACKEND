@@ -1367,6 +1367,9 @@ export class TradeSpotService {
    * Shared min/max gate (same messages everywhere). BUY is evaluated on
    * intended spend (amount × price), SELL on base qty. Dust tolerance on
    * MIN only — see executeFill comment.
+   * ITEM pairs: minimum is 1 whole unit of BASE — no ELIXCOIN spend minimum
+   * (mirrors the frontend "isItem ? 1 : tradeLimits.min" rule). The 100
+   * ELIXCOIN minimum only applies to coin/mineral pairs.
    */
   private checkMinMax(
     pair: string,
@@ -1375,6 +1378,12 @@ export class TradeSpotService {
     price: number,
   ): string | null {
     const [baseAsset] = pair.split("/");
+    if (isItemBase(baseAsset)) {
+      // Anti-whale max on BUY spend still applies; no quote minimum.
+      if (side === "BUY" && round4(amount * price) > TRADE_LIMITS.ELIXCOIN.max)
+        return `Maximum trade is ${TRADE_LIMITS.ELIXCOIN.max} ELIXCOIN`;
+      return null;
+    }
     const limitsKey = side === "BUY" ? pair.split("/")[1] : baseAsset;
     const limits = TRADE_LIMITS[limitsKey];
     if (!limits) return null;
@@ -1886,10 +1895,23 @@ export class TradeSpotService {
       if (this.itemTradeService.isItem(base) && source === "USER") {
         // ── Item SELL (via ItemTradeService) ──────────────
         const qty = Math.floor(amount);
+        if (qty <= 0) return { success: false, error: "Invalid amount" };
         const actualBalance = await this.itemTradeService.getItemBalance(telegramId, base);
 
         if (actualBalance < qty)
           return { success: false, error: `Insufficient ${base} balance` };
+
+        // ── Remove the item FIRST, pay only for what actually left ──────────
+        // The old order credited proceeds and then ignored the removal result, so
+        // an equipped or already-gone item was sold for its full price
+        // repeatedly (measured: three paid sales, zero instances removed).
+        const removed = await this.itemTradeService.deductItem(telegramId, base, qty);
+        if (!removed) {
+          return {
+            success: false,
+            error: `Insufficient ${base} balance`,
+          };
+        }
 
         // Credit ELIXCOIN proceeds to user
         updated = await this.userModel
@@ -1899,11 +1921,12 @@ export class TradeSpotService {
             { returnDocument: "after" },
           )
           .exec();
-        if (!updated)
+        if (!updated) {
+          // Credit failed after the removal: give the item back so the user is
+          // never left short of both the item and the proceeds.
+          await this.itemTradeService.grantItem(telegramId, base, qty);
           return { success: false, error: "Account not found" };
-
-        // Debit item from its proper storage (via ItemTradeService)
-        await this.itemTradeService.deductItem(telegramId, base, qty);
+        }
 
       } else {
         // ── Coin / crypto SELL (or BOT) ─────────────────

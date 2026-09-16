@@ -8,7 +8,7 @@ export class MinerStoneController {
 
   /**
    * Spawn a new stone — the ONLY read call of the game loop.
-   * Server rolls tier + MPa via provably-fair RNG and returns the unique
+   * Server rolls tier + MPa via server-side HMAC RNG and returns the unique
    * database ID for this stone. Called exactly once per stone.
    */
   @Get("spawn")

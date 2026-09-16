@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import * as crypto from "crypto";
@@ -11,6 +11,7 @@ import {
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { UsersService } from "../users/users.service";
 import { BuffItemCollectionsService } from "../buff-item-collections/buff-item-collections.service";
+import { BuffRarity } from "../buff-item-collections/schemas/buff-item.schema";
 import { LevelingService, getLevelMultiplier, getHpMultiplier } from "../leveling-miner/leveling.service";
 
 type UserWithLevel = User & { level?: number };
@@ -228,6 +229,7 @@ const DESTROY_RATE_WINDOW_MS = 60_000;
 
 @Injectable()
 export class CaseBoxService {
+  private readonly logger = new Logger(CaseBoxService.name);
   // Lightweight in-memory spawn throttle: telegramId -> last spawn timestamp.
   private readonly lastSpawnAt = new Map<string, number>();
 
@@ -271,7 +273,7 @@ export class CaseBoxService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Provably-fair HMAC-SHA256 RNG (same pattern as miner-stone / Hi-Lo)
+  // Server-side HMAC-SHA256 RNG (same pattern as miner-stone / Hi-Lo). Not externally verifiable — no commit-reveal, so the "provably fair" label was dropped (audit finding rng.provably-fair-claim-without-commitment).
   // ─────────────────────────────────────────────────────────────
   private roll01(clientSeed: string, purpose: string): number {
     const serverSeed = crypto.randomBytes(16).toString("hex");
@@ -502,6 +504,8 @@ export class CaseBoxService {
     let rarity: CaseTier | null = null;
     let loot: Record<string, number> | null = null;
     let buffGranted: unknown = null;
+    /** Buff rolled here but granted only in claimCase (after the ad gate). */
+    let pendingBuffId: string | null = null;
 
     if (outcome === "ZONK") {
       loot = null;
@@ -530,23 +534,30 @@ export class CaseBoxService {
     } else if (outcome === "BUFF") {
       // Layer 2b — buff rarity roll (DROPRATE buff boosted weights)
       const buffRarityRoll = this.roll01(clientSeed, "case-buff-rarity");
-      const buffRarity = this.weightedPick(buffRarityRoll, boostedBuffWeights);
-      // Grant a random buff item of the rolled rarity to the user
-      const grantResult: unknown = await this.buffCollectionsService.grantRandomBuff(
-  // @ts-ignore - super strict cleanup pending (auto)
+      const buffRarity = this.weightedPick(
+        buffRarityRoll,
+        boostedBuffWeights,
+      ) as BuffRarity;
+      // SELECT the buff item now (so the UI can show it) but do NOT grant it
+      // here. The S2S ad ticket for a MEDIUM/RARE case is only verified in
+      // claimCase, so granting at destroy handed the loot out before the gate
+      // (measured: item granted with adTickets=0, claim rejected, item never
+      // revoked, loop repeatable). The grant happens in claimCase, after the
+      // ticket-guarded credit succeeds.
+      const grantResult = await this.buffCollectionsService.selectRandomBuff(
         telegramId,
-  // @ts-ignore - super strict pending
-        buffRarity as unknown as string,
+        buffRarity,
       );
       buffGranted = grantResult;
-      const typedGrant = grantResult as { buffItem?: { rarity: CaseTier; name: string; buffId: string } };
+      const typedGrant = grantResult as {
+        buffItem?: { rarity: CaseTier; name: string; buffId: string };
+      };
       if (typedGrant?.buffItem) {
+        pendingBuffId = typedGrant.buffItem.buffId;
         rarity = typedGrant.buffItem.rarity;
         // Store display name for history/UI, but use buffId slug for cryptoBalances.
-        // NOTE: grantBuffItem already wrote cryptoBalances with correct slug —
-  // @ts-ignore - super strict cleanup pending (auto)
-        // the loot loop below must NOT double-count.
-  // @ts-ignore - super strict pending
+        // The loot loop below must NOT double-count: the grant happens in
+        // claimCase, not here.
         const buffSlug = typedGrant.buffItem.buffId.toUpperCase().replace(/ /g, "-");
         loot = { [typedGrant.buffItem.name]: 1 } as Record<string, number>;
         (loot as unknown as Record<string, unknown>).__buffSlug = buffSlug;
@@ -589,6 +600,9 @@ export class CaseBoxService {
             outcome,
             loot,
             openedAt: new Date(),
+            // Persisted so claimCase can grant the exact item that was rolled,
+            // without ever putting it in the collection before the gate.
+            lootName: pendingBuffId,
           },
         },
       )
@@ -694,16 +708,20 @@ export class CaseBoxService {
         ...CASE_MATERIALS.RARE,
       ];
       const inc: Record<string, number> = {};
-      // __buffSlug is a sentinel — buff items are already in UserBuffCollection.inventory
-      // via grantRandomBuff → grantBuffItem. No extra write needed here.
-      const buffSlug = (loot as Record<string, unknown>).__buffSlug as string | undefined;
+      // A BUFF roll stores the pending buffId in `lootName` (it is granted below,
+      // after the gate). Its loot key is the buff's display name, which must NOT
+      // be written into cryptoBalances as if it were a token. When the collection
+      // is complete the roll falls back to ELIXCOIN, `lootName` stays null and the
+      // normal routing applies.
+      const pendingBuffIdForLoot =
+        outcome === "BUFF" && opened.lootName ? opened.lootName : null;
       for (const [key, value] of Object.entries(loot)) {
         if (key.startsWith("__")) continue; // skip sentinel keys
         if (allMaterialNames.includes(key)) {
           // Material tools → user.materials ONLY (Trade Spot reads materials field directly)
           inc[`materials.${key}`] = value;
-        } else if (buffSlug) {
-          // Buff item already in UserBuffCollection → nothing to write here
+        } else if (pendingBuffIdForLoot) {
+          // Granted as a collection instance below — nothing to write here.
         } else {
           // Crypto token (ELIXCOIN etc.) → cryptoBalances
           inc[`cryptoBalances.${key}`] = value;
@@ -719,11 +737,35 @@ export class CaseBoxService {
         .exec();
 
       if (adRequired && !credited) {
+        // Release the claim lock: without this the retry the message advertises
+        // is impossible, because the case is already consumed (the loot was
+        // destroyed and never credited).
+        await this.caseBoxModel
+          .updateOne(
+            { _id: caseId, telegramId, status: "claimed" },
+            { $set: { status: "opened" }, $unset: { claimedAt: "" } },
+          )
+          .exec();
         return {
           success: false,
           adRequired: true,
           error: "⚠️ ANTI-CHEAT: S2S ticket lost to a concurrent claim. Tap to claim again.",
         };
+      }
+
+      // ── Grant the buff item NOW: the gate (ticket consumed in the credit
+      // above) has been passed. Granting earlier handed the item out for free.
+      if (pendingBuffIdForLoot) {
+        try {
+          await this.buffCollectionsService.grantBuffItem(
+            telegramId,
+            pendingBuffIdForLoot,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `[case-box] buff grant failed for ${telegramId} (${pendingBuffIdForLoot}): ${(err as Error)?.message}`,
+          );
+        }
       }
     }
     return { success: true };

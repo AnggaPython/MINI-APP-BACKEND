@@ -20,18 +20,20 @@ export class BankController {
     body: {
       amount: number;
       durationDays: number;
-      rate: number;
+      /** Legacy field from older clients: accepted and ignored — see BankService.STAKE_RATES. */
+      rate?: number;
       autoClaim?: boolean;
     },
   ) {
-    if (!telegramId || !body.amount || !body.durationDays || !body.rate) {
+    if (!telegramId || !body.amount || !body.durationDays) {
       return { error: "Incomplete parameters" };
     }
     return await this.bankService.createStake(
       telegramId,
       Number(body.amount),
       Number(body.durationDays),
-      Number(body.rate),
+      // Rate deliberately NOT forwarded: the server derives it from the duration.
+      undefined,
       body.autoClaim || false,
     );
   }

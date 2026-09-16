@@ -206,21 +206,36 @@ let FragmentService = FragmentService_1 = class FragmentService {
         const userLevel = user.level || 1;
         const levelBonus = 1 + (userLevel - 1) * 0.02;
         const rewardPerTile = Math.round(MINE_SWIPE_BASE_REWARD_PER_TILE * levelBonus * 100) / 100;
-        const now = Date.now();
-        const session = await new this.mineSwipeModel({
-            telegramId,
-            boardSize: MINE_SWIPE_BOARD_SIZE,
-            mineCount: MINE_SWIPE_MINE_COUNT,
-            mines: Array.from(minePositions),
-            revealed: [],
-            status: "active",
-            accumulatedReward: 0,
-            rewardPerTile,
-            expireAt: new Date(now + MINE_SWIPE_SESSION_TTL_MS),
-        }).save();
-        await this.userModel
-            .findOneAndUpdate({ telegramId, mineSwipeFragments: { $gte: MINE_SWIPE_COST } }, { $inc: { mineSwipeFragments: -MINE_SWIPE_COST } })
+        const charged = await this.userModel
+            .findOneAndUpdate({ telegramId, mineSwipeFragments: { $gte: MINE_SWIPE_COST } }, { $inc: { mineSwipeFragments: -MINE_SWIPE_COST } }, { returnDocument: "after" })
             .exec();
+        if (!charged) {
+            return {
+                success: false,
+                error: `Need ${MINE_SWIPE_COST} Mine Swipe fragments (balance changed, try again)`,
+            };
+        }
+        const now = Date.now();
+        let session;
+        try {
+            session = await new this.mineSwipeModel({
+                telegramId,
+                boardSize: MINE_SWIPE_BOARD_SIZE,
+                mineCount: MINE_SWIPE_MINE_COUNT,
+                mines: Array.from(minePositions),
+                revealed: [],
+                status: "active",
+                accumulatedReward: 0,
+                rewardPerTile,
+                expireAt: new Date(now + MINE_SWIPE_SESSION_TTL_MS),
+            }).save();
+        }
+        catch (err) {
+            await this.userModel
+                .findOneAndUpdate({ telegramId }, { $inc: { mineSwipeFragments: MINE_SWIPE_COST } })
+                .exec();
+            throw err;
+        }
         return {
             success: true,
             sessionId: session._id.toString(),
@@ -247,7 +262,18 @@ let FragmentService = FragmentService_1 = class FragmentService {
         if (session.mines.includes(pos)) {
             session.status = "lost";
             session.accumulatedReward = 0;
-            await session.save();
+            const written = await this.mineSwipeModel
+                .findOneAndUpdate({ _id: session._id, telegramId, status: "active" }, {
+                $set: {
+                    status: "lost",
+                    accumulatedReward: 0,
+                    revealed: session.revealed,
+                },
+            }, { returnDocument: "after" })
+                .exec();
+            if (!written) {
+                return { success: false, error: "Session not found or already finished" };
+            }
             return {
                 success: true,
                 hitMine: true,
@@ -264,7 +290,19 @@ let FragmentService = FragmentService_1 = class FragmentService {
             const winReward = session.accumulatedReward;
             session.status = "claimed";
             session.finalReward = winReward;
-            await session.save();
+            const completed = await this.mineSwipeModel
+                .findOneAndUpdate({ _id: session._id, telegramId, status: "active" }, {
+                $set: {
+                    status: "claimed",
+                    finalReward: winReward,
+                    revealed: session.revealed,
+                    accumulatedReward: winReward,
+                },
+            }, { returnDocument: "after" })
+                .exec();
+            if (!completed) {
+                return { success: false, error: "Session not found or already finished" };
+            }
             if (winReward > 0) {
                 await this.userModel
                     .findOneAndUpdate({ telegramId }, { $inc: { "goldBalance.mineSwipe": winReward } })
@@ -285,7 +323,17 @@ let FragmentService = FragmentService_1 = class FragmentService {
                 },
             };
         }
-        await session.save();
+        const written = await this.mineSwipeModel
+            .findOneAndUpdate({ _id: session._id, telegramId, status: "active" }, {
+            $set: {
+                revealed: session.revealed,
+                accumulatedReward: session.accumulatedReward,
+            },
+        }, { returnDocument: "after" })
+            .exec();
+        if (!written) {
+            return { success: false, error: "Session not found or already finished" };
+        }
         return {
             success: true,
             hitMine: false,
@@ -296,21 +344,27 @@ let FragmentService = FragmentService_1 = class FragmentService {
         };
     }
     async mineSwipeClaim(telegramId, sessionId) {
-        const session = await this.mineSwipeModel
+        const pre = await this.mineSwipeModel
             .findOne({ _id: sessionId, telegramId, status: { $in: ["active", "won"] } })
+            .lean()
+            .exec();
+        if (!pre) {
+            return { success: false, error: "Session not found or already claimed" };
+        }
+        if (!pre.revealed || pre.revealed.length === 0) {
+            return { success: false, error: "No tiles revealed yet" };
+        }
+        const session = await this.mineSwipeModel
+            .findOneAndUpdate({ _id: sessionId, telegramId, status: { $in: ["active", "won"] } }, { $set: { status: "claimed", claimedAt: new Date() } }, { returnDocument: "after" })
             .exec();
         if (!session) {
             return { success: false, error: "Session not found or already claimed" };
         }
-        if (session.revealed.length === 0) {
-            return { success: false, error: "No tiles revealed yet" };
-        }
-        const reward = session.status === "won"
-            ? session.accumulatedReward
-            : session.accumulatedReward;
-        session.status = "claimed";
+        const reward = session.accumulatedReward;
         session.finalReward = reward;
-        await session.save();
+        await this.mineSwipeModel
+            .updateOne({ _id: session._id, status: "claimed" }, { $set: { finalReward: reward } })
+            .exec();
         if (reward > 0) {
             await this.userModel
                 .findOneAndUpdate({ telegramId }, { $inc: { "goldBalance.mineSwipe": reward } })

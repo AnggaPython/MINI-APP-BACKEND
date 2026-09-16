@@ -113,6 +113,36 @@ let AutoMiningService = AutoMiningService_1 = class AutoMiningService {
                 error: "Plan already active — cancel it first to start a new one",
             };
         }
+        let reserved = false;
+        try {
+            const reservation = await this.subModel
+                .findOneAndUpdate({
+                telegramId,
+                $or: [
+                    { status: { $in: ["cancelled", "expired"] } },
+                    { endDate: { $lte: new Date(now) } },
+                    { status: "reserving", reservedAt: { $lte: new Date(now - 60_000) } },
+                    { status: { $exists: false } },
+                ],
+            }, { $set: { status: "reserving", reservedAt: new Date(now), feePaid: 0 } }, { upsert: true, returnDocument: "after" })
+                .exec();
+            reserved = Boolean(reservation);
+        }
+        catch (err) {
+            if (err?.code === 11000) {
+                return {
+                    success: false,
+                    error: "Plan already active — cancel it first to start a new one",
+                };
+            }
+            throw err;
+        }
+        if (!reserved) {
+            return {
+                success: false,
+                error: "Plan already active — cancel it first to start a new one",
+            };
+        }
         const wantBuffs = Array.isArray(opts.buffIds)
             ? [...new Set(opts.buffIds.map(String))].slice(0, 6)
             : [];
@@ -161,6 +191,9 @@ let AutoMiningService = AutoMiningService_1 = class AutoMiningService {
             .findOneAndUpdate({ telegramId, elixirBalance: { $gte: exports.AUTO_PLAN_FEE_ELIXIR } }, { $inc: { elixirBalance: -exports.AUTO_PLAN_FEE_ELIXIR } }, { returnDocument: "after" })
             .exec();
         if (!charged) {
+            await this.subModel
+                .updateOne({ telegramId, status: "reserving" }, { $set: { status: "cancelled" } })
+                .exec();
             return {
                 success: false,
                 error: `Need ${exports.AUTO_PLAN_FEE_ELIXIR.toLocaleString()} ELIXIR to start`,

@@ -110,42 +110,4 @@ export declare class BuffItemCollectionsController {
         success: boolean;
         error: string;
     }>;
-    grant(telegramId: string, buffId: string): Promise<{
-        success: boolean;
-        error: string;
-        buffItem?: undefined;
-        instanceId?: undefined;
-        message?: undefined;
-    } | {
-        success: boolean;
-        buffItem: import("./schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        };
-        instanceId: `${string}-${string}-${string}-${string}-${string}`;
-        message: string;
-        error?: undefined;
-    }>;
-    grantRandom(telegramId: string, preferredRarity?: string): Promise<{
-        success: boolean;
-        error: string;
-        buffItem?: undefined;
-        instanceId?: undefined;
-        message?: undefined;
-    } | {
-        success: boolean;
-        buffItem: import("./schemas/buff-item.schema").BuffItem & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        };
-        instanceId: `${string}-${string}-${string}-${string}-${string}`;
-        message: string;
-        error?: undefined;
-    } | {
-        success: boolean;
-        granted: null;
-        message: string;
-    }>;
 }

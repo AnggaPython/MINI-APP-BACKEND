@@ -143,9 +143,11 @@ function getMaterialRarity(materialName: string): string | null {
   return null;
 }
 
+/** Ascending rarity order — also used to pick the CHEAPEST sufficient material. */
+const MATERIAL_RARITY_ORDER = ["COMMON", "MEDIUM", "RARE"];
+
 function isMaterialRaritySufficient(have: string, need: string): boolean {
-  const order = ["COMMON", "MEDIUM", "RARE"];
-  return order.indexOf(have) >= order.indexOf(need);
+  return MATERIAL_RARITY_ORDER.indexOf(have) >= MATERIAL_RARITY_ORDER.indexOf(need);
 }
 
 // ── Service ────────────────────────────────────────────────────────────────
@@ -304,13 +306,21 @@ export class PickaxeUpgradeService {
 
     // Check material tool
     const requiredRarity = costPerLevel.materialRarity;
+    // Pick the CHEAPEST sufficient material, not the first one the document
+    // happens to iterate over. `isMaterialRaritySufficient` accepts any higher
+    // rarity, so "first match wins" burned a player's rare tool on a Common
+    // recipe (measured: the only Void Diamond consumed while 5 Rusty Nails
+    // survived) — silently and non-deterministically.
     let materialFound: string | null = null;
+    let bestRarityRank = Number.POSITIVE_INFINITY;
     for (const [name, count] of Object.entries(materials)) {
       if (count <= 0) continue;
       const rarity = getMaterialRarity(name);
-      if (rarity && isMaterialRaritySufficient(rarity, requiredRarity)) {
+      if (!rarity || !isMaterialRaritySufficient(rarity, requiredRarity)) continue;
+      const rank = MATERIAL_RARITY_ORDER.indexOf(rarity);
+      if (rank < bestRarityRank) {
+        bestRarityRank = rank;
         materialFound = name;
-        break;
       }
     }
 

@@ -13,7 +13,7 @@ export declare class AuctionHouseController {
         collateralDeposit: number;
         listingDurationDays: number;
         auction: {
-            id: string;
+            id: any;
             itemCategory: "buff" | "material";
             instanceId: string | undefined;
             baseItemId: string | undefined;
@@ -24,7 +24,7 @@ export declare class AuctionHouseController {
             tax: number;
             netAmount: number;
             sellerName: string;
-            listedAt: Date;
+            listedAt: any;
         };
         error?: undefined;
     } | {

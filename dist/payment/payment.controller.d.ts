@@ -4,9 +4,9 @@ export declare class PaymentController {
     private readonly paymentService;
     constructor(paymentService: PaymentService);
     depositToken(body: {
-        telegramId: string;
         amount: number;
-    }): Promise<{
+        telegramId?: string;
+    }, telegramId: string): Promise<{
         success: boolean;
         paymentUrl: any;
         error?: undefined;
@@ -16,12 +16,12 @@ export declare class PaymentController {
         paymentUrl?: undefined;
     }>;
     withdrawToken(body: {
-        telegramId: string;
         amount: number;
         coin: string;
         wallet: string;
+        telegramId?: string;
         tier?: string;
-    }): Promise<{
+    }, telegramId: string): Promise<{
         success: boolean;
         error: string;
         banned: boolean;
@@ -48,9 +48,9 @@ export declare class PaymentController {
         })[];
     }>;
     syncDeposit(body: {
-        telegramId: string;
         orderId: string;
-    }): Promise<{
+        telegramId?: string;
+    }, telegramId: string): Promise<{
         success: boolean;
         msg: string;
         error?: undefined;

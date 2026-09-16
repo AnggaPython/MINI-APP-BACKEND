@@ -344,10 +344,17 @@ export class CampaignsService {
 
   async updateCampaign(
     campaignId: string,
+    callerTelegramId: string,
     data: { title?: string; description?: string; url?: string },
   ) {
     const existing = await this.campaignModel.findById(campaignId);
     if (!existing) return { success: false, error: "Campaign not found" };
+
+    // Only the owner may edit their campaign. A foreign id answers exactly like a
+    // missing one so the route cannot be used to enumerate campaigns.
+    if (String(existing.creatorTelegramId) !== String(callerTelegramId)) {
+      return { success: false, error: "Campaign not found" };
+    }
 
     if (data.url) {
       try {
@@ -357,9 +364,19 @@ export class CampaignsService {
       }
     }
 
-    const updated = await this.campaignModel.findByIdAndUpdate(
-      campaignId,
-      { $set: data },
+    // Explicit allow-list. Budget, reward, status and ownership are server-owned:
+    // they may only change through the audited funding path, never through an edit.
+    const patch: Record<string, string> = {};
+    if (typeof data.title === "string") patch.title = data.title;
+    if (typeof data.description === "string") patch.description = data.description;
+    if (typeof data.url === "string") patch.url = data.url;
+    if (Object.keys(patch).length === 0) {
+      return { success: false, error: "Nothing to update" };
+    }
+
+    const updated = await this.campaignModel.findOneAndUpdate(
+      { _id: campaignId, creatorTelegramId: callerTelegramId },
+      { $set: patch },
       { returnDocument: "after" },
     );
     if (!updated) return { success: false, error: "Campaign not found" };
@@ -367,8 +384,17 @@ export class CampaignsService {
   }
 
   async addBudget(campaignId: string, amount: number, telegramId: string) {
-    if (amount < 10000)
+    if (!Number.isFinite(amount) || amount < 10000)
       return { success: false, error: "Minimum top-up is 10,000 ELIXIR" };
+    if (amount > 1_000_000)
+      return { success: false, error: "Maximum top-up is 1,000,000 ELIXIR" };
+
+    // Only the owner may fund their own campaign.
+    const owned = await this.campaignModel.exists({
+      _id: campaignId,
+      creatorTelegramId: telegramId,
+    });
+    if (!owned) return { success: false, error: "Campaign not found" };
 
     const deducted = await this.usersService.debitElixir(telegramId, amount);
     if (!deducted)

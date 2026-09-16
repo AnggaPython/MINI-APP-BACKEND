@@ -1,6 +1,6 @@
-import { Document } from "mongoose";
+import { Document, Schema as MongooseSchema } from "mongoose";
 export type AuctionDocument = Auction & Document;
-export type AuctionStatus = "active" | "sold" | "cancelled";
+export type AuctionStatus = "active" | "settling" | "sold" | "cancelled";
 export declare class Auction {
     sellerId: string;
     sellerName: string;
@@ -18,10 +18,11 @@ export declare class Auction {
     expiresAt: Date;
     collateralDeposit: number;
     collateralReturned: boolean;
+    claimExpiresAt: Date | null;
     resolvedAt: Date;
     buyerId: string;
 }
-export declare const AuctionSchema: import("mongoose").Schema<Auction, import("mongoose").Model<Auction, any, any, any, any, any, Auction>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, Auction, Document<unknown, {}, Auction, {
+export declare const AuctionSchema: MongooseSchema<Auction, import("mongoose").Model<Auction, any, any, any, any, any, Auction>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, Auction, Document<unknown, {}, Auction, {
     id: string;
 }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
     _id: import("mongoose").Types.ObjectId;
@@ -166,6 +167,15 @@ export declare const AuctionSchema: import("mongoose").Schema<Auction, import("m
         id: string;
     }>> | undefined;
     collateralReturned?: import("mongoose").SchemaDefinitionProperty<boolean, Auction, Document<unknown, {}, Auction, {
+        id: string;
+    }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
+        _id: import("mongoose").Types.ObjectId;
+    } & {
+        __v: number;
+    }, "id"> & import("mongoose").HydratedDocumentOverrides<{
+        id: string;
+    }>> | undefined;
+    claimExpiresAt?: import("mongoose").SchemaDefinitionProperty<Date | null, Auction, Document<unknown, {}, Auction, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<Auction & {
         _id: import("mongoose").Types.ObjectId;

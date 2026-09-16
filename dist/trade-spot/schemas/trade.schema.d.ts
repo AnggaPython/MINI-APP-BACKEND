@@ -83,7 +83,7 @@ export declare const TradeSchema: import("mongoose").Schema<Trade, import("mongo
     }, "id"> & import("mongoose").HydratedDocumentOverrides<{
         id: string;
     }>> | undefined;
-    source?: import("mongoose").SchemaDefinitionProperty<"BOT" | "USER", Trade, Document<unknown, {}, Trade, {
+    source?: import("mongoose").SchemaDefinitionProperty<"USER" | "BOT", Trade, Document<unknown, {}, Trade, {
         id: string;
     }, import("mongoose").DefaultSchemaOptions> & Omit<Trade & {
         _id: import("mongoose").Types.ObjectId;

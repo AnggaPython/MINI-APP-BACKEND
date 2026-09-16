@@ -1,13 +1,33 @@
 import { Controller, Post, Body, Get, Param, Query } from "@nestjs/common";
 import { CampaignsService } from "./campaigns.service";
+import { User } from "../auth/telegram-user.decorator";
 
 @Controller("campaigns")
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
   @Post()
-  async createCampaign(@Body() data: any) {
-    return this.campaignsService.createCampaign(data);
+  async createCampaign(
+    @Body()
+    data: {
+      title: string;
+      description: string;
+      category: string;
+      rewardPerClick: number;
+      totalBudget: number;
+      url?: string;
+      oneUserLifetime?: boolean;
+      autoRenew?: boolean;
+      /** Ignored: the payer is always the authenticated session. */
+      creatorTelegramId?: string;
+    },
+    @User("telegramId") telegramId: string,
+  ) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return this.campaignsService.createCampaign({
+      ...data,
+      creatorTelegramId: telegramId,
+    });
   }
 
   @Get("active")
@@ -23,8 +43,8 @@ export class CampaignsController {
 
   @Post("start-task")
   async startTask(
-    @Body("telegramId") telegramId: string,
     @Body("campaignId") campaignId: string,
+    @User("telegramId") telegramId: string,
   ) {
     if (!telegramId || !campaignId)
       return { success: false, error: "Missing params" };
@@ -33,8 +53,8 @@ export class CampaignsController {
 
   @Post("complete-task")
   async completeTask(
-    @Body("telegramId") telegramId: string,
     @Body("campaignId") campaignId: string,
+    @User("telegramId") telegramId: string,
   ) {
     if (!telegramId || !campaignId)
       return { success: false, error: "Missing params" };
@@ -42,15 +62,20 @@ export class CampaignsController {
   }
 
   @Post(":id")
-  async updateCampaign(@Param("id") id: string, @Body() data: any) {
-    return this.campaignsService.updateCampaign(id, data);
+  async updateCampaign(
+    @Param("id") id: string,
+    @Body() data: { title?: string; description?: string; url?: string },
+    @User("telegramId") telegramId: string,
+  ) {
+    if (!telegramId) return { success: false, error: "Missing telegramId" };
+    return this.campaignsService.updateCampaign(id, telegramId, data);
   }
 
   @Post("add-budget/:id")
   async addBudget(
     @Param("id") id: string,
-    @Body("telegramId") telegramId: string,
     @Body("amount") amount: number,
+    @User("telegramId") telegramId: string,
   ) {
     if (!telegramId || !amount)
       return { success: false, error: "Missing parameters" };

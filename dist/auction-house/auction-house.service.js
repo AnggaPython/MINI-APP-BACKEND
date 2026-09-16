@@ -128,24 +128,57 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { [`materials.${actualBaseItemId}`]: -amount } }).exec();
         }
         const now = Date.now();
-        const auction = await this.auctionModel.create({
-            sellerId: telegramId,
-            sellerName,
-            itemCategory,
-            instanceId,
-            baseItemId: actualBaseItemId,
-            amount,
-            buffType,
-            rarity,
-            price,
-            tax,
-            netAmount,
-            status: "active",
-            listedAt: new Date(),
-            expiresAt: new Date(now + LISTING_DURATION_MS),
-            collateralDeposit: COLLATERAL_DEPOSIT,
-            collateralReturned: false,
-        });
+        let auction;
+        try {
+            auction = await this.auctionModel.create({
+                sellerId: telegramId,
+                sellerName,
+                itemCategory,
+                instanceId,
+                baseItemId: actualBaseItemId,
+                amount,
+                buffType,
+                rarity,
+                price,
+                tax,
+                netAmount,
+                status: "active",
+                listedAt: new Date(),
+                expiresAt: new Date(now + LISTING_DURATION_MS),
+                collateralDeposit: COLLATERAL_DEPOSIT,
+                collateralReturned: false,
+            });
+        }
+        catch (err) {
+            const duplicateKey = err?.code === 11000;
+            await this.userModel
+                .findOneAndUpdate({ telegramId }, { $inc: { "cryptoBalances.ELIXCOIN": COLLATERAL_DEPOSIT } })
+                .exec();
+            if (itemCategory === "buff") {
+                await this.userBuffModel
+                    .findOneAndUpdate({ telegramId }, {
+                    $push: {
+                        inventory: {
+                            instanceId,
+                            baseItemId: actualBaseItemId,
+                            acquiredAt: new Date(),
+                        },
+                    },
+                }, { upsert: true })
+                    .exec();
+            }
+            else if (itemCategory === "material") {
+                await this.userModel
+                    .findOneAndUpdate({ telegramId }, { $inc: { [`materials.${actualBaseItemId}`]: amount } })
+                    .exec();
+            }
+            return {
+                success: false,
+                error: duplicateKey
+                    ? "This item instance is already listed"
+                    : "Could not create the listing, your item and deposit were returned",
+            };
+        }
         return {
             success: true,
             collateralDeposit: COLLATERAL_DEPOSIT,
@@ -182,16 +215,36 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         const buyer = await this.userModel.findOne({ telegramId });
         if (!buyer)
             return { success: false, error: "User not found" };
+        const claimed = await this.auctionModel
+            .findOneAndUpdate({ _id: listing._id, status: "active" }, {
+            $set: {
+                status: "settling",
+                buyerId: telegramId,
+                claimExpiresAt: new Date(Date.now() + 30_000),
+            },
+        }, { returnDocument: "after" })
+            .exec();
+        if (!claimed) {
+            return { success: false, error: "Listing not found or already sold" };
+        }
+        const releaseClaim = async () => {
+            await this.auctionModel
+                .updateOne({ _id: listing._id, status: "settling" }, { $set: { status: "active" }, $unset: { buyerId: "", claimExpiresAt: "" } })
+                .exec();
+        };
         const buyerBalance = buyer.cryptoBalances?.["ELIXCOIN"] || 0;
         if (buyerBalance < listing.price) {
+            await releaseClaim();
             return {
                 success: false,
                 error: `Insufficient ELIXCOIN. You need ${listing.price.toLocaleString()} but have ${buyerBalance.toFixed(2)}`,
             };
         }
         const buyerUpdate = await this.userModel.findOneAndUpdate({ telegramId, "cryptoBalances.ELIXCOIN": { $gte: listing.price } }, { $inc: { "cryptoBalances.ELIXCOIN": -listing.price } }, { returnDocument: "after" }).exec();
-        if (!buyerUpdate)
+        if (!buyerUpdate) {
+            await releaseClaim();
             return { success: false, error: "Insufficient ELIXCOIN balance" };
+        }
         const sellerPayout = listing.netAmount + listing.collateralDeposit;
         await this.userModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $inc: { "cryptoBalances.ELIXCOIN": sellerPayout } }).exec();
         if (listing.itemCategory === "buff") {
@@ -205,11 +258,17 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         else if (listing.itemCategory === "material") {
             await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { [`materials.${listing.baseItemId}`]: listing.amount || 1 } }).exec();
         }
-        listing.status = "sold";
-        listing.buyerId = telegramId;
-        listing.resolvedAt = new Date();
-        listing.collateralReturned = true;
-        await listing.save();
+        await this.auctionModel
+            .updateOne({ _id: listing._id, status: "settling" }, {
+            $set: {
+                status: "sold",
+                buyerId: telegramId,
+                resolvedAt: new Date(),
+                collateralReturned: true,
+            },
+            $unset: { claimExpiresAt: "" },
+        })
+            .exec();
         return {
             success: true,
             purchased: {
@@ -231,6 +290,12 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         });
         if (!listing)
             return { success: false, error: "Listing not found or not yours" };
+        const claim = await this.auctionModel
+            .findOneAndUpdate({ _id: listing._id, sellerId: telegramId, status: "active" }, { $set: { status: "settling", claimExpiresAt: new Date(Date.now() + 30_000) } }, { returnDocument: "after" })
+            .exec();
+        if (!claim) {
+            return { success: false, error: "Listing not found or not yours" };
+        }
         if (listing.itemCategory === "buff") {
             const instanceToReturn = {
                 instanceId: listing.instanceId,
@@ -247,10 +312,16 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
         if (returnedDeposit > 0) {
             await this.userModel.findOneAndUpdate({ telegramId }, { $inc: { "cryptoBalances.ELIXCOIN": returnedDeposit } }).exec();
         }
-        listing.status = "cancelled";
-        listing.resolvedAt = new Date();
-        listing.collateralReturned = true;
-        await listing.save();
+        await this.auctionModel
+            .updateOne({ _id: listing._id, status: "settling" }, {
+            $set: {
+                status: "cancelled",
+                resolvedAt: new Date(),
+                collateralReturned: true,
+            },
+            $unset: { claimExpiresAt: "" },
+        })
+            .exec();
         return {
             success: true,
             instanceId: listing.instanceId,
@@ -268,6 +339,11 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             return 0;
         let count = 0;
         for (const listing of expired) {
+            const claim = await this.auctionModel
+                .findOneAndUpdate({ _id: listing._id, status: "active" }, { $set: { status: "settling" } }, { returnDocument: "after" })
+                .exec();
+            if (!claim)
+                continue;
             if (listing.itemCategory === "buff") {
                 const instanceToReturn = {
                     instanceId: listing.instanceId,
@@ -282,14 +358,24 @@ let AuctionHouseService = AuctionHouseService_1 = class AuctionHouseService {
             if (listing.collateralDeposit > 0 && !listing.collateralReturned) {
                 await this.userModel.findOneAndUpdate({ telegramId: listing.sellerId }, { $inc: { "cryptoBalances.ELIXCOIN": listing.collateralDeposit } }).exec();
             }
-            listing.status = "cancelled";
-            listing.resolvedAt = new Date();
-            listing.collateralReturned = true;
-            await listing.save();
+            await this.auctionModel
+                .updateOne({ _id: listing._id, status: "settling" }, { $set: { status: "cancelled", resolvedAt: new Date(), collateralReturned: true } })
+                .exec();
             count++;
         }
         this.logger.log(`Expired ${count} old auction listings`);
         return count;
+    }
+    async reportStuckClaims() {
+        const stuck = await this.auctionModel
+            .find({ status: "settling", claimExpiresAt: { $lte: new Date() } })
+            .lean();
+        if (stuck.length === 0)
+            return 0;
+        for (const listing of stuck) {
+            this.logger.error(`Auction ${String(listing._id)} stuck in "settling" since claim deadline ${listing.claimExpiresAt?.toISOString?.() ?? "unknown"} — manual reconciliation required`);
+        }
+        return stuck.length;
     }
     async browse(params) {
         const { search, buffType, rarity, sort = "newest", page = 1, limit = 50, } = params;
@@ -479,6 +565,12 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AuctionHouseService.prototype, "expireOldListings", null);
+__decorate([
+    (0, schedule_1.Cron)(schedule_1.CronExpression.EVERY_HOUR),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AuctionHouseService.prototype, "reportStuckClaims", null);
 exports.AuctionHouseService = AuctionHouseService = AuctionHouseService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(auction_schema_1.Auction.name)),

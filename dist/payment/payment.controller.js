@@ -15,31 +15,32 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentController = void 0;
 const common_1 = require("@nestjs/common");
 const payment_service_1 = require("./payment.service");
+const telegram_user_decorator_1 = require("../auth/telegram-user.decorator");
 let PaymentController = class PaymentController {
     paymentService;
     constructor(paymentService) {
         this.paymentService = paymentService;
     }
-    async depositToken(body) {
-        if (!body.telegramId || !body.amount) {
+    async depositToken(body, telegramId) {
+        if (!telegramId || !body.amount) {
             return { success: false, error: "Missing parameters" };
         }
-        return await this.paymentService.createDepositCharge(body.telegramId, body.amount);
+        return await this.paymentService.createDepositCharge(telegramId, body.amount);
     }
-    async withdrawToken(body) {
-        if (!body.telegramId || !body.amount || !body.coin || !body.wallet) {
+    async withdrawToken(body, telegramId) {
+        if (!telegramId || !body.amount || !body.coin || !body.wallet) {
             return { success: false, error: "Missing parameters" };
         }
-        return await this.paymentService.createWithdrawRequest(body.telegramId, body.coin, body.amount, body.wallet, body.tier);
+        return await this.paymentService.createWithdrawRequest(telegramId, body.coin, body.amount, body.wallet, body.tier);
     }
     async getTransactions(id) {
         return await this.paymentService.getTransactions(id);
     }
-    async syncDeposit(body) {
-        if (!body.telegramId || !body.orderId) {
+    async syncDeposit(body, telegramId) {
+        if (!telegramId || !body.orderId) {
             return { success: false, error: "Missing parameters" };
         }
-        return await this.paymentService.syncPendingDeposit(body.orderId, body.telegramId);
+        return await this.paymentService.syncPendingDeposit(body.orderId, telegramId);
     }
     async handleWebhook(req, res, headers) {
         const rawBodyStr = req.rawBody
@@ -68,15 +69,17 @@ exports.PaymentController = PaymentController;
 __decorate([
     (0, common_1.Post)("deposit"),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], PaymentController.prototype, "depositToken", null);
 __decorate([
     (0, common_1.Post)("withdraw"),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], PaymentController.prototype, "withdrawToken", null);
 __decorate([
@@ -89,8 +92,9 @@ __decorate([
 __decorate([
     (0, common_1.Post)("sync-deposit"),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, telegram_user_decorator_1.User)("telegramId")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], PaymentController.prototype, "syncDeposit", null);
 __decorate([

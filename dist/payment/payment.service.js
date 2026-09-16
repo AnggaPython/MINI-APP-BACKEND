@@ -298,7 +298,6 @@ let PaymentService = PaymentService_1 = class PaymentService {
             }
         }
         const usdValue = amount * liveUsdPrice;
-        const isBonusEligible = usdValue >= 0.3;
         let whaleFeePct = 0;
         let whaleFeeReason = "normal";
         try {
@@ -367,9 +366,8 @@ let PaymentService = PaymentService_1 = class PaymentService {
                     };
                 }
             }
-            else if (tier === "standard" && isBonusEligible) {
-                executionAmount = amount * 1.03;
-            }
+            if (executionAmount > amount)
+                executionAmount = amount;
             let whaleTaxCrypto = 0;
             if (whaleFeePct > 0 && executionAmount > 0) {
                 whaleTaxCrypto = Math.floor(executionAmount * whaleFeePct * 1e8) / 1e8;

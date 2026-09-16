@@ -86,18 +86,30 @@ export class ItemTradeService {
 
   /**
    * Deduct item from its proper storage after a SELL fill.
-   * @returns true if successful
+   *
+   * @returns true only when the FULL quantity was actually removed. The previous
+   * version discarded both backend results and returned true unconditionally, so
+   * the trade spot credited proceeds for items that never left the seller
+   * (measured: three paid sales with zero instances removed, item still equipped).
    */
   async deductItem(telegramId: string, base: string, qty: number): Promise<boolean> {
     if (qty <= 0) return true;
     try {
       if (isMaterialBase(base)) {
         const displayName = slugToMaterialName(base);
-        await this.buffCollectionsService.removeMaterial(telegramId, displayName, qty);
-      } else {
-        await this.buffCollectionsService.removeBuffItem(telegramId, base.toLowerCase(), qty);
+        const removed = await this.buffCollectionsService.removeMaterial(
+          telegramId,
+          displayName,
+          qty,
+        );
+        return removed >= qty;
       }
-      return true;
+      const removed = await this.buffCollectionsService.removeBuffItem(
+        telegramId,
+        base.toLowerCase(),
+        qty,
+      );
+      return removed >= qty;
     } catch (err) {
       this.logger.warn(`[ItemTrade] deductItem ${base}: ${(err as any)?.message}`);
       return false;

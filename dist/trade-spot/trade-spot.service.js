@@ -883,13 +883,17 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
                 quote,
             };
         }
-        const maxBase = quoteBalance / ask;
-        const maxQuote = Math.floor(quoteBalance * 10000) / 10000;
+        const approxMaxBase = quoteBalance / Math.max(0.00000001, ask);
+        const impactRatio = approxMaxBase / Math.max(1, pool.baseReserve ?? 10_000_000);
+        const shiftPct = Math.min(0.015, impactRatio * 0.5);
+        const effectiveAsk = ask * (1 + shiftPct);
+        const safeMaxBase = Math.floor(quoteBalance / Math.max(0.00000001, effectiveAsk));
+        const maxQuote = round4(safeMaxBase * effectiveAsk);
         return {
             success: true,
-            maxBase: (0, item_sync_1.isItemBase)(base) ? Math.floor(maxBase) : maxBase,
-            maxQuote,
-            price: round8(ask),
+            maxBase: safeMaxBase,
+            maxQuote: Math.min(round4(quoteBalance), maxQuote),
+            price: round8(effectiveAsk),
             base,
             quote,
         };
@@ -1378,8 +1382,7 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
                     receivedBase = Math.floor(receivedBase);
                 }
                 actualSpend = spendQuote;
-                feeCurrency = base;
-                const gteCheck = Math.max(0, spendQuote - 0.0001);
+                const gteCheck = Math.max(0, spendQuote - 0.01);
                 updated = await this.userModel
                     .findOneAndUpdate({ telegramId, [quoteKey]: { $gte: gteCheck } }, { $inc: { [quoteKey]: -spendQuote, [baseKey]: receivedBase } }, { returnDocument: "after" })
                     .exec();
@@ -1464,15 +1467,25 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
             feeCurrency = quote;
             if (this.itemTradeService.isItem(base) && source === "USER") {
                 const qty = Math.floor(amount);
+                if (qty <= 0)
+                    return { success: false, error: "Invalid amount" };
                 const actualBalance = await this.itemTradeService.getItemBalance(telegramId, base);
                 if (actualBalance < qty)
                     return { success: false, error: `Insufficient ${base} balance` };
+                const removed = await this.itemTradeService.deductItem(telegramId, base, qty);
+                if (!removed) {
+                    return {
+                        success: false,
+                        error: `Insufficient ${base} balance`,
+                    };
+                }
                 updated = await this.userModel
                     .findOneAndUpdate({ telegramId }, { $inc: { [quoteKey]: proceeds } }, { returnDocument: "after" })
                     .exec();
-                if (!updated)
+                if (!updated) {
+                    await this.itemTradeService.grantItem(telegramId, base, qty);
                     return { success: false, error: "Account not found" };
-                await this.itemTradeService.deductItem(telegramId, base, qty);
+                }
             }
             else {
                 if (["ELIXCOIN", "COPPER", "IRON", "SILVER", "GOLD"].includes(base)) {
@@ -1481,7 +1494,7 @@ let TradeSpotService = TradeSpotService_1 = class TradeSpotService {
                     fee = round4(grossQuoteInt * trade_pairs_1.FEE_PCT);
                     proceeds = round4(grossQuoteInt - fee);
                 }
-                const gteCheckSell = Math.max(0, amount - 0.0001);
+                const gteCheckSell = Math.max(0, amount - 0.01);
                 updated = await this.userModel
                     .findOneAndUpdate({ telegramId, [baseKey]: { $gte: gteCheckSell } }, { $inc: { [baseKey]: -amount, [quoteKey]: proceeds } }, { returnDocument: "after" })
                     .exec();

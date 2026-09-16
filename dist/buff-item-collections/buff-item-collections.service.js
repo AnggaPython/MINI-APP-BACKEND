@@ -472,7 +472,8 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
         if (!col)
             return 0;
         const inventory = col.inventory || [];
-        return inventory.filter(i => i.baseItemId === buffId).length;
+        const active = col.activeInstanceIds || [];
+        return inventory.filter((i) => i.baseItemId === buffId && !active.includes(i.instanceId)).length;
     }
     async grantMaterial(telegramId, displayName, amount = 1) {
         if (amount <= 0)
@@ -482,15 +483,12 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
     async removeMaterial(telegramId, displayName, count = 1) {
         if (count <= 0)
             return 0;
-        const user = await this.userModel.findOne({ telegramId }).lean().exec();
-        if (!user)
-            return 0;
-        const current = user.materials?.[displayName] ?? 0;
-        const toRemove = Math.min(count, current);
-        if (toRemove <= 0)
-            return 0;
-        await this.userModel.updateOne({ telegramId }, { $inc: { [`materials.${displayName}`]: -toRemove } }).exec();
-        return toRemove;
+        const updated = await this.userModel
+            .findOneAndUpdate({ telegramId, [`materials.${displayName}`]: { $gte: count } }, { $inc: { [`materials.${displayName}`]: -count } }, { returnDocument: "after" })
+            .exec();
+        if (updated)
+            return count;
+        return 0;
     }
     async activateBuff(telegramId, buffId) {
         const collection = await this.userBuffModel.findOne({ telegramId });
@@ -612,6 +610,37 @@ let BuffItemCollectionsService = class BuffItemCollectionsService {
         }
         const picked = available[Math.floor(Math.random() * available.length)];
         return this.grantBuffItem(telegramId, picked.buffId);
+    }
+    async selectRandomBuff(telegramId, preferredRarity) {
+        const rarityWeights = BuffItemCollectionsService_1.BUFF_RARITY_WEIGHTS;
+        let roll = Math.random() * 100;
+        let selectedRarity = "COMMON";
+        if (preferredRarity) {
+            selectedRarity = preferredRarity;
+        }
+        else {
+            for (const [rarity, weight] of Object.entries(rarityWeights)) {
+                roll -= weight;
+                if (roll <= 0) {
+                    selectedRarity = rarity;
+                    break;
+                }
+            }
+        }
+        const collection = await this.userBuffModel.findOne({ telegramId }).lean();
+        const ownedIds = collection?.inventory?.map((i) => i.baseItemId) || [];
+        const fallbackOrder = ["COMMON", "MEDIUM", "RARE", "ULTRA_RARE"];
+        const startIdx = Math.max(0, fallbackOrder.indexOf(selectedRarity));
+        for (let i = startIdx; i >= 0; i--) {
+            const candidates = await this.buffItemModel
+                .find({ rarity: fallbackOrder[i], buffId: { $nin: ownedIds } })
+                .lean();
+            if (candidates.length > 0) {
+                const picked = candidates[Math.floor(Math.random() * candidates.length)];
+                return { buffItem: picked };
+            }
+        }
+        return null;
     }
 };
 exports.BuffItemCollectionsService = BuffItemCollectionsService;
