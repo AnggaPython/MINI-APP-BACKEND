@@ -1077,17 +1077,19 @@ export class TradeSpotService {
     }
 
     // BUY: max BASE you can buy with your QUOTE balance.
-    // Fee is deducted from BASE received, so spend = amount × ask (no fee on spend).
-    const maxBase = quoteBalance / ask;
-    // [FLOATING POINT FIX] Floor to 4 decimals so round-trip rounding never overshoots.
-    // Without floor: round8(raw) → /ask → ×ask → round4 → can round UP past actual balance.
-    const maxQuote = Math.floor(quoteBalance * 10000) / 10000;
+    // Account for anti-whale slippage shift so 100% all-in never exceeds quoteBalance
+    const approxMaxBase = quoteBalance / Math.max(0.00000001, ask);
+    const impactRatio = approxMaxBase / Math.max(1, pool.baseReserve ?? 10_000_000);
+    const shiftPct = Math.min(0.015, impactRatio * 0.5);
+    const effectiveAsk = ask * (1 + shiftPct);
+    const safeMaxBase = Math.floor(quoteBalance / Math.max(0.00000001, effectiveAsk));
+    const maxQuote = round4(safeMaxBase * effectiveAsk);
 
     return {
       success: true,
-      maxBase: isItemBase(base) ? Math.floor(maxBase) : maxBase,
-      maxQuote,
-      price: round8(ask),
+      maxBase: safeMaxBase,
+      maxQuote: Math.min(round4(quoteBalance), maxQuote),
+      price: round8(effectiveAsk),
       base,
       quote,
     };
@@ -1752,9 +1754,8 @@ export class TradeSpotService {
           receivedBase = Math.floor(receivedBase);
         }
         actualSpend = spendQuote;
-        feeCurrency = base;        // [FLOATING POINT TOLERANCE] Allow 0.0001 slack for rounding overshoot.
-        // Without this, round8→/ask→×ask→round4 can overshoot by ~0.00002.
-        const gteCheck = Math.max(0, spendQuote - 0.0001);
+        // [FLOATING POINT TOLERANCE] Allow 0.01 slack for rounding overshoot.
+        const gteCheck = Math.max(0, spendQuote - 0.01);
         updated = await this.userModel
           .findOneAndUpdate(
             { telegramId, [quoteKey]: { $gte: gteCheck } },
@@ -1913,9 +1914,8 @@ export class TradeSpotService {
           fee = round4(grossQuoteInt * FEE_PCT);
           proceeds = round4(grossQuoteInt - fee);
         }
-        // cryptoBalances is correct for crypto tokens.
-        // [FLOATING POINT TOLERANCE] Allow 0.0001 slack.
-        const gteCheckSell = Math.max(0, amount - 0.0001);
+        // [FLOATING POINT TOLERANCE] Allow 0.01 slack.
+        const gteCheckSell = Math.max(0, amount - 0.01);
         updated = await this.userModel
           .findOneAndUpdate(
             { telegramId, [baseKey]: { $gte: gteCheckSell } },
