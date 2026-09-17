@@ -126,6 +126,10 @@ export class AutoMiningService {
       };
     }
 
+    if (Array.isArray(opts.buffIds) && opts.buffIds.length > 6) {
+      return { success: false, error: "At most 6 buffs per plan" };
+    }
+
     // ── Reserve the plan slot atomically ────────────────────────────────────
     // The check above is a read, so two parallel subscribes both passed it and
     // both charged the fee (measured: 500,000 ELIXIR debited for a single
@@ -147,20 +151,61 @@ export class AutoMiningService {
               { status: { $exists: false } },
             ],
           },
-          { $set: { status: "reserving", reservedAt: new Date(now), feePaid: 0 } },
+          // startDate/endDate are required by the schema (no defaults), so
+          // they must be present for the upsert-INSERT path (first-ever plan).
+          {
+            $set: {
+              status: "reserving",
+              reservedAt: new Date(now),
+              feePaid: 0,
+              startDate: start,
+              endDate: end,
+            },
+          },
           { upsert: true, returnDocument: "after" },
         )
         .exec();
       reserved = Boolean(reservation);
     } catch (err: any) {
-      // Duplicate key on telegramId: somebody else holds an active reservation.
       if (err?.code === 11000) {
+        // Duplicate key on telegramId: somebody else holds an active reservation.
         return {
           success: false,
           error: "Plan already active — cancel it first to start a new one",
         };
       }
-      throw err;
+      // Any other DB error (e.g. schema validation on legacy docs): do NOT let
+      // it surface as a 500 — fall back to a plain update (same enum values,
+      // no insert) so legacy docs stay valid, then fail gracefully.
+      this.logger.error(
+        `auto-mining reservation upsert failed: ${(err as Error)?.message}`,
+      );
+      const plain = await this.subModel
+        .findOneAndUpdate(
+          {
+            telegramId,
+            $or: [
+              { status: { $in: ["cancelled", "expired"] } },
+              { endDate: { $lte: new Date(now) } },
+              { status: "reserving", reservedAt: { $lte: new Date(now - 60_000) } },
+              { status: { $exists: false } },
+            ],
+          },
+          {
+            $set: { status: "reserving", reservedAt: new Date(now), feePaid: 0 },
+            $setOnInsert: {
+              telegramId,
+              planDays: AUTO_PLAN_DAYS,
+              claimMode: "save",
+              target: "stone",
+              startDate: start,
+              endDate: end,
+            },
+          },
+          { upsert: true, returnDocument: "after" },
+        )
+        .exec();
+      reserved = Boolean(plain);
     }
     if (!reserved) {
       return {
@@ -169,13 +214,22 @@ export class AutoMiningService {
       };
     }
 
+    // From here on, EVERY validation failure must release the reserved slot.
+    // (Observed live: a rejected buff loadout left the slot held, so the
+    // user's immediate retry was blocked for 60s with "Plan already active".)
+    const releaseReservation = async () => {
+      await this.subModel
+        .updateOne(
+          { telegramId, status: "reserving" },
+          { $set: { status: "cancelled" } },
+        )
+        .exec();
+    };
+
     // ── Loadout validation ─────────────────────────────────────────────
     const wantBuffs = Array.isArray(opts.buffIds)
       ? [...new Set(opts.buffIds.map(String))].slice(0, 6)
       : [];
-    if (Array.isArray(opts.buffIds) && opts.buffIds.length > 6) {
-      return { success: false, error: "At most 6 buffs per plan" };
-    }
     let favPickaxe: string | null = null;
     if (opts.favPickaxe) {
       const owner = (await this.userModel
@@ -188,6 +242,7 @@ export class AutoMiningService {
         ? owner.ownedPickaxes
         : ["Common"];
       if (!owned.includes(String(opts.favPickaxe))) {
+        await releaseReservation();
         return { success: false, error: "Pickaxe not owned" };
       }
       favPickaxe = String(opts.favPickaxe);
@@ -219,9 +274,12 @@ export class AutoMiningService {
           ).map((i) => [i.baseItemId, i.buffType] as const),
         );
         for (const b of wantBuffs) {
-          if (!ownedSet.has(b))
+          if (!ownedSet.has(b)) {
+            await releaseReservation();
             return { success: false, error: `Buff not owned: ${b}` };
+          }
           if (!PLAN_BUFF_TYPES.includes(typeOf.get(b) || "")) {
+            await releaseReservation();
             return {
               success: false,
               error: `Only ECONOMY and DROPRATE buffs work with autopilot: ${b}`,
@@ -229,6 +287,7 @@ export class AutoMiningService {
           }
         }
       } catch (e) {
+        await releaseReservation();
         return {
           success: false,
           error: `Buff check failed: ${(e as Error)?.message || "unknown"}`,
@@ -236,67 +295,89 @@ export class AutoMiningService {
       }
     }
 
-    // Atomic charge: 250,000 ELIXIR, fails when balance is short.
-    const charged = await this.userModel
-      .findOneAndUpdate(
-        { telegramId, elixirBalance: { $gte: AUTO_PLAN_FEE_ELIXIR } },
-        { $inc: { elixirBalance: -AUTO_PLAN_FEE_ELIXIR } },
-        { returnDocument: "after" },
-      )
-      .exec();
-    if (!charged) {
-      // Release the reservation so the user can retry once funded.
-      await this.subModel
-        .updateOne(
-          { telegramId, status: "reserving" },
-          { $set: { status: "cancelled" } },
+    // Atomic charge + activation. ANY failure here (DB hiccup, unexpected
+    // data shape, bug) must never leave the user charged without a plan and
+    // must never surface as a bare HTTP 500 — refund + release + explain.
+    let charged = false;
+    const refundAndRelease = async () => {
+      if (charged) {
+        await this.userModel
+          .updateOne(
+            { telegramId },
+            { $inc: { elixirBalance: AUTO_PLAN_FEE_ELIXIR } },
+          )
+          .exec();
+      }
+      await releaseReservation();
+    };
+    try {
+      const chargeRes = await this.userModel
+        .findOneAndUpdate(
+          { telegramId, elixirBalance: { $gte: AUTO_PLAN_FEE_ELIXIR } },
+          { $inc: { elixirBalance: -AUTO_PLAN_FEE_ELIXIR } },
+          { returnDocument: "after" },
         )
         .exec();
+      if (!chargeRes) {
+        // Release the reservation so the user can retry once funded.
+        await refundAndRelease();
+        return {
+          success: false,
+          error: `Need ${AUTO_PLAN_FEE_ELIXIR.toLocaleString()} ELIXIR to start`,
+        };
+      }
+      charged = true;
+
+      await this.subModel
+        .findOneAndUpdate(
+          { telegramId },
+          {
+            $set: {
+              status: "active",
+              planDays: AUTO_PLAN_DAYS,
+              feePaid: AUTO_PLAN_FEE_ELIXIR,
+              claimMode,
+              target,
+              splitStonePct,
+              startDate: start,
+              endDate: end,
+              dailyQuota: AUTO_DAILY_QUOTA,
+              autopilotOn: true,
+              lastRunAt: null,
+              totalRuns: 0,
+              totalElixirValue: 0,
+              favPickaxe,
+              planBuffs: [],
+            },
+          },
+          { upsert: true, returnDocument: "after" },
+        )
+        .exec();
+
+      // ── Apply plan buffs AFTER charging (deactivate-all → activate chosen) ──
+      if (wantBuffs.length > 0) {
+        const applied = await this.setPlanBuffs(telegramId, wantBuffs);
+        if (!applied.success) {
+          await refundAndRelease();
+          return { success: false, error: applied.error };
+        }
+        await this.subModel
+          .updateOne({ telegramId }, { $set: { planBuffs: applied.activated } })
+          .exec();
+      }
+
+      const fresh = await this.subModel.findOne({ telegramId }).lean().exec();
+      return { success: true, sub: this.publicSub(fresh) };
+    } catch (err) {
+      this.logger.error(
+        `auto-mining subscribe failed for ${telegramId}: ${(err as Error)?.stack || err}`,
+      );
+      await refundAndRelease();
       return {
         success: false,
-        error: `Need ${AUTO_PLAN_FEE_ELIXIR.toLocaleString()} ELIXIR to start`,
+        error: `Subscribe failed: ${(err as Error)?.message || "unexpected server error"}`,
       };
     }
-
-    await this.subModel
-      .findOneAndUpdate(
-        { telegramId },
-        {
-          $set: {
-            status: "active",
-            planDays: AUTO_PLAN_DAYS,
-            feePaid: AUTO_PLAN_FEE_ELIXIR,
-            claimMode,
-            target,
-            splitStonePct,
-            startDate: start,
-            endDate: end,
-            dailyQuota: AUTO_DAILY_QUOTA,
-            autopilotOn: true,
-            lastRunAt: null,
-            totalRuns: 0,
-            totalElixirValue: 0,
-            favPickaxe,
-            planBuffs: [],
-          },
-        },
-        { upsert: true, returnDocument: "after" },
-      )
-      .exec();
-
-    // ── Apply plan buffs AFTER charging (deactivate-all → activate chosen) ──
-    if (wantBuffs.length > 0) {
-      const applied = await this.setPlanBuffs(telegramId, wantBuffs);
-      if (!applied.success) {
-        return { success: false, error: applied.error };
-      }
-      await this.subModel
-        .updateOne({ telegramId }, { $set: { planBuffs: applied.activated } })
-        .exec();
-    }
-
-    const fresh = await this.subModel.findOne({ telegramId }).lean().exec();
-    return { success: true, sub: this.publicSub(fresh) };
   }
 
   /** Replace active buffs with the plan set. Returns activated base-item IDs. */

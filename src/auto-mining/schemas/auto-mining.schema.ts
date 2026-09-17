@@ -9,12 +9,18 @@ export class AutoMiningSub {
   @Prop({ required: true, unique: true })
   telegramId: string;
 
+  // "reserving" = slot held between the atomic reserve and the charge;
+  // abandoned reservations are reclaimed after 60s (see subscribe).
   @Prop({
     required: true,
-    enum: ["active", "paused", "expired", "cancelled"],
+    enum: ["active", "paused", "expired", "cancelled", "reserving"],
     default: "active",
   })
   status: string;
+
+  /** When the current reservation was taken (stale ones are reclaimed). */
+  @Prop({ type: Date, default: null })
+  reservedAt: Date | null;
 
   @Prop({ required: true, default: 30 })
   planDays: number;

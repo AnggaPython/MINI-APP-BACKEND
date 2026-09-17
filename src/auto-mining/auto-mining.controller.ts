@@ -1,9 +1,18 @@
-import { Controller, Get, Post, Body, Query } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Logger,
+} from "@nestjs/common";
 import { AutoMiningService } from "./auto-mining.service";
 import { User } from "../auth/telegram-user.decorator";
 
 @Controller("auto-mining")
 export class AutoMiningController {
+  private readonly logger = new Logger(AutoMiningController.name);
+
   constructor(private readonly autoMiningService: AutoMiningService) {}
 
   /** Live plan state + today's quota usage. */
@@ -37,7 +46,19 @@ export class AutoMiningController {
     },
   ) {
     if (!telegramId) return { success: false, error: "Missing telegramId" };
-    return await this.autoMiningService.subscribe(telegramId, body || {});
+    try {
+      return await this.autoMiningService.subscribe(telegramId, body || {});
+    } catch (err) {
+      // Last-resort net: a throw here becomes an opaque HTTP 500 on the
+      // client. Log the full stack server-side and explain instead.
+      this.logger.error(
+        `POST /auto-mining/subscribe crashed: ${(err as Error)?.stack || err}`,
+      );
+      return {
+        success: false,
+        error: `Subscribe failed: ${(err as Error)?.message || "unexpected server error"}`,
+      };
+    }
   }
 
   /** Pause / resume the autopilot (plan stays). */
