@@ -73,6 +73,8 @@ export class AutoMiningService {
     opts: {
       target?: string;
       splitStonePct?: number;
+      // startDate/stopDate are no longer honored (accepted for backward
+      // compatibility with old clients, always ignored).
       startDate?: string;
       stopDate?: string;
       claimMode?: string;
@@ -103,29 +105,14 @@ export class AutoMiningService {
       }
     }
 
+    // ── Plan window: fixed. Starts immediately, runs for the full plan. ────
+    // (The old selectable start/stop schedule was removed — it produced
+    // confusing failures like "Start date cannot be in the past" when the
+    // user's local day/rounding disagreed with the server. Autopilot now
+    // always begins the moment it is paid for.)
     const now = Date.now();
-    const start = opts.startDate ? new Date(opts.startDate) : new Date(now);
-    if (isNaN(start.getTime()))
-      return { success: false, error: "Invalid start date" };
-    if (start.getTime() < now - 5 * 60 * 1000) {
-      return { success: false, error: "Start date cannot be in the past" };
-    }
-    if (start.getTime() > now + 7 * 24 * 3600 * 1000) {
-      return { success: false, error: "Start date is at most 7 days ahead" };
-    }
-    const maxEnd = start.getTime() + AUTO_PLAN_DAYS * 24 * 3600 * 1000;
-    const end = opts.stopDate ? new Date(opts.stopDate) : new Date(maxEnd);
-    if (isNaN(end.getTime()))
-      return { success: false, error: "Invalid stop date" };
-    if (end.getTime() <= start.getTime()) {
-      return { success: false, error: "Stop date must be after start date" };
-    }
-    if (end.getTime() > maxEnd + 60 * 1000) {
-      return {
-        success: false,
-        error: `Plan covers at most ${AUTO_PLAN_DAYS} days from start`,
-      };
-    }
+    const start = new Date(now);
+    const end = new Date(now + AUTO_PLAN_DAYS * 24 * 3600 * 1000);
 
     const existing = await this.subModel.findOne({ telegramId }).lean().exec();
     if (
