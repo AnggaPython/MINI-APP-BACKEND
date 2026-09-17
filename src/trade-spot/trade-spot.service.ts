@@ -1726,7 +1726,7 @@ export class TradeSpotService {
       // ── BUY accounting ────────────────────────────────────────────────
       // Coins: fee charged in BASE (the currency they receive)
       // Items: fee charged in QUOTE (ELIXCOIN) — items must stay whole numbers
-      const spendQuote = round4(amount * price);   // quote leaving user
+      let spendQuote = round4(amount * price);   // quote leaving user
       const itemBase = isItemBase(base);
       let actualSpend = 0;
       if (itemBase) {
@@ -1755,6 +1755,30 @@ export class TradeSpotService {
           await this.itemTradeService.grantItem(telegramId, base, qty);
         }
       } else {
+        // [ALL-IN GUARANTEE] The wallet owns exactly what it owns — the 1.5%
+        // fee and the anti-whale price shift are both charged from the coin
+        // RECEIVED, never added on top of the spend. A 100%-balance order
+        // must therefore always succeed: clip the spend to the real balance
+        // (plus the 0.01 float tolerance below) instead of rejecting, so the
+        // debit can never exceed the wallet no matter how the book drifts
+        // between slider fill and execution.
+        const px = Math.max(1e-8, price);
+        if (source === "USER") {
+          const pre = await this.userModel
+            .findOne({ telegramId })
+            .select({ cryptoBalances: 1, elixirBalance: 1 })
+            .lean()
+            .exec();
+          const preCrypto = (pre?.cryptoBalances ?? {}) as Record<string, number>;
+          const bal =
+            quote === "ELIXIR" ? pre?.elixirBalance ?? 0 : preCrypto[quote] ?? 0;
+          if (spendQuote > bal) {
+            if (bal <= 0)
+              return { success: false, error: `Insufficient ${quote} balance` };
+            spendQuote = round4(bal);
+            amount = round4(spendQuote / px);
+          }
+        }
         // Coin fee in BASE (deducted from received amount)
         fee = round4(amount * FEE_PCT);
         receivedBase = round4(amount - fee);
